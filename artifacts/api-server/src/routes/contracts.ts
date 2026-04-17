@@ -11,12 +11,36 @@ import {
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { notifyHrOfficers } from "../lib/notificationService";
+import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
+import { setObjectAclPolicy } from "../lib/objectAcl";
 
 const router: IRouter = Router();
+const objectStorageService = new ObjectStorageService();
 
 async function getEmployeeAgencyId(employeeId: number): Promise<number | null> {
   const [emp] = await db.select({ agencyId: employeesTable.agencyId }).from(employeesTable).where(eq(employeesTable.id, employeeId));
   return emp?.agencyId ?? null;
+}
+
+/**
+ * Apply tenant ACL to a contract document URL if it references an internal GCS object.
+ * This ensures the document is retrievable via GET /storage/objects/* by the owning agency.
+ * Non-fatal: logs a warning if ACL cannot be applied (e.g. file not yet uploaded).
+ */
+async function applyContractDocumentAcl(documentUrl: string | null | undefined, agencyId: number): Promise<void> {
+  if (!documentUrl) return;
+  // Only process internal storage object URLs
+  const match = documentUrl.match(/\/storage\/objects\/(.+)$/);
+  if (!match) return;
+  const objectPath = `/objects/${match[1]}`;
+  try {
+    const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+    await setObjectAclPolicy(objectFile, { owner: String(agencyId), visibility: "private" });
+  } catch (err) {
+    if (!(err instanceof ObjectNotFoundError)) {
+      console.warn(`[contracts] Failed to apply ACL to document ${documentUrl}:`, err);
+    }
+  }
 }
 
 /**
@@ -131,6 +155,13 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
       .where(eq(employeesTable.id, parsed.data.employeeId));
     return created;
   });
+
+  // Apply tenant ACL to contract document if an internal storage URL was provided
+  const contractAgencyId = agencyId ?? (await getEmployeeAgencyId(parsed.data.employeeId));
+  if (contractAgencyId != null) {
+    await applyContractDocumentAcl(parsed.data.documentUrl, contractAgencyId);
+  }
+
   res.status(201).json(contract);
 });
 
@@ -195,6 +226,15 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
     }
     return updated;
   });
+
+  // Apply tenant ACL if a new internal document URL was provided on update
+  if (body.data.documentUrl) {
+    const updateAgencyId = agencyId ?? (await getEmployeeAgencyId(existing.employeeId));
+    if (updateAgencyId != null) {
+      await applyContractDocumentAcl(body.data.documentUrl, updateAgencyId);
+    }
+  }
+
   res.json(contract);
 });
 

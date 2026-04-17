@@ -247,6 +247,13 @@ router.get(
  *
  * Users with agencyId === null (system-level accounts) bypass tenant isolation.
  * Returns 403 if the ACL policy is absent or the user's agency does not match the document owner.
+ *
+ * NOTE: We intentionally use getObjectAclPolicy + direct agencyId comparison rather than
+ * canAccessObject / canAccessObjectEntity from objectAcl.ts. Those helpers rely on
+ * ObjectAccessGroupType enum entries and createObjectAccessGroup, which are scaffold
+ * stubs that would throw at runtime because the enum has no defined values for this project.
+ * Our access rule is simple: ACL owner (agencyId string) must equal the requesting user's
+ * agencyId. No group-based rules are needed, so we bypass the group helper entirely.
  */
 router.get(
   "/storage/objects/*path",

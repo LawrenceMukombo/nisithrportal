@@ -25,9 +25,11 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Fetch all recent notifications (read + unread) so the dropdown shows history.
+  // Unread count is computed client-side; unread items are visually highlighted.
   const { data: notifications = [], refetch } = useGetNotifications(
-    {},
-    { query: { queryKey: getGetNotificationsQueryKey(), refetchInterval: 30000 } }
+    { all: true },
+    { query: { queryKey: getGetNotificationsQueryKey({ all: true }), refetchInterval: 30000 } }
   );
 
   const markRead = useMarkNotificationRead();

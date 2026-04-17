@@ -40,6 +40,7 @@ Core tables (all in `lib/db/src/schema/`):
 - `employees` — staff records
 - `contracts` — employment contracts with expiry tracking
 - `ai_scores` — AI candidate scoring results
+- `notifications` — in-app notifications (userId, type, message, read, createdAt)
 
 ## API Modules
 
@@ -94,6 +95,23 @@ Every authenticated request is scoped to the user's `agencyId` from their JWT:
 
 Tenant enforcement middleware: `artifacts/api-server/src/middlewares/tenant.ts`
 
+## Object Storage
+
+Replit Object Storage is provisioned and configured for CV and document file uploads.
+- **Upload flow**: Client requests presigned URL via `POST /api/storage/uploads/request-url`, then PUTs file directly to Google Cloud Storage
+- **Serving**: Uploaded files served via `GET /api/storage/objects/{objectPath}`
+- **CV upload**: Job applications use presigned URL flow (max 10 MB, PDF/DOC/DOCX)
+- **Server files**: `artifacts/api-server/src/lib/objectStorage.ts`, `objectAcl.ts`, `routes/storage.ts`
+
+## Notifications
+
+In-app notification system for status updates and contract expiry alerts.
+- **Trigger 1**: Application status change → creates notification for applicant user (matched by email)
+- **Trigger 2**: `GET /contracts` → fire-and-forget check for contracts expiring within 30 days → notifies HR Officers (once per 24h per contract)
+- **API**: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `PATCH /api/notifications/read-all`
+- **Bell UI**: `artifacts/hr-portal/src/components/notification-bell.tsx` — polls every 30s, shows unread badge, dropdown, mark as read
+- **Notification service**: `artifacts/api-server/src/lib/notificationService.ts`
+
 ## Environment Variables
 
 - `DATABASE_URL` — PostgreSQL connection string (required)
@@ -101,6 +119,9 @@ Tenant enforcement middleware: `artifacts/api-server/src/middlewares/tenant.ts`
 - `OPENAI_API_KEY` or `REPLIT_AI_KEY` — for AI features
 - `OPENAI_BASE_URL` — optional custom AI API base URL
 - `PORT` — server port (auto-assigned by Replit)
+- `DEFAULT_OBJECT_STORAGE_BUCKET_ID` — GCS bucket for file storage (auto-set by Replit)
+- `PUBLIC_OBJECT_SEARCH_PATHS` — search paths for public assets (auto-set)
+- `PRIVATE_OBJECT_DIR` — directory for private uploaded objects (auto-set)
 
 ## Frontend HR Portal
 
@@ -115,7 +136,8 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 - **Contracts** — list with status filter; detail page
 - **Agencies & Departments** — admin-only CRUD management pages
 - **My Applications** — applicant-only view of own submitted applications (scoped by authenticated user's email, uses `GET /applications/my`)
-- **Apply Dialog** — includes CV/Résumé URL field in addition to name, email, phone, cover letter
+- **Apply Dialog** — includes CV/Résumé file upload using presigned GCS URL (max 10 MB, PDF/DOC/DOCX); file uploads directly to GCS, objectPath saved as cvUrl
+- **Notification Bell** — in top header bar; polls for notifications every 30s; unread count badge; dropdown with mark-as-read per item and mark-all-read; type icons (📋 application status, ⚠️ contract expiry)
 
 ### Auth Notes
 

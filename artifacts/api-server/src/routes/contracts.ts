@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
-import { db, contractsTable, employeesTable } from "@workspace/db";
+import { eq, and, inArray, lte, gte, sql } from "drizzle-orm";
+import { db, contractsTable, employeesTable, notificationsTable } from "@workspace/db";
 import {
   GetContractsQueryParams,
   CreateContractBody,
@@ -10,12 +10,73 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { notifyHrOfficers } from "../lib/notificationService";
 
 const router: IRouter = Router();
 
 async function getEmployeeAgencyId(employeeId: number): Promise<number | null> {
   const [emp] = await db.select({ agencyId: employeesTable.agencyId }).from(employeesTable).where(eq(employeesTable.id, employeeId));
   return emp?.agencyId ?? null;
+}
+
+/**
+ * Check for contracts expiring within 30 days and notify HR officers.
+ * Skips contracts that already have a recent (last 24h) expiry notification.
+ */
+async function triggerContractExpiryNotifications(agencyId: number | null): Promise<void> {
+  try {
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const nowStr = now.toISOString().slice(0, 10);
+    const in30DaysStr = in30Days.toISOString().slice(0, 10);
+
+    const conditions = [
+      eq(contractsTable.status, "active"),
+      lte(contractsTable.endDate, in30DaysStr),
+      gte(contractsTable.endDate, nowStr),
+    ];
+
+    const expiringContracts = await db
+      .select({
+        id: contractsTable.id,
+        employeeId: contractsTable.employeeId,
+        endDate: contractsTable.endDate,
+      })
+      .from(contractsTable)
+      .where(and(...conditions));
+
+    for (const contract of expiringContracts) {
+      // Check if already notified in last 24 hours
+      const existingNotif = await db
+        .select({ id: notificationsTable.id })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.type, "contract_expiry"),
+            gte(notificationsTable.createdAt, yesterday),
+            sql`${notificationsTable.message} LIKE ${'%Contract #' + contract.id + '%'}`,
+          )
+        )
+        .limit(1);
+
+      if (existingNotif.length > 0) continue;
+
+      const empAgencyId = await getEmployeeAgencyId(contract.employeeId);
+      if (empAgencyId == null) continue;
+      if (agencyId != null && empAgencyId !== agencyId) continue;
+
+      const daysLeft = Math.ceil((new Date(contract.endDate!).getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      await notifyHrOfficers(
+        empAgencyId,
+        "contract_expiry",
+        `Contract #${contract.id} for Employee #${contract.employeeId} expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+      );
+    }
+  } catch (err) {
+    console.error("[contracts] Contract expiry notification check failed:", err);
+  }
 }
 
 router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
@@ -40,6 +101,9 @@ router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "exe
     : await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
 
   res.json(allContracts);
+
+  // Fire-and-forget contract expiry notification check
+  void triggerContractExpiryNotifications(agencyId ?? null);
 });
 
 router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {

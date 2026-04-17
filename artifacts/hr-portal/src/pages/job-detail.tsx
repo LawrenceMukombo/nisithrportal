@@ -38,9 +38,30 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-gray-100 text-gray-600",
 };
 
+async function uploadCvFile(file: File): Promise<string> {
+  const urlRes = await fetch("/api/storage/uploads/request-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+  });
+  if (!urlRes.ok) throw new Error("Failed to get upload URL");
+  const { uploadURL, objectPath } = await urlRes.json() as { uploadURL: string; objectPath: string };
+
+  const uploadRes = await fetch(uploadURL, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!uploadRes.ok) throw new Error("Failed to upload file to storage");
+
+  return `/api/storage${objectPath}`;
+}
+
 function ApplyDialog({ jobId }: { jobId: number }) {
   const [open, setOpen] = useState(false);
   const [submitted, setSubmitted] = useState<{ id: number; email: string } | null>(null);
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
   const form = useForm<AppForm>({
@@ -52,18 +73,33 @@ function ApplyDialog({ jobId }: { jobId: number }) {
 
   const onSubmit = async (values: AppForm) => {
     try {
+      let cvUrl = values.cvUrl || undefined;
+
+      if (cvFile) {
+        setUploading(true);
+        try {
+          cvUrl = await uploadCvFile(cvFile);
+        } catch {
+          toast({ title: "CV upload failed", description: "Could not upload your CV. Please try again.", variant: "destructive" });
+          setUploading(false);
+          return;
+        }
+        setUploading(false);
+      }
+
       const result = await createApp.mutateAsync({
         data: {
           jobId,
           candidateName: values.fullName,
           candidateEmail: values.email,
           candidatePhone: values.phone || undefined,
-          cvUrl: values.cvUrl || undefined,
+          cvUrl,
           coverLetter: values.coverLetter || undefined,
         }
       });
       setSubmitted({ id: (result as { id: number }).id, email: values.email });
       form.reset();
+      setCvFile(null);
     } catch {
       toast({ title: "Submission failed", description: "Please try again.", variant: "destructive" });
     }
@@ -121,40 +157,36 @@ function ApplyDialog({ jobId }: { jobId: number }) {
                 <FormMessage />
               </FormItem>
             )} />
-            <FormField control={form.control} name="cvUrl" render={({ field }) => (
-              <FormItem>
-                <FormLabel>CV / Résumé Upload (optional)</FormLabel>
-                <FormControl>
-                  <div className="space-y-2">
-                    <Input
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      className="cursor-pointer"
-                      data-testid="input-apply-cv-url"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        if (file.size > 2 * 1024 * 1024) {
-                          e.target.value = "";
-                          return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          if (typeof reader.result === "string") field.onChange(reader.result);
-                        };
-                        reader.readAsDataURL(file);
-                      }}
-                    />
-                    {field.value && !field.value.startsWith("data:") && null}
-                    {field.value?.startsWith("data:") && (
-                      <p className="text-xs text-green-600">CV file selected and ready to submit</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">Supported: PDF, DOC, DOCX — max 2 MB</p>
-                  </div>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
+            <FormItem>
+              <FormLabel>CV / Résumé Upload (optional)</FormLabel>
+              <FormControl>
+                <div className="space-y-2">
+                  <Input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="cursor-pointer"
+                    data-testid="input-apply-cv-url"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) { setCvFile(null); return; }
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast({ title: "File too large", description: "CV must be under 10 MB", variant: "destructive" });
+                        e.target.value = "";
+                        setCvFile(null);
+                        return;
+                      }
+                      setCvFile(file);
+                    }}
+                  />
+                  {cvFile && (
+                    <p className="text-xs text-green-600">
+                      {uploading ? "Uploading CV..." : `CV selected: ${cvFile.name}`}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Supported: PDF, DOC, DOCX — max 10 MB</p>
+                </div>
+              </FormControl>
+            </FormItem>
             <FormField control={form.control} name="coverLetter" render={({ field }) => (
               <FormItem>
                 <FormLabel>Cover Letter (optional)</FormLabel>
@@ -165,10 +197,10 @@ function ApplyDialog({ jobId }: { jobId: number }) {
             <Button
               type="submit"
               className="w-full"
-              disabled={createApp.isPending}
+              disabled={createApp.isPending || uploading}
               data-testid="button-submit-application"
             >
-              {createApp.isPending ? "Submitting..." : "Submit Application"}
+              {uploading ? "Uploading CV..." : createApp.isPending ? "Submitting..." : "Submit Application"}
             </Button>
           </form>
         </Form>

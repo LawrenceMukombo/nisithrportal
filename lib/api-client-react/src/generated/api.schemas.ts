@@ -445,6 +445,29 @@ export interface Role {
   name: string;
 }
 
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 1 */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+}
+
+export interface Notification {
+  id: number;
+  userId: number;
+  type: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export type GetDepartmentsParams = {
   agency_id?: number;
 };
@@ -505,4 +528,12 @@ export type GetDashboardRecruitmentPipelineParams = {
 
 export type AiPredictWorkforceParams = {
   agency_id?: number;
+};
+
+export type GetNotificationsParams = {
+  unread_only?: boolean;
+};
+
+export type MarkAllNotificationsRead200 = {
+  count?: number;
 };

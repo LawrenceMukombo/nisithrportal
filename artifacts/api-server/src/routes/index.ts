@@ -13,6 +13,8 @@ import aiScoresRouter from "./ai_scores";
 import dashboardRouter from "./dashboard";
 import aiRouter from "./ai";
 import usersRouter from "./users";
+import storageRouter from "./storage";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -30,5 +32,7 @@ router.use(contractsRouter);
 router.use(aiScoresRouter);
 router.use(dashboardRouter);
 router.use(aiRouter);
+router.use(storageRouter);
+router.use(notificationsRouter);
 
 export default router;

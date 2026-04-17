@@ -994,3 +994,65 @@ export const AiPredictWorkforceResponse = zod.object({
   ),
   recommendations: zod.array(zod.string()),
 });
+
+/**
+ * @summary Request a presigned URL for file upload
+ */
+
+export const RequestUploadUrlBody = zod.object({
+  name: zod.string().min(1),
+  size: zod.number().min(1),
+  contentType: zod.string().min(1),
+});
+
+export const RequestUploadUrlResponse = zod.object({
+  uploadURL: zod.string().url(),
+  objectPath: zod.string(),
+});
+
+/**
+ * @summary Serve an uploaded object entity
+ */
+export const GetStorageObjectParams = zod.object({
+  objectPath: zod.coerce.string(),
+});
+
+/**
+ * @summary Get current user's notifications
+ */
+export const GetNotificationsQueryParams = zod.object({
+  unread_only: zod.coerce.boolean().optional(),
+});
+
+export const GetNotificationsResponseItem = zod.object({
+  id: zod.number(),
+  userId: zod.number(),
+  type: zod.string(),
+  message: zod.string(),
+  read: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const GetNotificationsResponse = zod.array(GetNotificationsResponseItem);
+
+/**
+ * @summary Mark a notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MarkNotificationReadResponse = zod.object({
+  id: zod.number(),
+  userId: zod.number(),
+  type: zod.string(),
+  message: zod.string(),
+  read: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  count: zod.number().optional(),
+});

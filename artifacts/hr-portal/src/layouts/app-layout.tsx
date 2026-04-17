@@ -5,9 +5,9 @@ import {
   ScrollText, Building2, FolderKanban, Settings, LogOut,
   ChevronRight, Menu, X, Moon, Sun, Shield, StarIcon,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface NavItem {
   label: string;
@@ -212,6 +212,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile header */}
         <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-card shrink-0 md:hidden">
           <button
             onClick={() => setMobileOpen(true)}
@@ -220,7 +221,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="font-bold text-sm">PNG NISIT HR Portal</span>
+          <span className="font-bold text-sm flex-1">PNG NISIT HR Portal</span>
+          <NotificationBell />
+        </header>
+
+        {/* Desktop top bar */}
+        <header className="hidden md:flex h-14 border-b border-border items-center px-6 gap-3 bg-card shrink-0 justify-end">
+          <NotificationBell />
         </header>
 
         <main className="flex-1 overflow-y-auto">

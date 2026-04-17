@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { createNotification, getUserIdByEmail } from "../lib/notificationService";
 const router: IRouter = Router();
 
 async function getJobAgencyId(jobId: number): Promise<number | null> {
@@ -186,6 +187,38 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     })
     .where(eq(applicationsTable.id, params.data.id))
     .returning();
+
+  // Trigger notification to applicant on status change
+  if (body.data.status && body.data.status !== existing.status) {
+    try {
+      const [candidate] = await db.select({ email: candidatesTable.email })
+        .from(candidatesTable)
+        .where(eq(candidatesTable.id, existing.candidateId));
+      if (candidate?.email) {
+        const applicantUserId = await getUserIdByEmail(candidate.email);
+        if (applicantUserId) {
+          const statusLabel: Record<string, string> = {
+            screening: "is being reviewed",
+            interview: "has advanced to interview stage",
+            offer: "has received a job offer",
+            hired: "has been accepted — congratulations!",
+            rejected: "was not successful this time",
+            withdrawn: "has been withdrawn",
+          };
+          const label = statusLabel[body.data.status] ?? `has been updated to "${body.data.status}"`;
+          await createNotification({
+            userId: applicantUserId,
+            type: "application_status",
+            message: `Your application ${label}.`,
+          });
+        }
+      }
+    } catch (err) {
+      // Non-fatal — don't fail the status update if notification fails
+      console.error("[applications] Notification trigger failed:", err);
+    }
+  }
+
   res.json(application);
 });
 

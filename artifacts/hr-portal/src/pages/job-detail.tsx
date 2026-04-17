@@ -180,14 +180,6 @@ export default function JobDetailPage() {
             </Card>
           )}
 
-          {false && ( // requirements not in Job schema
-            <Card>
-              <CardHeader><CardTitle className="text-base">Requirements</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-job-requirements"></p>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </AppLayout>

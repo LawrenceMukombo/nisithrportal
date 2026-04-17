@@ -6,9 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PredictedVacancyItem {
-  departmentName: string;
-  predictedVacancies: number;
-  timeframe: string;
-  confidence?: string;
+export interface Role {
+  id: number;
+  name: string;
 }

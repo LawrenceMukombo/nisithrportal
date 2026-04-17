@@ -91,18 +91,27 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <section className="bg-primary py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl font-bold text-primary-foreground mb-4">
+      {/* Hero: PNG flag-inspired diagonal split — black & red with gold accent bar */}
+      <section className="relative overflow-hidden py-20 px-6" style={{
+        background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)"
+      }}>
+        {/* Gold accent stripe along bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-1.5" style={{ backgroundColor: "#FCD116" }} />
+        <div className="max-w-4xl mx-auto text-center relative z-10">
+          <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase"
+            style={{ backgroundColor: "#FCD116", color: "#0a0a0a" }}>
+            Papua New Guinea Public Service
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-4 drop-shadow-sm">
             Government Careers in Papua New Guinea
           </h1>
-          <p className="text-primary-foreground/80 text-lg mb-8 max-w-2xl mx-auto">
+          <p className="text-white/75 text-lg mb-8 max-w-2xl mx-auto">
             Explore current vacancies across government agencies and departments. Build your career in public service.
           </p>
           <div className="relative max-w-xl mx-auto">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
-              className="pl-12 h-12 text-base bg-background"
+              className="pl-12 h-12 text-base bg-white border-0 shadow-lg"
               placeholder="Search job titles..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}

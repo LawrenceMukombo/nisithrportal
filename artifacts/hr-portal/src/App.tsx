@@ -22,6 +22,9 @@ import ContractsPage from "@/pages/contracts";
 import ContractDetailPage from "@/pages/contract-detail";
 import AgenciesPage from "@/pages/agencies";
 import DepartmentsPage from "@/pages/departments";
+import UsersPage from "@/pages/users";
+import ContractFormPage from "@/pages/contract-form";
+import MyApplicationsPage from "@/pages/my-applications";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,9 +65,7 @@ function Router() {
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
-      <Route path="/jobs">
-        {() => <ProtectedRoute component={JobsPage} />}
-      </Route>
+      <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
         {() => <ProtectedRoute component={JobFormPage} />}
       </Route>
@@ -96,6 +97,9 @@ function Router() {
       <Route path="/contracts">
         {() => <ProtectedRoute component={ContractsPage} />}
       </Route>
+      <Route path="/contracts/new">
+        {() => <ProtectedRoute component={ContractFormPage} />}
+      </Route>
       <Route path="/contracts/:id">
         {() => <ProtectedRoute component={ContractDetailPage} />}
       </Route>
@@ -104,6 +108,12 @@ function Router() {
       </Route>
       <Route path="/departments">
         {() => <ProtectedRoute component={DepartmentsPage} />}
+      </Route>
+      <Route path="/users">
+        {() => <ProtectedRoute component={UsersPage} />}
+      </Route>
+      <Route path="/my-applications">
+        {() => <ProtectedRoute component={MyApplicationsPage} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

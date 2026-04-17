@@ -12,11 +12,13 @@ import contractsRouter from "./contracts";
 import aiScoresRouter from "./ai_scores";
 import dashboardRouter from "./dashboard";
 import aiRouter from "./ai";
+import usersRouter from "./users";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(usersRouter);
 router.use(agenciesRouter);
 router.use(departmentsRouter);
 router.use(positionsRouter);

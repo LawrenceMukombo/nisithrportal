@@ -387,13 +387,46 @@ export interface PredictedVacancyItem {
   departmentName: string;
   predictedVacancies: number;
   timeframe: string;
-  confidence: string;
+  confidence?: string;
 }
 
 export interface WorkforcePrediction {
   attritionRisk: AttritionRiskItem[];
   predictedVacancies: PredictedVacancyItem[];
   recommendations: string[];
+}
+
+export interface UserWithRole {
+  id: number;
+  name: string;
+  email: string;
+  /** @nullable */
+  roleId?: number | null;
+  /** @nullable */
+  roleName?: string | null;
+  /** @nullable */
+  agencyId?: number | null;
+  status: string;
+  createdAt?: string;
+}
+
+export type UpdateUserRequestStatus =
+  (typeof UpdateUserRequestStatus)[keyof typeof UpdateUserRequestStatus];
+
+export const UpdateUserRequestStatus = {
+  active: "active",
+  inactive: "inactive",
+} as const;
+
+export interface UpdateUserRequest {
+  name?: string;
+  roleId?: number;
+  status?: UpdateUserRequestStatus;
+}
+
+export interface Role {
+  id: number;
+  name: string;
 }
 
 export type GetDepartmentsParams = {

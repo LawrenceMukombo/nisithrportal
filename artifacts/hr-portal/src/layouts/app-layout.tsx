@@ -16,7 +16,7 @@ interface NavItem {
 }
 
 function useNavItems() {
-  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard } = useRole();
+  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin } = useRole();
 
   const items: NavItem[] = [];
 
@@ -25,6 +25,10 @@ function useNavItems() {
   }
 
   items.push({ label: "Job Vacancies", href: "/jobs", icon: Briefcase });
+
+  if (isApplicant) {
+    items.push({ label: "My Applications", href: "/my-applications", icon: FileText });
+  }
 
   if (canManageJobs) {
     items.push({ label: "Applications", href: "/applications", icon: FileText });
@@ -45,6 +49,10 @@ function useNavItems() {
   if (canManageAgencies) {
     items.push({ label: "Agencies", href: "/agencies", icon: Building2 });
     items.push({ label: "Departments", href: "/departments", icon: FolderKanban });
+  }
+
+  if (isAdmin) {
+    items.push({ label: "User Management", href: "/users", icon: Settings });
   }
 
   return items;

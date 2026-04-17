@@ -1245,6 +1245,74 @@ paths:
                 items:
                   $ref: "#/components/schemas/RecruitmentPipelineItem"
 
+  # USER MANAGEMENT ENDPOINTS
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: List users in the agency (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserWithRole"
+
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user's role or status (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /roles:
+    get:
+      operationId: getRoles
+      tags: [users]
+      summary: List all roles (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+
   # AI ENDPOINTS
   /ai/parse-cv:
     post:
@@ -2089,4 +2157,50 @@ components:
         - departmentName
         - predictedVacancies
         - timeframe
-        - confidence
+
+    UserWithRole:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        roleId:
+          type: ["integer", "null"]
+        roleName:
+          type: ["string", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - email
+        - status
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        roleId:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive]
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name

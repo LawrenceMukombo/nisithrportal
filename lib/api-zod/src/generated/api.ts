@@ -831,6 +831,53 @@ export const GetDashboardRecruitmentPipelineResponse = zod.array(
 );
 
 /**
+ * @summary List users in the agency (admin only)
+ */
+export const GetUsersResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string(),
+  roleId: zod.number().nullish(),
+  roleName: zod.string().nullish(),
+  agencyId: zod.number().nullish(),
+  status: zod.string(),
+  createdAt: zod.string().optional(),
+});
+export const GetUsersResponse = zod.array(GetUsersResponseItem);
+
+/**
+ * @summary Update a user's role or status (admin only)
+ */
+export const UpdateUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserBody = zod.object({
+  name: zod.string().optional(),
+  roleId: zod.number().optional(),
+  status: zod.enum(["active", "inactive"]).optional(),
+});
+
+export const UpdateUserResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  email: zod.string(),
+  roleId: zod.number().nullish(),
+  agencyId: zod.number().nullish(),
+  status: zod.string(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary List all roles (admin only)
+ */
+export const GetRolesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+});
+export const GetRolesResponse = zod.array(GetRolesResponseItem);
+
+/**
  * @summary Parse a candidate CV and extract structured data
  */
 export const AiParseCvBody = zod.object({
@@ -898,7 +945,7 @@ export const AiPredictWorkforceResponse = zod.object({
       departmentName: zod.string(),
       predictedVacancies: zod.number(),
       timeframe: zod.string(),
-      confidence: zod.string(),
+      confidence: zod.string().optional(),
     }),
   ),
   recommendations: zod.array(zod.string()),

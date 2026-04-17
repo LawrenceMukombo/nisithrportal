@@ -126,7 +126,7 @@ router.get("/applications/track", async (req, res): Promise<void> => {
     return;
   }
 
-  const [job] = await db.select({ title: jobsTable.title, location: jobsTable.location })
+  const [job] = await db.select({ title: jobsTable.title })
     .from(jobsTable).where(eq(jobsTable.id, application.jobId));
 
   res.json({
@@ -134,7 +134,7 @@ router.get("/applications/track", async (req, res): Promise<void> => {
     status: application.status,
     submittedAt: application.createdAt,
     jobTitle: job?.title ?? "Unknown Position",
-    jobLocation: job?.location ?? null,
+    jobLocation: null,
   });
 });
 

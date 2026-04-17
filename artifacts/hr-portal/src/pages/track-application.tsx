@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { Search, ArrowLeft, Clock } from "lucide-react";
+import { useTrackApplication, getTrackApplicationQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const STATUS_LABELS: Record<string, string> = {
   applied: "Application Received",
@@ -27,47 +29,37 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
-type TrackResult = {
-  id: number;
-  status: string;
-  submittedAt: string;
-  jobTitle: string;
-  jobLocation: string | null;
-};
-
 export default function TrackApplicationPage() {
   const [email, setEmail] = useState("");
   const [ref, setRef] = useState("");
-  const [result, setResult] = useState<TrackResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submittedParams, setSubmittedParams] = useState<{ email: string; ref: string } | null>(null);
 
-  const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const cleanRef = (r: string) => r.replace(/^REF-0*/i, "") || r;
 
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setResult(null);
-    setLoading(true);
-
-    const cleanRef = ref.replace(/^REF-0*/i, "");
-
-    try {
-      const res = await fetch(
-        `${baseUrl}/api/applications/track?email=${encodeURIComponent(email)}&ref=${encodeURIComponent(cleanRef)}`
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "No application found with those details.");
-      } else {
-        setResult(await res.json());
-      }
-    } catch {
-      setError("Unable to reach the server. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+  const trackParams = {
+    email: submittedParams?.email ?? "",
+    ref: cleanRef(submittedParams?.ref ?? ""),
   };
+
+  const trackQuery = useTrackApplication(trackParams, {
+    query: {
+      enabled: !!submittedParams,
+      retry: false,
+      queryKey: getTrackApplicationQueryKey(submittedParams ? trackParams : undefined),
+    },
+  });
+
+  const handleTrack = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittedParams({ email, ref });
+  };
+
+  const isLoading = trackQuery.isLoading && !!submittedParams;
+  const result = trackQuery.data;
+  const queryError = trackQuery.error as { message?: string; response?: { data?: { error?: string } } } | null;
+  const errorMessage = queryError
+    ? (queryError.response?.data?.error ?? queryError.message ?? "Application not found. Please check your email and reference number.")
+    : null;
 
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
@@ -96,7 +88,7 @@ export default function TrackApplicationPage() {
             <CardHeader>
               <CardTitle className="text-base">Application Lookup</CardTitle>
               <CardDescription>
-                Your reference number was displayed after submitting your application (e.g. REF-000012).
+                Your reference number was shown after submitting your application (e.g. REF-000012).
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -124,31 +116,45 @@ export default function TrackApplicationPage() {
                     data-testid="input-track-ref"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={loading} data-testid="button-track-submit">
+                <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-track-submit">
                   <Search className="h-4 w-4 mr-2" />
-                  {loading ? "Searching..." : "Check Status"}
+                  {isLoading ? "Searching..." : "Check Status"}
                 </Button>
               </form>
 
-              {error && (
-                <div className="mt-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive" data-testid="track-error">
-                  {error}
+              {isLoading && (
+                <div className="mt-4 space-y-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
                 </div>
               )}
 
-              {result && (
+              {!isLoading && submittedParams && errorMessage && (
+                <div className="mt-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive" data-testid="track-error">
+                  {errorMessage}
+                </div>
+              )}
+
+              {!isLoading && result && (
                 <div className="mt-4 rounded-lg border p-4 space-y-3" data-testid="track-result">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-medium text-sm">{result.jobTitle}</p>
-                      {result.jobLocation && <p className="text-xs text-muted-foreground">{result.jobLocation}</p>}
+                      {result.jobLocation && (
+                        <p className="text-xs text-muted-foreground">{result.jobLocation}</p>
+                      )}
                     </div>
                     <Badge className={`${STATUS_COLORS[result.status] ?? ""} border`} variant="outline">
                       {STATUS_LABELS[result.status] ?? result.status}
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground border-t pt-2">
-                    Submitted: {new Date(result.submittedAt).toLocaleDateString("en-PG", { year: "numeric", month: "long", day: "numeric" })}
+                    Submitted:{" "}
+                    {new Date(result.submittedAt).toLocaleDateString("en-PG", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
                     <span className="ml-3">Ref: REF-{String(result.id).padStart(6, "0")}</span>
                   </div>
                 </div>

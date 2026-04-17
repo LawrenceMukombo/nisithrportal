@@ -437,6 +437,22 @@ export const UpdateCandidateResponse = zod.object({
 });
 
 /**
+ * @summary Look up an application status by email and reference ID (public, no auth required)
+ */
+export const TrackApplicationQueryParams = zod.object({
+  email: zod.coerce.string().email(),
+  ref: zod.coerce.string(),
+});
+
+export const TrackApplicationResponse = zod.object({
+  id: zod.number(),
+  status: zod.string(),
+  submittedAt: zod.string(),
+  jobTitle: zod.string(),
+  jobLocation: zod.string().nullish(),
+});
+
+/**
  * @summary Get the current authenticated user's own applications
  */
 export const GetMyApplicationsResponseItem = zod.object({

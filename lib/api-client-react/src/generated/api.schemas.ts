@@ -167,6 +167,15 @@ export interface Application {
   updatedAt?: string;
 }
 
+export interface ApplicationTrackResult {
+  id: number;
+  status: string;
+  submittedAt: string;
+  jobTitle: string;
+  /** @nullable */
+  jobLocation?: string | null;
+}
+
 export interface CreateApplicationRequest {
   jobId: number;
   candidateName: string;
@@ -448,6 +457,11 @@ export type GetJobsParams = {
   agency_id?: number;
   department_id?: number;
   status?: string;
+};
+
+export type TrackApplicationParams = {
+  email: string;
+  ref: string;
 };
 
 export type GetApplicationsParams = {

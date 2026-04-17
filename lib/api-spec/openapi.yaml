@@ -698,6 +698,43 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   # APPLICATIONS
+  /applications/track:
+    get:
+      operationId: trackApplication
+      tags: [applications]
+      summary: Look up an application status by email and reference ID (public, no auth required)
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+        - name: ref
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application status details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationTrackResult"
+        "400":
+          description: Missing required parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /applications/my:
     get:
       operationId: getMyApplications
@@ -1757,6 +1794,25 @@ components:
         - jobId
         - candidateId
         - status
+
+    ApplicationTrackResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        submittedAt:
+          type: string
+        jobTitle:
+          type: string
+        jobLocation:
+          type: ["string", "null"]
+      required:
+        - id
+        - status
+        - submittedAt
+        - jobTitle
 
     CreateApplicationRequest:
       type: object

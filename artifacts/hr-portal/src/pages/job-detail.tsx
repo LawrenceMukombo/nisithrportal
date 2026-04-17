@@ -94,7 +94,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
               <Link href="/track-application" className="text-primary underline">Track Application</Link>{" "}
               to check your status.
             </p>
-            <Button className="w-full" onClick={() => setOpen(false)}>Close</Button>
+            <Button className="w-full" onClick={() => { setOpen(false); setSubmitted(null); }}>Close</Button>
           </div>
         )}
         {!submitted && (

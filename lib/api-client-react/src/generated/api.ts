@@ -21,6 +21,7 @@ import type {
   AiPredictWorkforceParams,
   AiScore,
   Application,
+  ApplicationTrackResult,
   AuthResponse,
   Candidate,
   Contract,
@@ -63,6 +64,7 @@ import type {
   RecruitmentPipelineItem,
   RegisterRequest,
   Role,
+  TrackApplicationParams,
   UpdateAiScoreRequest,
   UpdateApplicationStatusRequest,
   UpdateCandidateRequest,
@@ -2435,6 +2437,103 @@ export const useUpdateCandidate = <
 > => {
   return useMutation(getUpdateCandidateMutationOptions(options));
 };
+
+/**
+ * @summary Look up an application status by email and reference ID (public, no auth required)
+ */
+export const getTrackApplicationUrl = (params: TrackApplicationParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/applications/track?${stringifiedParams}`
+    : `/api/applications/track`;
+};
+
+export const trackApplication = async (
+  params: TrackApplicationParams,
+  options?: RequestInit,
+): Promise<ApplicationTrackResult> => {
+  return customFetch<ApplicationTrackResult>(getTrackApplicationUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getTrackApplicationQueryKey = (
+  params?: TrackApplicationParams,
+) => {
+  return [`/api/applications/track`, ...(params ? [params] : [])] as const;
+};
+
+export const getTrackApplicationQueryOptions = <
+  TData = Awaited<ReturnType<typeof trackApplication>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: TrackApplicationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof trackApplication>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getTrackApplicationQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof trackApplication>>
+  > = ({ signal }) => trackApplication(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof trackApplication>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type TrackApplicationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof trackApplication>>
+>;
+export type TrackApplicationQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Look up an application status by email and reference ID (public, no auth required)
+ */
+
+export function useTrackApplication<
+  TData = Awaited<ReturnType<typeof trackApplication>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: TrackApplicationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof trackApplication>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getTrackApplicationQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get the current authenticated user's own applications

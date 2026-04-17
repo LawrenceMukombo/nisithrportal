@@ -45,6 +45,10 @@ router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (
     return;
   }
   const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
+  if (agencyId == null) {
+    res.status(403).json({ error: "Forbidden: no agency context — cannot create job" });
+    return;
+  }
   const [job] = await db.insert(jobsTable).values({
     title: parsed.data.title,
     description: parsed.data.description,

@@ -37,6 +37,10 @@ router.post("/departments", authMiddleware, requireRole("admin", "hr_officer"), 
     return;
   }
   const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
+  if (agencyId == null) {
+    res.status(403).json({ error: "Forbidden: no agency context — cannot create department" });
+    return;
+  }
   const [dept] = await db.insert(departmentsTable).values({ name: parsed.data.name, agencyId }).returning();
   res.status(201).json(dept);
 });

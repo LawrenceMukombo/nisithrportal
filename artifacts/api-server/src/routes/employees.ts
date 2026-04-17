@@ -40,6 +40,10 @@ router.post("/employees", authMiddleware, requireRole("admin", "hr_officer"), as
     return;
   }
   const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
+  if (agencyId == null) {
+    res.status(403).json({ error: "Forbidden: no agency context — cannot create employee" });
+    return;
+  }
   const [employee] = await db.insert(employeesTable).values({
     name: parsed.data.name,
     email: parsed.data.email ?? null,

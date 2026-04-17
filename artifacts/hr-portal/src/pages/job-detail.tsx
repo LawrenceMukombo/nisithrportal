@@ -1,6 +1,6 @@
 import { useRoute, useLocation, Link } from "wouter";
-import { ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight } from "lucide-react";
-import { useGetJob, useCreateApplication, useGetApplications, getGetJobQueryKey } from "@workspace/api-client-react";
+import { ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2 } from "lucide-react";
+import { useGetJob, useCreateApplication, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -208,8 +208,23 @@ function ApplyDialog({ jobId }: { jobId: number }) {
   );
 }
 
+type RankedCandidate = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
+
 function ApplicationPipelineCard({ jobId }: { jobId: number }) {
   const { data: applications = [], isLoading } = useGetApplications({ job_id: jobId });
+  const { toast } = useToast();
+  const [rankings, setRankings] = useState<RankedCandidate[]>([]);
+  const rankMutation = useAiRankCandidates();
+
+  const handleRank = async () => {
+    try {
+      const result = await rankMutation.mutateAsync({ data: { jobId } });
+      setRankings(result as RankedCandidate[]);
+      toast({ title: "Candidates ranked by AI" });
+    } catch {
+      toast({ title: "Failed to rank candidates", variant: "destructive" });
+    }
+  };
 
   const byStatus = applications.reduce<Record<string, Application[]>>((acc, app) => {
     (acc[app.status] = acc[app.status] || []).push(app);
@@ -227,7 +242,24 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
             <Users2 className="h-4 w-4 text-primary" />
             <CardTitle className="text-base">Recruitment Pipeline</CardTitle>
           </div>
-          <Badge variant="outline">{applications.length} application{applications.length !== 1 ? "s" : ""}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{applications.length} application{applications.length !== 1 ? "s" : ""}</Badge>
+            {applications.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRank}
+                disabled={rankMutation.isPending}
+                data-testid="button-ai-rank"
+              >
+                {rankMutation.isPending ? (
+                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Ranking...</>
+                ) : (
+                  <><Sparkles className="h-3.5 w-3.5 mr-1" /> AI Rank</>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -282,6 +314,32 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
           </div>
         )}
       </CardContent>
+      {rankings.length > 0 && (
+        <>
+          <Separator />
+          <div className="p-4 space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> AI Candidate Rankings
+            </p>
+            <div className="space-y-2">
+              {rankings.map((r, i) => (
+                <Link key={r.applicationId} href={`/applications/${r.applicationId}`}>
+                  <div className="flex items-center gap-3 p-2.5 rounded-md hover:bg-muted/60 cursor-pointer transition-colors">
+                    <span className="text-xs text-muted-foreground w-4">#{i + 1}</span>
+                    <span className="flex-1 text-sm font-medium">{r.candidateName}</span>
+                    <Badge variant={r.score >= 80 ? "default" : r.score >= 60 ? "secondary" : "outline"}>
+                      {r.score}/100
+                    </Badge>
+                  </div>
+                  {r.recommendation && (
+                    <p className="text-xs text-muted-foreground ml-9 mb-1 line-clamp-1">{r.recommendation}</p>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

@@ -1,43 +1,28 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, candidatesTable, jobsTable, applicationsTable, aiScoresTable, employeesTable, contractsTable, departmentsTable } from "@workspace/db";
 import { AiParseCvBody, AiRankCandidatesBody, AiGenerateInterviewQuestionsBody } from "@workspace/api-zod";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
+import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 const aiRoles = requireRole("admin", "hr_officer");
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.REPLIT_AI_KEY ?? "";
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-    }),
+  const response = await openai.chat.completions.create({
+    model: "gpt-5-mini",
+    max_completion_tokens: 8192,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    logger.error({ status: response.status, body: text }, "AI API error");
-    throw new Error(`AI API error: ${response.status}`);
-  }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-  return data.choices[0].message.content;
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("Empty AI response");
+  return content;
 }
 
 router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<void> => {
@@ -71,7 +56,7 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
 
   try {
     const result = await callAI(
-      "You are an expert CV parser. Extract structured information from the CV text provided. Return JSON only.",
+      "You are an expert CV parser. Extract structured information from the CV text. Return JSON only.",
       `Parse this CV and return JSON with fields: name (string|null), email (string|null), phone (string|null), skills (string[]), experience (string[]), education (string[]), summary (string|null).\n\nCV:\n${cvText}`,
     );
     const parsedData = JSON.parse(result);
@@ -179,7 +164,7 @@ router.post("/ai/interview-questions", authMiddleware, aiRoles, async (req, res)
 
   try {
     const result = await callAI(
-      "You are an expert interviewer. Generate tailored interview questions for a candidate applying to a specific role. Return JSON only.",
+      "You are an expert interviewer. Generate targeted interview questions for a candidate. Return JSON only.",
       `Job Title: ${job.title}\nJob Description: ${job.description}\n\nCandidate: ${candidate.name}\nProfile: ${JSON.stringify(candidate.parsedData ?? { name: candidate.name })}\n\nGenerate 8-10 targeted interview questions. Return JSON: { questions: string[], jobTitle: string }`,
     );
     const parsedResult = JSON.parse(result);
@@ -205,7 +190,7 @@ router.get("/ai/predictions/workforce", authMiddleware, requireRole("admin", "hr
   try {
     const result = await callAI(
       "You are an HR workforce planning expert. Analyze employee and contract data to predict workforce risks. Return JSON only.",
-      `Employees (${employees.length} total, showing up to 20):\n${JSON.stringify(employees.slice(0, 20), null, 2)}\n\nActive Contracts (${contracts.length}):\n${JSON.stringify(contracts.slice(0, 20), null, 2)}\n\nDepartments:\n${JSON.stringify(departments, null, 2)}\n\nReturn JSON: { attritionRisk: Array<{ departmentName, riskLevel: 'low'|'medium'|'high', staffAtRisk: number, reason: string }>, predictedVacancies: Array<{ departmentName, predictedVacancies: number, timeframe: string, confidence: 'low'|'medium'|'high' }>, recommendations: string[] }`,
+      `Employees (${employees.length} total, showing up to 20):\n${JSON.stringify(employees.slice(0, 20), null, 2)}\n\nActive Contracts (${contracts.length}):\n${JSON.stringify(contracts.slice(0, 20), null, 2)}\n\nDepartments:\n${JSON.stringify(departments, null, 2)}\n\nReturn JSON: { attritionRisk: Array<{ departmentName: string, riskLevel: 'low'|'medium'|'high', staffAtRisk: number, reason: string }>, predictedVacancies: Array<{ departmentName: string, predictedVacancies: number, timeframe: string, confidence: 'low'|'medium'|'high' }>, recommendations: string[] }`,
     );
     const parsedResult = JSON.parse(result);
     res.json(parsedResult);

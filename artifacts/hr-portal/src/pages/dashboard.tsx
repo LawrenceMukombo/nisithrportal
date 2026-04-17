@@ -1,11 +1,14 @@
-import { useGetDashboardSummary, useGetDashboardRecruitmentPipeline, useGetDashboardContractExpiries, useGetDashboardWorkforceGaps, getGetDashboardSummaryQueryKey, getGetDashboardRecruitmentPipelineQueryKey, getGetDashboardContractExpiriesQueryKey, getGetDashboardWorkforceGapsQueryKey } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useGetDashboardSummary, useGetDashboardRecruitmentPipeline, useGetDashboardContractExpiries, useGetDashboardWorkforceGaps, useAiPredictWorkforce, getGetDashboardSummaryQueryKey, getGetDashboardRecruitmentPipelineQueryKey, getGetDashboardContractExpiriesQueryKey, getGetDashboardWorkforceGapsQueryKey, getAiPredictWorkforceQueryKey } from "@workspace/api-client-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { Briefcase, Users, FileText, UserCheck, ScrollText, TrendingUp, AlertTriangle, Clock } from "lucide-react";
+import { Briefcase, Users, FileText, UserCheck, ScrollText, TrendingUp, AlertTriangle, Clock, Brain, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/layouts/app-layout";
 import { useAuth } from "@/contexts/auth-context";
+import { useRole } from "@/contexts/auth-context";
 
 function StatCard({ label, value, icon: Icon, delta }: { label: string; value: number | string; icon: React.ComponentType<{className?: string}>; delta?: string }) {
   return (
@@ -30,6 +33,8 @@ const PIPELINE_COLORS = ["#3b4fa8", "#d4a017", "#22c55e", "#ef4444", "#6366f1"];
 
 export default function DashboardPage() {
   const { agencyId } = useAuth();
+  const { isAdmin, isHR, isExecutive } = useRole();
+  const [predictEnabled, setPredictEnabled] = useState(false);
 
   const summary = useGetDashboardSummary(
     { agency_id: agencyId ?? undefined },
@@ -50,6 +55,19 @@ export default function DashboardPage() {
     { agency_id: agencyId ?? undefined },
     { query: { queryKey: getGetDashboardWorkforceGapsQueryKey({ agency_id: agencyId ?? undefined }) } }
   );
+
+  const predictions = useAiPredictWorkforce(
+    agencyId != null ? { agency_id: agencyId } : undefined,
+    {
+      query: {
+        queryKey: getAiPredictWorkforceQueryKey(agencyId != null ? { agency_id: agencyId } : undefined),
+        enabled: predictEnabled,
+        staleTime: 5 * 60 * 1000,
+      },
+    }
+  );
+
+  const canViewPredictions = isAdmin || isHR || isExecutive;
 
   const s = summary.data;
 
@@ -189,6 +207,109 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+        {canViewPredictions && (
+          <Card data-testid="card-ai-predictions">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Brain className="h-4 w-4 text-indigo-500" />
+                    AI Workforce Predictions
+                  </CardTitle>
+                  <CardDescription>AI-powered attrition risk and vacancy forecasts</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (predictEnabled) {
+                      predictions.refetch();
+                    } else {
+                      setPredictEnabled(true);
+                    }
+                  }}
+                  disabled={predictions.isFetching}
+                  data-testid="button-run-predictions"
+                >
+                  {predictions.isFetching ? (
+                    <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Analysing...</>
+                  ) : predictions.data ? (
+                    <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh</>
+                  ) : (
+                    <><Brain className="h-3.5 w-3.5 mr-1" /> Run AI Analysis</>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            {predictions.isFetching && !predictions.data && (
+              <CardContent><Skeleton className="h-40 w-full" /></CardContent>
+            )}
+            {predictions.data && (
+              <CardContent className="space-y-6">
+                {predictions.data.attritionRisk && predictions.data.attritionRisk.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-orange-500" /> Attrition Risk by Department
+                    </h4>
+                    <div className="space-y-2">
+                      {predictions.data.attritionRisk.map((r, i) => (
+                        <div key={i} className="flex items-start justify-between gap-4 p-2.5 rounded-md bg-muted/40">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{r.departmentName}</p>
+                            {r.reason && <p className="text-xs text-muted-foreground mt-0.5">{r.reason}</p>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">{r.staffAtRisk} at risk</span>
+                            <Badge
+                              variant={r.riskLevel === "high" ? "destructive" : r.riskLevel === "medium" ? "secondary" : "outline"}
+                              className="capitalize"
+                            >
+                              {r.riskLevel}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {predictions.data.predictedVacancies && predictions.data.predictedVacancies.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5 text-blue-500" /> Predicted Vacancies
+                    </h4>
+                    <div className="space-y-2">
+                      {predictions.data.predictedVacancies.map((v, i) => (
+                        <div key={i} className="flex items-center justify-between gap-4 p-2.5 rounded-md bg-muted/40">
+                          <div>
+                            <p className="text-sm font-medium">{v.departmentName}</p>
+                            <p className="text-xs text-muted-foreground">{v.timeframe}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold">{v.predictedVacancies}</span>
+                            <Badge variant="outline" className="capitalize text-xs">{v.confidence} confidence</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {predictions.data.recommendations && predictions.data.recommendations.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Recommendations</h4>
+                    <ul className="space-y-1.5">
+                      {predictions.data.recommendations.map((r, i) => (
+                        <li key={i} className="text-sm text-muted-foreground flex gap-2">
+                          <span className="text-indigo-500 mt-0.5">•</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
       </div>
     </AppLayout>
   );

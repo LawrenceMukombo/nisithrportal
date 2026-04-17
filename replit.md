@@ -16,7 +16,7 @@ Full-stack pnpm workspace monorepo for an AI-powered Government HR portal. Initi
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **AI**: OpenAI-compatible API (CV parsing, candidate ranking, interview questions, workforce predictions)
+- **AI**: Replit AI Integration (OpenAI proxy via `@workspace/integrations-openai-ai-server`, model: gpt-5-mini) — CV parsing, candidate ranking, interview questions, workforce predictions; auto CV parse on application submit
 
 ## Key Commands
 

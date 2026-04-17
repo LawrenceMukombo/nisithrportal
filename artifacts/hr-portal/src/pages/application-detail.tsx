@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2 } from "lucide-react";
 import {
   useGetApplication,
   useGetAiScores,
   useUpdateApplicationStatus,
   useCreateAiScore,
   useUpdateAiScore,
+  useAiGenerateInterviewQuestions,
   getGetApplicationQueryKey,
   getGetAiScoresQueryKey,
   getGetApplicationsQueryKey,
@@ -162,6 +163,63 @@ function InterviewEvaluationPanel({
   );
 }
 
+function InterviewQuestionsPanel({ jobId, candidateId }: { jobId: number; candidateId?: number | null }) {
+  const { toast } = useToast();
+  const [questions, setQuestions] = useState<string[]>([]);
+  const [jobTitle, setJobTitle] = useState<string>("");
+  const generateMutation = useAiGenerateInterviewQuestions();
+
+  const handleGenerate = async () => {
+    if (!candidateId) {
+      toast({ title: "No candidate linked to this application", variant: "destructive" });
+      return;
+    }
+    try {
+      const result = await generateMutation.mutateAsync({ data: { jobId, candidateId } });
+      setQuestions(result.questions ?? []);
+      setJobTitle(result.jobTitle ?? "");
+      toast({ title: "Interview questions generated" });
+    } catch {
+      toast({ title: "Failed to generate interview questions", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4 text-indigo-500" /> AI Interview Questions
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleGenerate}
+            disabled={generateMutation.isPending}
+            data-testid="button-generate-questions"
+          >
+            {generateMutation.isPending ? (
+              <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Generating...</>
+            ) : (
+              "Generate Questions"
+            )}
+          </Button>
+        </div>
+      </CardHeader>
+      {questions.length > 0 && (
+        <CardContent>
+          {jobTitle && <p className="text-xs text-muted-foreground mb-3">For: {jobTitle}</p>}
+          <ol className="space-y-2 list-decimal list-inside">
+            {questions.map((q, i) => (
+              <li key={i} className="text-sm text-foreground leading-relaxed">{q}</li>
+            ))}
+          </ol>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function ApplicationDetailPage() {
   const [match, params] = useRoute("/applications/:id");
   const [, setLocation] = useLocation();
@@ -272,6 +330,10 @@ export default function ApplicationDetailPage() {
             existingScore={score?.score}
             existingRecommendation={score?.recommendation}
           />
+        )}
+
+        {canEvaluate && (
+          <InterviewQuestionsPanel jobId={app.jobId} candidateId={app.candidateId} />
         )}
 
         {app.coverLetter && (

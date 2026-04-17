@@ -1004,6 +1004,11 @@ export const UploadFileBody = zod.object({
   file: zod
     .instanceof(File)
     .describe("The file to upload (PDF, DOC, or DOCX, max 10 MB)"),
+  jobId: zod
+    .number()
+    .describe(
+      "ID of the job being applied to. Used to derive the owning agency for tenant-scoped ACL.",
+    ),
 });
 
 export const UploadFileResponse = zod.object({
@@ -1040,10 +1045,16 @@ export const GetStorageObjectParams = zod.object({
 });
 
 /**
+ * Returns the current user's unread notifications by default. Pass all=true to include read notifications.
  * @summary Get current user's notifications
  */
 export const GetNotificationsQueryParams = zod.object({
-  unread_only: zod.coerce.boolean().optional(),
+  all: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "If true, returns all notifications (read and unread). Default is false (unread only).",
+    ),
 });
 
 export const GetNotificationsResponseItem = zod.object({

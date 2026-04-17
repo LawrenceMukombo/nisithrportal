@@ -1498,12 +1498,15 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required: [file, jobId]
               properties:
                 file:
                   type: string
                   format: binary
                   description: The file to upload (PDF, DOC, or DOCX, max 10 MB)
+                jobId:
+                  type: integer
+                  description: ID of the job being applied to. Used to derive the owning agency for tenant-scoped ACL.
       responses:
         "200":
           description: File uploaded successfully.
@@ -1605,14 +1608,16 @@ paths:
       summary: Get current user's notifications
       security:
         - bearerAuth: []
+      description: Returns the current user's unread notifications by default. Pass all=true to include read notifications.
       parameters:
-        - name: unread_only
+        - name: all
           in: query
+          description: If true, returns all notifications (read and unread). Default is false (unread only).
           schema:
             type: boolean
       responses:
         "200":
-          description: List of notifications
+          description: List of notifications (unread only by default)
           content:
             application/json:
               schema:

@@ -13,11 +13,12 @@ const router: IRouter = Router();
 router.get("/notifications", authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const unreadOnly = req.query.unread_only === "true";
+    // Default to returning only unread notifications; pass all=true to get all
+    const showAll = req.query.all === "true";
 
-    const conditions = unreadOnly
-      ? and(eq(notificationsTable.userId, userId), eq(notificationsTable.read, false))
-      : eq(notificationsTable.userId, userId);
+    const conditions = showAll
+      ? eq(notificationsTable.userId, userId)
+      : and(eq(notificationsTable.userId, userId), eq(notificationsTable.read, false));
 
     const notifications = await db
       .select()

@@ -1,11 +1,15 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
 import multer from "multer";
+import { eq } from "drizzle-orm";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
+import { db } from "@workspace/db";
+import { jobsTable } from "@workspace/db/schema";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
+import { setObjectAclPolicy, getObjectAclPolicy } from "../lib/objectAcl";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -33,18 +37,23 @@ const upload = multer({
 /**
  * POST /upload
  *
- * Public multipart file upload endpoint (for unauthenticated applicants submitting CVs).
- * Accepts a single file via multipart/form-data with field name "file".
- * Streams the file server-side to GCS via presigned URL and returns the serving URL.
+ * Public multipart file upload endpoint for applicants submitting CVs during job application.
+ * Accepts multipart/form-data with fields:
+ *   - file: the document (PDF, DOC, DOCX — max 10 MB)
+ *   - jobId: ID of the job being applied to (used to derive the owning agency for ACL)
  *
- * Allowed types: PDF, DOC, DOCX — max 10 MB.
+ * Uploads the file server-side to GCS and sets an ACL policy so only users from the
+ * same agency can retrieve it. Returns the serving URL.
  */
 router.post("/upload", (req: Request, res: Response) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
-      const message = err instanceof multer.MulterError
-        ? (err.code === "LIMIT_FILE_SIZE" ? "File too large (max 10 MB)" : err.message)
-        : (err as Error).message ?? "Invalid file";
+      const message =
+        err instanceof multer.MulterError
+          ? err.code === "LIMIT_FILE_SIZE"
+            ? "File too large (max 10 MB)"
+            : err.message
+          : (err as Error).message ?? "Invalid file";
       res.status(400).json({ error: message });
       return;
     }
@@ -54,15 +63,34 @@ router.post("/upload", (req: Request, res: Response) => {
       return;
     }
 
+    const rawJobId = req.body?.jobId;
+    const jobId = rawJobId ? parseInt(String(rawJobId), 10) : NaN;
+    if (!rawJobId || isNaN(jobId)) {
+      res.status(400).json({ error: "jobId is required to associate the document with a tenant" });
+      return;
+    }
+
     try {
+      // Derive the owning agency from the job (tenant scoping)
+      const [job] = await db
+        .select({ agencyId: jobsTable.agencyId })
+        .from(jobsTable)
+        .where(eq(jobsTable.id, jobId))
+        .limit(1);
+
+      if (!job) {
+        res.status(400).json({ error: "Job not found" });
+        return;
+      }
+
+      // Generate a presigned GCS URL and upload the file server-side
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
       const uploadRes = await fetch(uploadURL, {
         method: "PUT",
         headers: { "Content-Type": req.file.mimetype },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        body: req.file.buffer as any,
+        body: new Uint8Array(req.file.buffer),
       });
 
       if (!uploadRes.ok) {
@@ -70,6 +98,14 @@ router.post("/upload", (req: Request, res: Response) => {
         res.status(500).json({ error: "Failed to store file" });
         return;
       }
+
+      // Set ACL policy — owner is the agency ID (string), visibility private
+      // This enforces tenant isolation on retrieval via canAccessObjectEntity
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      await setObjectAclPolicy(objectFile, {
+        owner: String(job.agencyId),
+        visibility: "private",
+      });
 
       res.json({ url: `/api/storage${objectPath}`, objectPath });
     } catch (error) {
@@ -82,35 +118,39 @@ router.post("/upload", (req: Request, res: Response) => {
 /**
  * POST /storage/uploads/request-url
  *
- * Request a presigned URL for direct client-to-GCS file upload.
- * Requires JWT authentication (for authenticated users such as admins uploading contracts).
- * The client sends JSON metadata (name, size, contentType) — NOT the file.
+ * Request a presigned URL for direct client-to-GCS upload (authenticated staff only).
+ * Requires JWT authentication. The client sends JSON metadata, then uploads directly to GCS.
+ * After uploading, the client should call POST /storage/uploads/set-acl to apply tenant ACL.
  */
-router.post("/storage/uploads/request-url", authMiddleware, async (req: Request, res: Response) => {
-  const parsed = RequestUploadUrlBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Missing or invalid required fields" });
-    return;
-  }
+router.post(
+  "/storage/uploads/request-url",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const parsed = RequestUploadUrlBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing or invalid required fields" });
+      return;
+    }
 
-  try {
-    const { name, size, contentType } = parsed.data;
+    try {
+      const { name, size, contentType } = parsed.data;
 
-    const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-    const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
-    res.json(
-      RequestUploadUrlResponse.parse({
-        uploadURL,
-        objectPath,
-        metadata: { name, size, contentType },
-      }),
-    );
-  } catch (error) {
-    req.log.error({ err: error }, "Error generating upload URL");
-    res.status(500).json({ error: "Failed to generate upload URL" });
-  }
-});
+      res.json(
+        RequestUploadUrlResponse.parse({
+          uploadURL,
+          objectPath,
+          metadata: { name, size, contentType },
+        }),
+      );
+    } catch (error) {
+      req.log.error({ err: error }, "Error generating upload URL");
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  },
+);
 
 /**
  * GET /storage/public-objects/*
@@ -119,39 +159,48 @@ router.post("/storage/uploads/request-url", authMiddleware, async (req: Request,
  * These are unconditionally public — no authentication or ACL checks.
  * IMPORTANT: Always provide this endpoint when object storage is set up.
  */
-router.get("/storage/public-objects/*filePath", async (req: Request, res: Response) => {
-  try {
-    const raw = req.params.filePath;
-    const filePath = Array.isArray(raw) ? raw.join("/") : raw;
-    const file = await objectStorageService.searchPublicObject(filePath);
-    if (!file) {
-      res.status(404).json({ error: "File not found" });
-      return;
+router.get(
+  "/storage/public-objects/*filePath",
+  async (req: Request, res: Response) => {
+    try {
+      const raw = req.params.filePath;
+      const filePath = Array.isArray(raw) ? raw.join("/") : raw;
+      const file = await objectStorageService.searchPublicObject(filePath);
+      if (!file) {
+        res.status(404).json({ error: "File not found" });
+        return;
+      }
+
+      const response = await objectStorageService.downloadObject(file);
+
+      res.status(response.status);
+      response.headers.forEach((value, key) => res.setHeader(key, value));
+
+      if (response.body) {
+        const nodeStream = Readable.fromWeb(
+          response.body as ReadableStream<Uint8Array>,
+        );
+        nodeStream.pipe(res);
+      } else {
+        res.end();
+      }
+    } catch (error) {
+      req.log.error({ err: error }, "Error serving public object");
+      res.status(500).json({ error: "Failed to serve public object" });
     }
-
-    const response = await objectStorageService.downloadObject(file);
-
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (error) {
-    req.log.error({ err: error }, "Error serving public object");
-    res.status(500).json({ error: "Failed to serve public object" });
-  }
-});
+  },
+);
 
 /**
  * GET /storage/objects/*
  *
  * Serve private object entities (uploaded CVs, contracts, certificates).
- * Restricted to authenticated HR staff roles only (admin, hr_officer, hiring_manager, executive).
- * Applicants and unauthenticated users are denied — uploaded documents are for HR review only.
+ * Access control is enforced at two levels:
+ *   1. Role-level: must be an authenticated HR staff member (admin, hr_officer, hiring_manager, executive)
+ *   2. Tenant-level: user's agencyId must match the ACL policy owner set at upload time
+ *
+ * Users with agencyId === null (system-level accounts) bypass tenant isolation.
+ * Returns 403 if the ACL policy is absent or the user's agency does not match the document owner.
  */
 router.get(
   "/storage/objects/*path",
@@ -164,13 +213,32 @@ router.get(
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
+      // Enforce tenant (agency) isolation via stored ACL metadata
+      const aclPolicy = await getObjectAclPolicy(objectFile);
+      if (!aclPolicy) {
+        // No ACL policy set — fail secure
+        res.status(403).json({ error: "Forbidden: document has no access policy" });
+        return;
+      }
+
+      const user = req.user!;
+      const userAgencyId = user.agencyId;
+
+      // System-level accounts (agencyId null) bypass tenant isolation
+      if (userAgencyId !== null && aclPolicy.owner !== String(userAgencyId)) {
+        res.status(403).json({ error: "Forbidden: document belongs to a different agency" });
+        return;
+      }
+
       const response = await objectStorageService.downloadObject(objectFile);
 
       res.status(response.status);
       response.headers.forEach((value, key) => res.setHeader(key, value));
 
       if (response.body) {
-        const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
+        const nodeStream = Readable.fromWeb(
+          response.body as ReadableStream<Uint8Array>,
+        );
         nodeStream.pipe(res);
       } else {
         res.end();

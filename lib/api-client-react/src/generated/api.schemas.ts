@@ -533,6 +533,8 @@ export type AiPredictWorkforceParams = {
 export type UploadFileBody = {
   /** The file to upload (PDF, DOC, or DOCX, max 10 MB) */
   file: Blob;
+  /** ID of the job being applied to. Used to derive the owning agency for tenant-scoped ACL. */
+  jobId: number;
 };
 
 export type UploadFile200 = {
@@ -543,7 +545,10 @@ export type UploadFile200 = {
 };
 
 export type GetNotificationsParams = {
-  unread_only?: boolean;
+  /**
+   * If true, returns all notifications (read and unread). Default is false (unread only).
+   */
+  all?: boolean;
 };
 
 export type MarkAllNotificationsRead200 = {

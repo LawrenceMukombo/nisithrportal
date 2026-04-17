@@ -38,9 +38,10 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-gray-100 text-gray-600",
 };
 
-async function uploadCvFile(file: File): Promise<string> {
+async function uploadCvFile(file: File, jobId: number): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("jobId", String(jobId));
 
   const res = await fetch("/api/upload", {
     method: "POST",
@@ -75,7 +76,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
       if (cvFile) {
         setUploading(true);
         try {
-          cvUrl = await uploadCvFile(cvFile);
+          cvUrl = await uploadCvFile(cvFile, jobId);
         } catch {
           toast({ title: "CV upload failed", description: "Could not upload your CV. Please try again.", variant: "destructive" });
           setUploading(false);

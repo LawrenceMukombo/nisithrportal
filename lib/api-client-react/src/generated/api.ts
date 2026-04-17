@@ -5225,6 +5225,7 @@ export const uploadFile = async (
 ): Promise<UploadFile200> => {
   const formData = new FormData();
   formData.append(`file`, uploadFileBody.file);
+  formData.append(`jobId`, uploadFileBody.jobId.toString());
 
   return customFetch<UploadFile200>(getUploadFileUrl(), {
     ...options,
@@ -5478,6 +5479,7 @@ export function useGetStorageObject<
 }
 
 /**
+ * Returns the current user's unread notifications by default. Pass all=true to include read notifications.
  * @summary Get current user's notifications
  */
 export const getGetNotificationsUrl = (params?: GetNotificationsParams) => {

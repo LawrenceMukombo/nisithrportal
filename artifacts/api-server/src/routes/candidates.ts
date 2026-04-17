@@ -55,8 +55,6 @@ router.get("/candidates", authMiddleware, requireRole("admin", "hr_officer", "hi
   res.json(candidates);
 });
 
-// Intentionally unauthenticated: public-facing candidate registration endpoint.
-// Allows job seekers to create profiles without accounts. Add rate limiting / captcha for production.
 router.post("/candidates", async (req, res): Promise<void> => {
   const parsed = CreateCandidateBody.safeParse(req.body);
   if (!parsed.success) {

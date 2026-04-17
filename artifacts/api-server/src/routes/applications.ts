@@ -43,8 +43,6 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
   res.json(allApps);
 });
 
-// Intentionally unauthenticated: public-facing applicant submission endpoint.
-// Applicants submit without accounts. Rate limiting / captcha should be added for production abuse control.
 router.post("/applications", async (req, res): Promise<void> => {
   const parsed = CreateApplicationBody.safeParse(req.body);
   if (!parsed.success) {

@@ -30,7 +30,7 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   }
 
   if (!isAuthenticated) {
-    conditions.push(eq(jobsTable.status, "published"));
+    conditions.push(inArray(jobsTable.status, ["open", "published"]));
   } else if (query.data.status != null) {
     conditions.push(eq(jobsTable.status, query.data.status));
   }
@@ -85,7 +85,7 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
     return;
   }
   const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
-  const isPublished = job.status === "published";
+  const isPublished = job.status === "published" || job.status === "open";
 
   if (!isPublished && !isOwnAgency) {
     // Draft/closed jobs are only visible to their own agency

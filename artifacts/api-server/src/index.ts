@@ -27,7 +27,9 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
-  seedInitialData().catch((e) => logger.error(e, "Seed error"));
+  if (process.env["SEED_ON_STARTUP"] !== "false") {
+    seedInitialData().catch((e) => logger.error(e, "Seed error"));
+  }
 
   // Run an initial contract expiry check on startup, then every 6 hours.
   triggerContractExpiryNotifications().catch((e) =>

@@ -65,7 +65,7 @@ The HR Officer – Recruitment & Selection is responsible for coordinating end-t
 - Commitment to Equal Employment Opportunity and gender-inclusive hiring practices`,
       departmentId: hr,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(43),
     },
     {
@@ -94,7 +94,7 @@ The Learning & Development Coordinator supports the design, delivery, and evalua
 - Experience designing blended learning solutions (face-to-face + digital)`,
       departmentId: hr,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(57),
     },
 
@@ -125,7 +125,7 @@ The Senior Finance Analyst provides high-quality financial analysis, budgeting, 
 - Knowledge of IPSAS (International Public Sector Accounting Standards)`,
       departmentId: fin,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(38),
     },
     {
@@ -185,7 +185,7 @@ The Senior Software Developer is responsible for the design, development, and ma
 - Contributions to open-source projects or public code portfolios`,
       departmentId: it,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(35),
     },
     {
@@ -214,7 +214,7 @@ The Network & Infrastructure Engineer is responsible for the design, implementat
 - ITIL Foundation certification`,
       departmentId: it,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(52),
     },
     {
@@ -273,7 +273,7 @@ The Operations Manager oversees the day-to-day operational activities of NISIT, 
 - Knowledge of government asset management frameworks`,
       departmentId: ops,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(47),
     },
     {
@@ -302,7 +302,7 @@ The Logistics & Procurement Support Officer assists the Operations Manager in co
 - Knowledge of customs and quarantine requirements for scientific equipment importation into PNG`,
       departmentId: ops,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(60),
     },
 
@@ -333,7 +333,7 @@ The Standards Technical Officer (Electrical & Electronics) develops, reviews, an
 - Experience delivering technical training or compliance workshops`,
       departmentId: sm,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(33),
     },
     {
@@ -362,7 +362,7 @@ The Metrologist – Legal Metrology & Verification is responsible for the verifi
 - Familiarity with ASEAN Consultative Committee for Standards and Quality (ACCSQ) metrology frameworks`,
       departmentId: sm,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(75),
     },
 
@@ -393,7 +393,7 @@ The Industrial Development Officer provides technical and advisory services to s
 - Knowledge of PNG's key export sectors and SME financing landscape`,
       departmentId: ind,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(55),
     },
     {
@@ -453,7 +453,7 @@ The Research Scientist – Materials Testing & Analysis conducts scientific rese
 - Research collaboration experience with Pacific regional or international institutions`,
       departmentId: rd,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(79),
     },
     {
@@ -482,7 +482,7 @@ The R&D Project Officer supports the planning, coordination, and monitoring of N
 - Knowledge of technology commercialisation and intellectual property management`,
       departmentId: rd,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(48),
     },
 
@@ -513,7 +513,7 @@ The Executive Assistant provides high-level personal and administrative support 
 - Shorthand or speed-typing skills`,
       departmentId: adm,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(41),
     },
     {
@@ -571,7 +571,7 @@ The Administrative Officer – Corporate Services provides general administrativ
 - Basic bookkeeping or financial administration experience`,
       departmentId: adm,
       agencyId,
-      status: "published",
+      status: "open",
       closingDate: addDays(62),
     },
   ];

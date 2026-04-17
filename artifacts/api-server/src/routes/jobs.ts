@@ -18,18 +18,20 @@ const router: IRouter = Router();
 
 router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   const query = GetJobsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
   const conditions = [];
 
   if (req.user?.agencyId != null) {
     conditions.push(eq(jobsTable.agencyId, req.user.agencyId));
   }
 
-  if (query.success) {
-    if (query.data.department_id != null) conditions.push(eq(jobsTable.departmentId, query.data.department_id));
-    if (query.data.status != null) conditions.push(eq(jobsTable.status, query.data.status));
-    if (query.data.agency_id != null && req.user?.agencyId == null) {
-      conditions.push(eq(jobsTable.agencyId, query.data.agency_id));
-    }
+  if (query.data.department_id != null) conditions.push(eq(jobsTable.departmentId, query.data.department_id));
+  if (query.data.status != null) conditions.push(eq(jobsTable.status, query.data.status));
+  if (query.data.agency_id != null && req.user?.agencyId == null) {
+    conditions.push(eq(jobsTable.agencyId, query.data.agency_id));
   }
 
   const jobs = conditions.length > 0

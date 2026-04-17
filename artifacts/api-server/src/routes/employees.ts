@@ -15,6 +15,10 @@ const router: IRouter = Router();
 
 router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
   const query = GetEmployeesQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
   const conditions = [];
 
   const agencyId = getTenantAgencyId(req);
@@ -22,10 +26,8 @@ router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "exe
     conditions.push(eq(employeesTable.agencyId, agencyId));
   }
 
-  if (query.success) {
-    if (query.data.department_id != null) conditions.push(eq(employeesTable.departmentId, query.data.department_id));
-    if (query.data.status != null) conditions.push(eq(employeesTable.status, query.data.status));
-  }
+  if (query.data.department_id != null) conditions.push(eq(employeesTable.departmentId, query.data.department_id));
+  if (query.data.status != null) conditions.push(eq(employeesTable.status, query.data.status));
 
   const results = conditions.length > 0
     ? await db.select().from(employeesTable).where(and(...conditions)).orderBy(employeesTable.name)

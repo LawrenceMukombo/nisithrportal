@@ -20,6 +20,10 @@ async function getEmployeeAgencyId(employeeId: number): Promise<number | null> {
 
 router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
   const query = GetContractsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
   const agencyId = getTenantAgencyId(req);
 
   let allContracts = await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
@@ -31,10 +35,8 @@ router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "exe
     allContracts = allContracts.filter((c) => empIds.has(c.employeeId));
   }
 
-  if (query.success) {
-    if (query.data.employee_id != null) allContracts = allContracts.filter((c) => c.employeeId === query.data.employee_id);
-    if (query.data.status != null) allContracts = allContracts.filter((c) => c.status === query.data.status);
-  }
+  if (query.data.employee_id != null) allContracts = allContracts.filter((c) => c.employeeId === query.data.employee_id);
+  if (query.data.status != null) allContracts = allContracts.filter((c) => c.status === query.data.status);
 
   res.json(allContracts);
 });

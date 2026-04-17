@@ -15,12 +15,16 @@ const router: IRouter = Router();
 
 router.get("/departments", authMiddleware, async (req, res): Promise<void> => {
   const query = GetDepartmentsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
   const conditions = [];
 
   const agencyId = getTenantAgencyId(req);
   if (agencyId != null) {
     conditions.push(eq(departmentsTable.agencyId, agencyId));
-  } else if (query.success && query.data.agency_id != null) {
+  } else if (query.data.agency_id != null) {
     conditions.push(eq(departmentsTable.agencyId, query.data.agency_id));
   }
 

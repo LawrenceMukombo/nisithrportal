@@ -20,6 +20,10 @@ async function getJobAgencyId(jobId: number): Promise<number | null> {
 
 router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const query = GetApplicationsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
   const agencyId = getTenantAgencyId(req);
 
   let allApps = await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
@@ -31,11 +35,9 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
     allApps = allApps.filter((a) => jobIds.has(a.jobId));
   }
 
-  if (query.success) {
-    if (query.data.job_id != null) allApps = allApps.filter((a) => a.jobId === query.data.job_id);
-    if (query.data.candidate_id != null) allApps = allApps.filter((a) => a.candidateId === query.data.candidate_id);
-    if (query.data.status != null) allApps = allApps.filter((a) => a.status === query.data.status);
-  }
+  if (query.data.job_id != null) allApps = allApps.filter((a) => a.jobId === query.data.job_id);
+  if (query.data.candidate_id != null) allApps = allApps.filter((a) => a.candidateId === query.data.candidate_id);
+  if (query.data.status != null) allApps = allApps.filter((a) => a.status === query.data.status);
 
   res.json(allApps);
 });

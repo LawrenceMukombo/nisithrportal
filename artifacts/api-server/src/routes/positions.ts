@@ -18,8 +18,12 @@ async function getDeptAgencyId(departmentId: number | null | undefined): Promise
 }
 
 router.get("/positions", authMiddleware, async (req, res): Promise<void> => {
-  const agencyId = getTenantAgencyId(req);
   const query = GetPositionsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
 
   if (agencyId != null) {
     const depts = await db.select({ id: departmentsTable.id })
@@ -34,7 +38,7 @@ router.get("/positions", authMiddleware, async (req, res): Promise<void> => {
     let positions = await db.select().from(positionsTable).orderBy(positionsTable.title);
     positions = positions.filter((p) => p.departmentId != null && deptIds.includes(p.departmentId));
 
-    if (query.success && query.data.department_id != null) {
+    if (query.data.department_id != null) {
       positions = positions.filter((p) => p.departmentId === query.data.department_id);
     }
 
@@ -42,9 +46,8 @@ router.get("/positions", authMiddleware, async (req, res): Promise<void> => {
     return;
   }
 
-  const departmentId = query.success ? query.data.department_id : undefined;
-  const results = departmentId != null
-    ? await db.select().from(positionsTable).where(eq(positionsTable.departmentId, departmentId)).orderBy(positionsTable.title)
+  const results = query.data.department_id != null
+    ? await db.select().from(positionsTable).where(eq(positionsTable.departmentId, query.data.department_id)).orderBy(positionsTable.title)
     : await db.select().from(positionsTable).orderBy(positionsTable.title);
   res.json(results);
 });

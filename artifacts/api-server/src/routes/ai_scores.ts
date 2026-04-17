@@ -30,8 +30,12 @@ async function getAgencyJobIds(agencyId: number): Promise<number[]> {
 }
 
 router.get("/ai-scores", authMiddleware, requireRole(...ROLES), async (req, res): Promise<void> => {
-  const agencyId = getTenantAgencyId(req);
   const query = GetAiScoresQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
 
   let rows = await db.select().from(aiScoresTable).orderBy(aiScoresTable.createdAt);
 
@@ -40,10 +44,8 @@ router.get("/ai-scores", authMiddleware, requireRole(...ROLES), async (req, res)
     rows = rows.filter((s) => s.jobId != null && jobIds.includes(s.jobId));
   }
 
-  if (query.success) {
-    if (query.data.job_id != null) rows = rows.filter((s) => s.jobId === query.data.job_id);
-    if (query.data.candidate_id != null) rows = rows.filter((s) => s.candidateId === query.data.candidate_id);
-  }
+  if (query.data.job_id != null) rows = rows.filter((s) => s.jobId === query.data.job_id);
+  if (query.data.candidate_id != null) rows = rows.filter((s) => s.candidateId === query.data.candidate_id);
 
   res.json(rows);
 });

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, candidatesTable } from "@workspace/db";
+import { db, candidatesTable, applicationsTable, jobsTable } from "@workspace/db";
 import {
   CreateCandidateBody,
   GetCandidateParams,
@@ -8,10 +8,49 @@ import {
   UpdateCandidateBody,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
-router.get("/candidates", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (_req, res): Promise<void> => {
+async function getAgencyJobIds(agencyId: number): Promise<Set<number>> {
+  const jobs = await db.select({ id: jobsTable.id }).from(jobsTable)
+    .where(eq(jobsTable.agencyId, agencyId));
+  return new Set(jobs.map((j) => j.id));
+}
+
+async function getCandidateIdsForAgency(agencyId: number): Promise<Set<number>> {
+  const jobIds = await getAgencyJobIds(agencyId);
+  if (jobIds.size === 0) return new Set();
+
+  const apps = await db.select({ candidateId: applicationsTable.candidateId, jobId: applicationsTable.jobId })
+    .from(applicationsTable);
+
+  const result = new Set<number>();
+  for (const app of apps) {
+    if (jobIds.has(app.jobId)) result.add(app.candidateId);
+  }
+  return result;
+}
+
+async function candidateBelongsToAgency(candidateId: number, agencyId: number): Promise<boolean> {
+  const ids = await getCandidateIdsForAgency(agencyId);
+  return ids.has(candidateId);
+}
+
+router.get("/candidates", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+
+  if (agencyId != null) {
+    const candidateIds = await getCandidateIdsForAgency(agencyId);
+    if (candidateIds.size === 0) {
+      res.json([]);
+      return;
+    }
+    const allCandidates = await db.select().from(candidatesTable).orderBy(candidatesTable.createdAt);
+    res.json(allCandidates.filter((c) => candidateIds.has(c.id)));
+    return;
+  }
+
   const candidates = await db.select().from(candidatesTable).orderBy(candidatesTable.createdAt);
   res.json(candidates);
 });
@@ -42,6 +81,14 @@ router.get("/candidates/:id", authMiddleware, requireRole("admin", "hr_officer",
     res.status(404).json({ error: "Candidate not found" });
     return;
   }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const allowed = await candidateBelongsToAgency(params.data.id, agencyId);
+    if (!allowed) {
+      res.status(403).json({ error: "Forbidden: candidate has no applications to your agency's jobs" });
+      return;
+    }
+  }
   res.json(candidate);
 });
 
@@ -50,6 +97,14 @@ router.patch("/candidates/:id", authMiddleware, requireRole("admin", "hr_officer
   if (!params.success) {
     res.status(400).json({ error: "Invalid candidate id" });
     return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const allowed = await candidateBelongsToAgency(params.data.id, agencyId);
+    if (!allowed) {
+      res.status(403).json({ error: "Forbidden: candidate has no applications to your agency's jobs" });
+      return;
+    }
   }
   const body = UpdateCandidateBody.safeParse(req.body);
   if (!body.success) {

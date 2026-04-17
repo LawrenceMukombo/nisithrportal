@@ -147,5 +147,4 @@ router.patch("/jobs/:id/close", authMiddleware, requireRole("admin", "hr_officer
   res.json(job);
 });
 
-export { inArray };
 export default router;

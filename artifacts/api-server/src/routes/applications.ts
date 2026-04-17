@@ -116,16 +116,19 @@ router.post("/applications", async (req, res): Promise<void> => {
 
   res.status(201).json(application);
 
-  // Notify HR Officers in the job's agency about the new application
+  // Notify the responsible HR officer (job poster) about the new application.
+  // If the job has no assigned poster, fall back to all HR officers in the agency.
   try {
-    const [job] = await db.select({ agencyId: jobsTable.agencyId, title: jobsTable.title })
+    const [job] = await db
+      .select({ agencyId: jobsTable.agencyId, title: jobsTable.title, createdBy: jobsTable.createdBy })
       .from(jobsTable).where(eq(jobsTable.id, jobId));
     if (job?.agencyId != null) {
-      await notifyHrOfficers(
-        job.agencyId,
-        "new_application",
-        `New application received from ${candidateName} for "${job.title}".`,
-      );
+      const message = `New application received from ${candidateName} for "${job.title}".`;
+      if (job.createdBy != null) {
+        await createNotification({ userId: job.createdBy, type: "new_application", message });
+      } else {
+        await notifyHrOfficers(job.agencyId, "new_application", message);
+      }
     }
   } catch (err) {
     console.error("[applications] New application HR notification failed:", err);

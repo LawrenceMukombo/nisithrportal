@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, lt, gte, sql, count, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { db, employeesTable, jobsTable, contractsTable, applicationsTable, departmentsTable, positionsTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
@@ -7,13 +8,20 @@ import { getTenantAgencyId } from "../middlewares/tenant";
 const router: IRouter = Router();
 const dashboardRoles = requireRole("admin", "hr_officer", "executive");
 
+const DashboardQueryParams = z.object({
+  agency_id: z.coerce.number().int().positive().optional(),
+  days: z.coerce.number().int().min(1).max(730).optional(),
+});
+
 function resolveAgencyId(req: Parameters<typeof getTenantAgencyId>[0]): number | undefined {
-  const fromQuery = req.query?.agency_id ? parseInt(req.query.agency_id as string, 10) : undefined;
+  const fromQuery = req.query?.agency_id ? Number(req.query.agency_id) : undefined;
   const fromToken = req.user?.agencyId ?? undefined;
   return fromToken ?? fromQuery;
 }
 
 router.get("/dashboard/summary", authMiddleware, dashboardRoles, async (req, res): Promise<void> => {
+  const query = DashboardQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
   const agencyId = resolveAgencyId(req);
 
   const now = new Date();
@@ -110,6 +118,8 @@ router.get("/dashboard/summary", authMiddleware, dashboardRoles, async (req, res
 });
 
 router.get("/dashboard/workforce-gaps", authMiddleware, dashboardRoles, async (req, res): Promise<void> => {
+  const query = DashboardQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
   const agencyId = resolveAgencyId(req);
 
   const departments = agencyId != null
@@ -141,7 +151,9 @@ router.get("/dashboard/workforce-gaps", authMiddleware, dashboardRoles, async (r
 });
 
 router.get("/dashboard/contract-expiries", authMiddleware, dashboardRoles, async (req, res): Promise<void> => {
-  const days = req.query.days ? parseInt(req.query.days as string, 10) : 90;
+  const query = DashboardQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
+  const days = query.data.days ?? 90;
   const agencyId = resolveAgencyId(req);
 
   const now = new Date();
@@ -192,6 +204,8 @@ router.get("/dashboard/contract-expiries", authMiddleware, dashboardRoles, async
 });
 
 router.get("/dashboard/recruitment-pipeline", authMiddleware, dashboardRoles, async (req, res): Promise<void> => {
+  const query = DashboardQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid query parameters" }); return; }
   const agencyId = resolveAgencyId(req);
   const statuses = ["applied", "shortlisted", "interview", "selected", "rejected"];
 

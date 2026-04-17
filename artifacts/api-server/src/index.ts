@@ -23,5 +23,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  seedInitialData().catch((e) => logger.error(e, "Seed error"));
+  if (process.env["SEED_ON_STARTUP"] === "true") {
+    seedInitialData().catch((e) => logger.error(e, "Seed error"));
+  }
 });

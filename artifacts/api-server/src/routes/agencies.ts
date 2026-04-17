@@ -9,10 +9,17 @@ import {
   DeleteAgencyParams,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
-router.get("/agencies", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/agencies", authMiddleware, async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+    res.json(agency ? [agency] : []);
+    return;
+  }
   const agencies = await db.select().from(agenciesTable).orderBy(agenciesTable.name);
   res.json(agencies);
 });
@@ -41,6 +48,11 @@ router.get("/agencies/:id", authMiddleware, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Agency not found" });
     return;
   }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null && agency.id !== agencyId) {
+    res.status(403).json({ error: "Forbidden: resource belongs to a different agency" });
+    return;
+  }
   res.json(agency);
 });
 
@@ -48,6 +60,11 @@ router.delete("/agencies/:id", authMiddleware, requireRole("admin"), async (req,
   const params = DeleteAgencyParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {
     res.status(400).json({ error: "Invalid agency id" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null && params.data.id !== agencyId) {
+    res.status(403).json({ error: "Forbidden: cannot delete another agency's record" });
     return;
   }
   const [agency] = await db.delete(agenciesTable).where(eq(agenciesTable.id, params.data.id)).returning();
@@ -62,6 +79,11 @@ router.put("/agencies/:id", authMiddleware, requireRole("admin"), async (req, re
   const params = UpdateAgencyParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {
     res.status(400).json({ error: "Invalid agency id" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null && params.data.id !== agencyId) {
+    res.status(403).json({ error: "Forbidden: cannot update another agency's record" });
     return;
   }
   const body = UpdateAgencyBody.safeParse(req.body);

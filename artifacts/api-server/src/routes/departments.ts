@@ -80,4 +80,20 @@ router.put("/departments/:id", authMiddleware, requireRole("admin", "hr_officer"
   res.json(dept);
 });
 
+router.delete("/departments/:id", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const id = parseIntParam(req.params.id);
+  if (id < 0) {
+    res.status(400).json({ error: "Invalid department id" });
+    return;
+  }
+  const [existing] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Department not found" });
+    return;
+  }
+  if (!assertTenantAccess(res, existing.agencyId, getTenantAgencyId(req))) return;
+  await db.delete(departmentsTable).where(eq(departmentsTable.id, id));
+  res.sendStatus(204);
+});
+
 export default router;

@@ -186,6 +186,13 @@ export const UpdateDepartmentResponse = zod.object({
 });
 
 /**
+ * @summary Delete a department
+ */
+export const DeleteDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary List positions
  */
 export const GetPositionsQueryParams = zod.object({

@@ -1,10 +1,11 @@
 import { pgTable, serial, integer, text, date, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { employeesTable } from "./employees";
 
 export const contractsTable = pgTable("contracts", {
   id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   startDate: date("start_date").notNull(),
   endDate: date("end_date"),
   type: text("type").notNull().default("fixed_term"),

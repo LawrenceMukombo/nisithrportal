@@ -99,6 +99,13 @@ export const GetAgencyResponse = zod.object({
 });
 
 /**
+ * @summary Delete an agency
+ */
+export const DeleteAgencyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Update agency
  */
 export const UpdateAgencyParams = zod.object({

@@ -65,9 +65,21 @@ All routes under `/api/`:
 - `POST /ai/interview-questions` — AI interview question generation
 - `GET /ai/predictions/workforce` — AI workforce predictions
 
-## Auth
+## Auth & RBAC
 
-JWT-based authentication. Tokens expire in 7 days. `JWT_SECRET` env var controls signing (defaults to a dev key if not set — set it in production). `authMiddleware` in `artifacts/api-server/src/middlewares/auth.ts` validates Bearer tokens.
+JWT-based authentication. Tokens expire in 7 days. `JWT_SECRET` env var controls signing (exits process in production if unset, warns in development). `authMiddleware` validates Bearer tokens. `requireRole(...roles)` enforces role-based access control.
+
+### Role Permissions
+
+| Role | Agencies | Jobs | Candidates | Applications | Employees/Contracts | Dashboard |
+|---|---|---|---|---|---|---|
+| admin | full CRUD | full CRUD | read/write | read/write | full CRUD | full |
+| hr_officer | read | full CRUD | read/write | read/write | full CRUD | full |
+| hiring_manager | read | read | read | read/update status | read | — |
+| executive | read | read | — | — | read | full |
+| applicant | read | read | self-create | self-create | — | — |
+
+All write routes use Zod validation via generated schemas from `@workspace/api-zod`. Dashboard endpoints apply agency_id scoping so non-admin users only see their own agency's data.
 
 ## Environment Variables
 

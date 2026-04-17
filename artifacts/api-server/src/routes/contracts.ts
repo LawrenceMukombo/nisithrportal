@@ -1,46 +1,54 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, contractsTable } from "@workspace/db";
-import { authMiddleware } from "../middlewares/auth";
+import {
+  GetContractsQueryParams,
+  CreateContractBody,
+  GetContractParams,
+  UpdateContractParams,
+  UpdateContractBody,
+} from "@workspace/api-zod";
+import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/contracts", authMiddleware, async (req, res): Promise<void> => {
-  const employeeId = req.query.employee_id ? parseInt(req.query.employee_id as string, 10) : undefined;
-  const status = req.query.status as string | undefined;
-
+router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
+  const query = GetContractsQueryParams.safeParse(req.query);
   const conditions = [];
-  if (employeeId) conditions.push(eq(contractsTable.employeeId, employeeId));
-  if (status) conditions.push(eq(contractsTable.status, status));
-
+  if (query.success) {
+    if (query.data.employee_id != null) conditions.push(eq(contractsTable.employeeId, query.data.employee_id));
+    if (query.data.status != null) conditions.push(eq(contractsTable.status, query.data.status));
+  }
   const results = conditions.length > 0
     ? await db.select().from(contractsTable).where(and(...conditions)).orderBy(contractsTable.createdAt)
     : await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
-
   res.json(results);
 });
 
-router.post("/contracts", authMiddleware, async (req, res): Promise<void> => {
-  const { employeeId, startDate, endDate, type, documentUrl } = req.body;
-  if (!employeeId || !startDate) {
-    res.status(400).json({ error: "employeeId and startDate are required" });
+router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const parsed = CreateContractBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
   const [contract] = await db.insert(contractsTable).values({
-    employeeId,
-    startDate,
-    endDate: endDate ?? null,
-    type: type ?? "fixed_term",
+    employeeId: parsed.data.employeeId,
+    startDate: parsed.data.startDate,
+    endDate: parsed.data.endDate ?? null,
+    type: parsed.data.type ?? "fixed_term",
     status: "active",
-    documentUrl: documentUrl ?? null,
+    documentUrl: parsed.data.documentUrl ?? null,
   }).returning();
   res.status(201).json(contract);
 });
 
-router.get("/contracts/:id", authMiddleware, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const [contract] = await db.select().from(contractsTable).where(eq(contractsTable.id, id));
+router.get("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
+  const params = GetContractParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid contract id" });
+    return;
+  }
+  const [contract] = await db.select().from(contractsTable).where(eq(contractsTable.id, params.data.id));
   if (!contract) {
     res.status(404).json({ error: "Contract not found" });
     return;
@@ -48,13 +56,25 @@ router.get("/contracts/:id", authMiddleware, async (req, res): Promise<void> => 
   res.json(contract);
 });
 
-router.patch("/contracts/:id", authMiddleware, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const { endDate, type, status, documentUrl } = req.body;
+router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const params = UpdateContractParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid contract id" });
+    return;
+  }
+  const body = UpdateContractBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
   const [contract] = await db.update(contractsTable)
-    .set({ endDate, type, status, documentUrl })
-    .where(eq(contractsTable.id, id))
+    .set({
+      endDate: body.data.endDate ?? undefined,
+      type: body.data.type,
+      status: body.data.status,
+      documentUrl: body.data.documentUrl ?? undefined,
+    })
+    .where(eq(contractsTable.id, params.data.id))
     .returning();
   if (!contract) {
     res.status(404).json({ error: "Contract not found" });

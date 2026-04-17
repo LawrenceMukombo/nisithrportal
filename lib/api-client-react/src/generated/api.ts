@@ -634,6 +634,90 @@ export function useGetAgency<
 }
 
 /**
+ * @summary Delete an agency
+ */
+export const getDeleteAgencyUrl = (id: number) => {
+  return `/api/agencies/${id}`;
+};
+
+export const deleteAgency = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAgencyUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAgencyMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAgency>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAgency>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAgency"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAgency>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAgency(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAgencyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAgency>>
+>;
+
+export type DeleteAgencyMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete an agency
+ */
+export const useDeleteAgency = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAgency>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAgency>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAgencyMutationOptions(options));
+};
+
+/**
  * @summary Update agency
  */
 export const getUpdateAgencyUrl = (id: number) => {

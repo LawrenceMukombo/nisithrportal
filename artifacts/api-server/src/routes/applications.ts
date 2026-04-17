@@ -1,34 +1,38 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, applicationsTable, candidatesTable } from "@workspace/db";
-import { authMiddleware } from "../middlewares/auth";
+import {
+  GetApplicationsQueryParams,
+  CreateApplicationBody,
+  GetApplicationParams,
+  UpdateApplicationStatusParams,
+  UpdateApplicationStatusBody,
+} from "@workspace/api-zod";
+import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/applications", authMiddleware, async (req, res): Promise<void> => {
-  const jobId = req.query.job_id ? parseInt(req.query.job_id as string, 10) : undefined;
-  const candidateId = req.query.candidate_id ? parseInt(req.query.candidate_id as string, 10) : undefined;
-  const status = req.query.status as string | undefined;
-
+router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const query = GetApplicationsQueryParams.safeParse(req.query);
   const conditions = [];
-  if (jobId) conditions.push(eq(applicationsTable.jobId, jobId));
-  if (candidateId) conditions.push(eq(applicationsTable.candidateId, candidateId));
-  if (status) conditions.push(eq(applicationsTable.status, status));
-
+  if (query.success) {
+    if (query.data.job_id != null) conditions.push(eq(applicationsTable.jobId, query.data.job_id));
+    if (query.data.candidate_id != null) conditions.push(eq(applicationsTable.candidateId, query.data.candidate_id));
+    if (query.data.status != null) conditions.push(eq(applicationsTable.status, query.data.status));
+  }
   const results = conditions.length > 0
     ? await db.select().from(applicationsTable).where(and(...conditions)).orderBy(applicationsTable.createdAt)
     : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
-
   res.json(results);
 });
 
 router.post("/applications", async (req, res): Promise<void> => {
-  const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl, coverLetter } = req.body;
-
-  if (!jobId || !candidateName || !candidateEmail) {
-    res.status(400).json({ error: "jobId, candidateName, and candidateEmail are required" });
+  const parsed = CreateApplicationBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl, coverLetter } = parsed.data;
 
   let [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.email, candidateEmail));
   if (!candidate) {
@@ -39,7 +43,10 @@ router.post("/applications", async (req, res): Promise<void> => {
       cvUrl: cvUrl ?? null,
     }).returning();
   } else if (cvUrl) {
-    [candidate] = await db.update(candidatesTable).set({ cvUrl }).where(eq(candidatesTable.id, candidate.id)).returning();
+    [candidate] = await db.update(candidatesTable)
+      .set({ cvUrl, name: candidateName })
+      .where(eq(candidatesTable.id, candidate.id))
+      .returning();
   }
 
   const [application] = await db.insert(applicationsTable).values({
@@ -52,10 +59,13 @@ router.post("/applications", async (req, res): Promise<void> => {
   res.status(201).json(application);
 });
 
-router.get("/applications/:id", authMiddleware, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id));
+router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const params = GetApplicationParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid application id" });
+    return;
+  }
+  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
   if (!application) {
     res.status(404).json({ error: "Application not found" });
     return;
@@ -63,17 +73,24 @@ router.get("/applications/:id", authMiddleware, async (req, res): Promise<void> 
   res.json(application);
 });
 
-router.patch("/applications/:id/status", authMiddleware, async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(raw, 10);
-  const { status, notes, score } = req.body;
-  if (!status) {
-    res.status(400).json({ error: "status is required" });
+router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const params = UpdateApplicationStatusParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid application id" });
+    return;
+  }
+  const body = UpdateApplicationStatusBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
     return;
   }
   const [application] = await db.update(applicationsTable)
-    .set({ status, notes: notes ?? undefined, score: score ?? undefined })
-    .where(eq(applicationsTable.id, id))
+    .set({
+      status: body.data.status,
+      notes: body.data.notes ?? undefined,
+      score: body.data.score ?? undefined,
+    })
+    .where(eq(applicationsTable.id, params.data.id))
     .returning();
   if (!application) {
     res.status(404).json({ error: "Application not found" });

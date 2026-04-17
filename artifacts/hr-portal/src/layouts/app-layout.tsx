@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
-  ChevronRight, Menu, X, Moon, Sun, Shield,
+  ChevronRight, Menu, X, Moon, Sun, Shield, StarIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, useRole } from "@/contexts/auth-context";
@@ -16,7 +16,7 @@ interface NavItem {
 }
 
 function useNavItems() {
-  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin } = useRole();
+  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager } = useRole();
 
   const items: NavItem[] = [];
 
@@ -32,6 +32,10 @@ function useNavItems() {
 
   if (canManageJobs) {
     items.push({ label: "Applications", href: "/applications", icon: FileText });
+  }
+
+  if (isHiringManager || canManageJobs) {
+    items.push({ label: "Shortlisted", href: "/shortlisted", icon: StarIcon });
   }
 
   if (canViewCandidates) {

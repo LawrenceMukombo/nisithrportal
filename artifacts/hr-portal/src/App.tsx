@@ -26,6 +26,7 @@ import UsersPage from "@/pages/users";
 import ContractFormPage from "@/pages/contract-form";
 import MyApplicationsPage from "@/pages/my-applications";
 import TrackApplicationPage from "@/pages/track-application";
+import ShortlistedPage from "@/pages/shortlisted";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,41 +83,44 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
-        {() => <ProtectedRoute component={JobFormPage} />}
+        {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/jobs/:id/edit">
-        {() => <ProtectedRoute component={JobFormPage} />}
+        {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/jobs/:id" component={JobDetailPage} />
       <Route path="/dashboard">
         {() => <ProtectedRoute component={DashboardPage} roles={["admin", "hr_officer", "hiring_manager", "executive"]} />}
       </Route>
+      <Route path="/shortlisted">
+        {() => <ProtectedRoute component={ShortlistedPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
+      </Route>
       <Route path="/candidates">
-        {() => <ProtectedRoute component={CandidatesPage} />}
+        {() => <ProtectedRoute component={CandidatesPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/candidates/:id">
-        {() => <ProtectedRoute component={CandidateDetailPage} />}
+        {() => <ProtectedRoute component={CandidateDetailPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/applications">
-        {() => <ProtectedRoute component={ApplicationsPage} />}
+        {() => <ProtectedRoute component={ApplicationsPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/applications/:id">
-        {() => <ProtectedRoute component={ApplicationDetailPage} />}
+        {() => <ProtectedRoute component={ApplicationDetailPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/employees">
-        {() => <ProtectedRoute component={EmployeesPage} />}
+        {() => <ProtectedRoute component={EmployeesPage} roles={["admin", "hr_officer", "executive"]} />}
       </Route>
       <Route path="/employees/:id">
-        {() => <ProtectedRoute component={EmployeeDetailPage} />}
+        {() => <ProtectedRoute component={EmployeeDetailPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/contracts">
-        {() => <ProtectedRoute component={ContractsPage} />}
+        {() => <ProtectedRoute component={ContractsPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/contracts/new">
-        {() => <ProtectedRoute component={ContractFormPage} />}
+        {() => <ProtectedRoute component={ContractFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/contracts/:id">
-        {() => <ProtectedRoute component={ContractDetailPage} />}
+        {() => <ProtectedRoute component={ContractDetailPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/agencies">
         {() => <ProtectedRoute component={AgenciesPage} roles={["admin"]} />}
@@ -128,7 +132,7 @@ function Router() {
         {() => <ProtectedRoute component={UsersPage} roles={["admin"]} />}
       </Route>
       <Route path="/my-applications">
-        {() => <ProtectedRoute component={MyApplicationsPage} />}
+        {() => <ProtectedRoute component={MyApplicationsPage} roles={["applicant"]} />}
       </Route>
       <Route path="/track-application" component={TrackApplicationPage} />
       <Route component={NotFound} />

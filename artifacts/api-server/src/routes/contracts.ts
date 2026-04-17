@@ -53,14 +53,20 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
     const empAgencyId = await getEmployeeAgencyId(parsed.data.employeeId);
     if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
   }
-  const [contract] = await db.insert(contractsTable).values({
-    employeeId: parsed.data.employeeId,
-    startDate: parsed.data.startDate,
-    endDate: parsed.data.endDate ?? null,
-    type: parsed.data.type ?? "fixed_term",
-    status: "active",
-    documentUrl: parsed.data.documentUrl ?? null,
-  }).returning();
+  const contract = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(contractsTable).values({
+      employeeId: parsed.data.employeeId,
+      startDate: parsed.data.startDate,
+      endDate: parsed.data.endDate ?? null,
+      type: parsed.data.type ?? "fixed_term",
+      status: "active",
+      documentUrl: parsed.data.documentUrl ?? null,
+    }).returning();
+    await tx.update(employeesTable)
+      .set({ contractId: created.id })
+      .where(eq(employeesTable.id, parsed.data.employeeId));
+    return created;
+  });
   res.status(201).json(contract);
 });
 
@@ -104,15 +110,27 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
     res.status(400).json({ error: body.error.message });
     return;
   }
-  const [contract] = await db.update(contractsTable)
-    .set({
-      endDate: body.data.endDate ?? undefined,
-      type: body.data.type,
-      status: body.data.status,
-      documentUrl: body.data.documentUrl ?? undefined,
-    })
-    .where(eq(contractsTable.id, params.data.id))
-    .returning();
+  const contract = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(contractsTable)
+      .set({
+        endDate: body.data.endDate ?? undefined,
+        type: body.data.type,
+        status: body.data.status,
+        documentUrl: body.data.documentUrl ?? undefined,
+      })
+      .where(eq(contractsTable.id, params.data.id))
+      .returning();
+    if (body.data.status != null && body.data.status !== existing.status) {
+      if (body.data.status === "active") {
+        await tx.update(employeesTable).set({ contractId: updated.id }).where(eq(employeesTable.id, existing.employeeId));
+      } else {
+        await tx.update(employeesTable).set({ contractId: null }).where(
+          and(eq(employeesTable.id, existing.employeeId), eq(employeesTable.contractId, existing.id))
+        );
+      }
+    }
+    return updated;
+  });
   res.json(contract);
 });
 

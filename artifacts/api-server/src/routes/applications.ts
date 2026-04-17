@@ -12,7 +12,11 @@ import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth"
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
+import { ObjectStorageService } from "../lib/objectStorage";
+import { canAccessObjectForAgency } from "../lib/objectAcl";
 const router: IRouter = Router();
+
+const INTERNAL_OBJECT_PREFIX = "/api/storage/objects/";
 
 async function getJobAgencyId(jobId: number): Promise<number | null> {
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
@@ -74,9 +78,9 @@ router.post("/applications", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl, coverLetter } = parsed.data;
+  const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl: rawCvUrl, coverLetter } = parsed.data;
 
-  const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate })
+  const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate, agencyId: jobsTable.agencyId })
     .from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!jobExists || jobExists.status !== "published") {
     res.status(422).json({ error: "Job is not accepting applications" });
@@ -85,6 +89,24 @@ router.post("/applications", async (req, res): Promise<void> => {
   if (jobExists.closingDate != null && new Date(jobExists.closingDate) < new Date()) {
     res.status(422).json({ error: "Job closing date has passed" });
     return;
+  }
+
+  // Validate caller-provided cvUrl to prevent IDOR via forged internal storage paths.
+  // Internal storage paths must have an ACL policy owned by this job's agency.
+  // Unvalidated or cross-agency paths are silently dropped (not stored or parsed).
+  let cvUrl: string | null = rawCvUrl ?? null;
+  if (cvUrl && cvUrl.startsWith(INTERNAL_OBJECT_PREFIX)) {
+    try {
+      const svc = new ObjectStorageService();
+      const objectPath = "/objects/" + cvUrl.slice(INTERNAL_OBJECT_PREFIX.length);
+      const file = await svc.getObjectEntityFile(objectPath);
+      const allowed = await canAccessObjectForAgency(file, jobExists.agencyId ?? null);
+      if (!allowed) {
+        cvUrl = null;
+      }
+    } catch {
+      cvUrl = null;
+    }
   }
 
   let [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.email, candidateEmail));

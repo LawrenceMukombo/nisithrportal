@@ -24,48 +24,52 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  const [agency] = await db.insert(agenciesTable).values({
-    name: agencyName,
-    type: agencyType ?? "government",
-  }).returning();
+  const result = await db.transaction(async (tx) => {
+    const [agency] = await tx.insert(agenciesTable).values({
+      name: agencyName,
+      type: agencyType ?? "government",
+    }).returning();
 
-  const targetRoleName = roleName ?? "admin";
-  const existingRoles = await db.select().from(rolesTable).where(eq(rolesTable.name, targetRoleName));
-  let roleId: number;
-  if (existingRoles.length > 0) {
-    roleId = existingRoles[0].id;
-  } else {
-    const [role] = await db.insert(rolesTable).values({ name: targetRoleName }).returning();
-    roleId = role.id;
-  }
+    const targetRoleName = roleName ?? "admin";
+    const existingRoles = await tx.select().from(rolesTable).where(eq(rolesTable.name, targetRoleName));
+    let roleId: number;
+    if (existingRoles.length > 0) {
+      roleId = existingRoles[0].id;
+    } else {
+      const [role] = await tx.insert(rolesTable).values({ name: targetRoleName }).returning();
+      roleId = role.id;
+    }
 
-  const [user] = await db.insert(usersTable).values({
-    name,
-    email,
-    passwordHash,
-    agencyId: agency.id,
-    roleId,
-    status: "active",
-  }).returning();
+    const [user] = await tx.insert(usersTable).values({
+      name,
+      email,
+      passwordHash,
+      agencyId: agency.id,
+      roleId,
+      status: "active",
+    }).returning();
+
+    return { user, targetRoleName };
+  });
 
   const token = generateToken({
-    userId: user.id,
-    email: user.email,
-    roleId: user.roleId ?? null,
-    agencyId: user.agencyId ?? null,
-    roleName: targetRoleName,
+    userId: result.user.id,
+    email: result.user.email,
+    roleId: result.user.roleId ?? null,
+    agencyId: result.user.agencyId ?? null,
+    roleName: result.targetRoleName,
   });
 
   res.status(201).json({
     token,
     user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      roleId: user.roleId,
-      agencyId: user.agencyId,
-      status: user.status,
-      createdAt: user.createdAt.toISOString(),
+      id: result.user.id,
+      name: result.user.name,
+      email: result.user.email,
+      roleId: result.user.roleId,
+      agencyId: result.user.agencyId,
+      status: result.user.status,
+      createdAt: result.user.createdAt.toISOString(),
     },
   });
 });

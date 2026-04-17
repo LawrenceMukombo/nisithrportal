@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db, contractsTable, employeesTable } from "@workspace/db";
 import {
   GetContractsQueryParams,
@@ -25,18 +25,19 @@ router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "exe
     return;
   }
   const agencyId = getTenantAgencyId(req);
-
-  let allContracts = await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
+  const conditions = [];
 
   if (agencyId != null) {
-    const employeesInAgency = await db.select({ id: employeesTable.id })
-      .from(employeesTable).where(eq(employeesTable.agencyId, agencyId));
-    const empIds = new Set(employeesInAgency.map((e) => e.id));
-    allContracts = allContracts.filter((c) => empIds.has(c.employeeId));
+    conditions.push(inArray(contractsTable.employeeId,
+      db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.agencyId, agencyId)),
+    ));
   }
+  if (query.data.employee_id != null) conditions.push(eq(contractsTable.employeeId, query.data.employee_id));
+  if (query.data.status != null) conditions.push(eq(contractsTable.status, query.data.status));
 
-  if (query.data.employee_id != null) allContracts = allContracts.filter((c) => c.employeeId === query.data.employee_id);
-  if (query.data.status != null) allContracts = allContracts.filter((c) => c.status === query.data.status);
+  const allContracts = conditions.length > 0
+    ? await db.select().from(contractsTable).where(and(...conditions)).orderBy(contractsTable.createdAt)
+    : await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
 
   res.json(allContracts);
 });

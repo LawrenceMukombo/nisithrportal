@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, SQL } from "drizzle-orm";
 import { db, aiScoresTable, jobsTable } from "@workspace/db";
 import { GetAiScoresQueryParams } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
@@ -22,13 +22,6 @@ const UpdateAiScoreBody = z.object({
   recommendation: z.string().optional(),
 });
 
-async function getAgencyJobIds(agencyId: number): Promise<number[]> {
-  const rows = await db.select({ id: jobsTable.id })
-    .from(jobsTable)
-    .where(eq(jobsTable.agencyId, agencyId));
-  return rows.map((r) => r.id);
-}
-
 router.get("/ai-scores", authMiddleware, requireRole(...ROLES), async (req, res): Promise<void> => {
   const query = GetAiScoresQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -36,16 +29,19 @@ router.get("/ai-scores", authMiddleware, requireRole(...ROLES), async (req, res)
     return;
   }
   const agencyId = getTenantAgencyId(req);
-
-  let rows = await db.select().from(aiScoresTable).orderBy(aiScoresTable.createdAt);
+  const conditions: SQL[] = [];
 
   if (agencyId != null) {
-    const jobIds = await getAgencyJobIds(agencyId);
-    rows = rows.filter((s) => s.jobId != null && jobIds.includes(s.jobId));
+    conditions.push(inArray(aiScoresTable.jobId,
+      db.select({ id: jobsTable.id }).from(jobsTable).where(eq(jobsTable.agencyId, agencyId)),
+    ));
   }
+  if (query.data.job_id != null) conditions.push(eq(aiScoresTable.jobId, query.data.job_id));
+  if (query.data.candidate_id != null) conditions.push(eq(aiScoresTable.candidateId, query.data.candidate_id));
 
-  if (query.data.job_id != null) rows = rows.filter((s) => s.jobId === query.data.job_id);
-  if (query.data.candidate_id != null) rows = rows.filter((s) => s.candidateId === query.data.candidate_id);
+  const rows = conditions.length > 0
+    ? await db.select().from(aiScoresTable).where(and(...conditions)).orderBy(aiScoresTable.createdAt)
+    : await db.select().from(aiScoresTable).orderBy(aiScoresTable.createdAt);
 
   res.json(rows);
 });

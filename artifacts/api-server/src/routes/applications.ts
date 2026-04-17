@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db, applicationsTable, candidatesTable, jobsTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
@@ -25,23 +25,26 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
     return;
   }
   const agencyId = getTenantAgencyId(req);
-
-  let allApps = await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
+  const conditions = [];
 
   if (agencyId != null) {
-    const agencyJobs = await db.select({ id: jobsTable.id })
-      .from(jobsTable).where(eq(jobsTable.agencyId, agencyId));
-    const jobIds = new Set(agencyJobs.map((j) => j.id));
-    allApps = allApps.filter((a) => jobIds.has(a.jobId));
+    conditions.push(inArray(applicationsTable.jobId,
+      db.select({ id: jobsTable.id }).from(jobsTable).where(eq(jobsTable.agencyId, agencyId)),
+    ));
   }
+  if (query.data.job_id != null) conditions.push(eq(applicationsTable.jobId, query.data.job_id));
+  if (query.data.candidate_id != null) conditions.push(eq(applicationsTable.candidateId, query.data.candidate_id));
+  if (query.data.status != null) conditions.push(eq(applicationsTable.status, query.data.status));
 
-  if (query.data.job_id != null) allApps = allApps.filter((a) => a.jobId === query.data.job_id);
-  if (query.data.candidate_id != null) allApps = allApps.filter((a) => a.candidateId === query.data.candidate_id);
-  if (query.data.status != null) allApps = allApps.filter((a) => a.status === query.data.status);
+  const allApps = conditions.length > 0
+    ? await db.select().from(applicationsTable).where(and(...conditions)).orderBy(applicationsTable.createdAt)
+    : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
 
   res.json(allApps);
 });
 
+// Intentionally unauthenticated: public-facing applicant submission endpoint.
+// Applicants submit without accounts. Rate limiting / captcha should be added for production abuse control.
 router.post("/applications", async (req, res): Promise<void> => {
   const parsed = CreateApplicationBody.safeParse(req.body);
   if (!parsed.success) {

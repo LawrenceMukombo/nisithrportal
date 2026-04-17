@@ -7,6 +7,10 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { extractTextFromUrl } from "../lib/cvParser";
+import { ObjectStorageService } from "../lib/objectStorage";
+import { canAccessObjectForAgency } from "../lib/objectAcl";
+
+const INTERNAL_STORAGE_PREFIX = "/api/storage/";
 
 const router: IRouter = Router();
 const aiRoles = requireRole("admin", "hr_officer");
@@ -32,7 +36,13 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { candidateId, cvText } = parsed.data;
+  const { candidateId, cvUrl: reqCvUrl, cvText } = parsed.data;
+
+  // Reject internal storage paths in caller-provided cvUrl (IDOR prevention).
+  if (reqCvUrl && reqCvUrl.startsWith(INTERNAL_STORAGE_PREFIX)) {
+    res.status(400).json({ error: "cvUrl must be an external HTTPS URL; internal storage paths are not accepted" });
+    return;
+  }
 
   const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
   if (!candidate) {
@@ -55,18 +65,43 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
     }
   }
 
-  // Source CV text: use the candidate's uploaded document from storage (tenant-scoped,
-  // already ACL-verified via the application lookup above), then fall back to inline cvText.
-  const cvUrl = candidate.cvUrl ?? null;
-  if (!cvUrl && !cvText) {
+  // Determine the CV URL to use:
+  // 1. Caller-provided external HTTPS URL (reqCvUrl) — already validated not to be internal.
+  // 2. Candidate's stored cvUrl from DB — ACL-checked against requesting user's agency to
+  //    prevent cross-tenant access via the shared-by-email candidate table.
+  // 3. Inline cvText from request body.
+  let resolvedCvUrl: string | null = reqCvUrl ?? null;
+
+  if (!resolvedCvUrl && candidate.cvUrl) {
+    const dbCvUrl = candidate.cvUrl;
+    if (dbCvUrl.startsWith(INTERNAL_STORAGE_PREFIX)) {
+      try {
+        const svc = new ObjectStorageService();
+        const objectPath = "/objects/" + dbCvUrl.slice("/api/storage/objects/".length);
+        const file = await svc.getObjectEntityFile(objectPath);
+        const allowed = await canAccessObjectForAgency(file, agencyId ?? null);
+        if (allowed) {
+          resolvedCvUrl = dbCvUrl;
+        }
+        // If not allowed, fall through to cvText (cross-tenant file silently skipped)
+      } catch {
+        // Object not found or ACL error — fall through to cvText
+      }
+    } else {
+      // External URL stored in DB — use as-is (SSRF validation happens inside extractTextFromUrl)
+      resolvedCvUrl = dbCvUrl;
+    }
+  }
+
+  if (!resolvedCvUrl && !cvText) {
     res.status(400).json({ error: "No CV available: upload a CV file first, or provide cvText" });
     return;
   }
 
   try {
     let textToparse: string;
-    if (cvUrl) {
-      textToparse = await extractTextFromUrl(cvUrl);
+    if (resolvedCvUrl) {
+      textToparse = await extractTextFromUrl(resolvedCvUrl);
     } else {
       textToparse = cvText as string;
     }

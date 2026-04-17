@@ -345,9 +345,12 @@ export interface RecruitmentPipelineItem {
 }
 
 export interface ParseCvRequest {
-  /** The candidate to parse. The server automatically retrieves the candidate's uploaded CV document from storage. Provide cvText only when no file has been uploaded yet. */
+  /** The candidate whose CV to parse. The server uses the candidate's uploaded document from storage when available. */
   candidateId: number;
-  /** Raw CV text to parse. Used as fallback when the candidate has no uploaded CV document on record. */
+  /** Optional external HTTPS URL of a CV document (PDF or plain text) to parse. When provided, the server downloads and extracts text from this URL. Must be an absolute HTTPS URL; internal storage paths are not accepted here. If omitted, the server uses the candidate's uploaded document on record.
+   */
+  cvUrl?: string;
+  /** Raw CV text to parse. Used as fallback when no document URL is available. */
   cvText?: string;
 }
 

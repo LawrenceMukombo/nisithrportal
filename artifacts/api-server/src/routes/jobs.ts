@@ -84,11 +84,14 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Job not found" });
     return;
   }
-  if (req.user == null && job.status !== "published") {
-    res.status(404).json({ error: "Job not found" });
+  const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
+  const isPublished = job.status === "published";
+
+  if (!isPublished && !isOwnAgency) {
+    // Draft/closed jobs are only visible to their own agency
+    res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
-  if (req.user?.agencyId != null && !assertTenantAccess(res, job.agencyId, req.user.agencyId)) return;
   res.json(job);
 });
 

@@ -2,12 +2,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { Shield } from "lucide-react";
+import { Shield, Info } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth-context";
 import { useRegister } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +16,6 @@ const schema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   agencyName: z.string().min(2, "Agency name required"),
-  roleName: z.enum(["hr_officer", "hiring_manager", "admin", "executive", "applicant"]),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -34,7 +32,6 @@ export default function RegisterPage() {
       email: "",
       password: "",
       agencyName: "",
-      roleName: "applicant",
     },
   });
 
@@ -51,7 +48,7 @@ export default function RegisterPage() {
   });
 
   const onSubmit = (values: FormValues) => {
-    registerMutation.mutate({ data: values });
+    registerMutation.mutate({ data: { ...values, agencyType: "government" } });
   };
 
   return (
@@ -62,15 +59,26 @@ export default function RegisterPage() {
             <Shield className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">PNG NISIT</h1>
-          <p className="text-muted-foreground text-sm mt-1">HR Portal — Create Account</p>
+          <p className="text-muted-foreground text-sm mt-1">HR Portal — Register Your Agency</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Register</CardTitle>
-            <CardDescription>Create your HR Portal account</CardDescription>
+            <CardTitle className="text-lg">Create Agency Admin Account</CardTitle>
+            <CardDescription>
+              Register your government agency and create an Administrator account. Additional staff
+              accounts (HR Officers, Hiring Managers, Executives) are created by the Administrator
+              through User Management after login.
+            </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="flex items-start gap-2 p-3 mb-4 rounded-md bg-muted text-sm text-muted-foreground">
+              <Info className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                This form creates a <strong>System Administrator</strong> account for your agency.
+                Public applicants can browse and apply for jobs without creating an account.
+              </span>
+            </div>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
@@ -125,37 +133,13 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="roleName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Role</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-role">
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="applicant">Public Applicant</SelectItem>
-                          <SelectItem value="hr_officer">HR Officer</SelectItem>
-                          <SelectItem value="hiring_manager">Hiring Manager</SelectItem>
-                          <SelectItem value="admin">System Admin</SelectItem>
-                          <SelectItem value="executive">Executive</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <Button
                   type="submit"
                   className="w-full"
                   disabled={registerMutation.isPending}
                   data-testid="button-submit"
                 >
-                  {registerMutation.isPending ? "Creating account..." : "Create account"}
+                  {registerMutation.isPending ? "Creating account..." : "Create Agency Admin Account"}
                 </Button>
               </form>
             </Form>

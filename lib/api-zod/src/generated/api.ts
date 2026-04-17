@@ -849,6 +849,16 @@ export const GetDashboardRecruitmentPipelineResponse = zod.array(
 );
 
 /**
+ * @summary Create a new user in the admin's agency
+ */
+export const CreateUserBody = zod.object({
+  name: zod.string(),
+  email: zod.string(),
+  password: zod.string(),
+  roleId: zod.number(),
+});
+
+/**
  * @summary List users in the agency (admin only)
  */
 export const GetUsersResponseItem = zod.object({

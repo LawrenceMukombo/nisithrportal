@@ -24,6 +24,7 @@ export * from "./createDepartmentRequest";
 export * from "./createEmployeeRequest";
 export * from "./createJobRequest";
 export * from "./createPositionRequest";
+export * from "./createUserRequest";
 export * from "./dashboardSummary";
 export * from "./department";
 export * from "./employee";

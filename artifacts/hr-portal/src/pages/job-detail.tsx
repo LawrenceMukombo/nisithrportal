@@ -1,6 +1,7 @@
-import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Calendar, MapPin, Building2, Send } from "lucide-react";
-import { useGetJob, useCreateApplication, getGetJobQueryKey } from "@workspace/api-client-react";
+import { useRoute, useLocation, Link } from "wouter";
+import { ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight } from "lucide-react";
+import { useGetJob, useCreateApplication, useGetApplications, getGetJobQueryKey } from "@workspace/api-client-react";
+import type { Application } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import { z } from "zod";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { AppLayout } from "@/layouts/app-layout";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/auth-context";
 
 const appSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -26,6 +27,16 @@ const appSchema = z.object({
   coverLetter: z.string().optional(),
 });
 type AppForm = z.infer<typeof appSchema>;
+
+const STATUS_COLORS: Record<string, string> = {
+  applied: "bg-blue-100 text-blue-700",
+  screening: "bg-yellow-100 text-yellow-700",
+  interview: "bg-purple-100 text-purple-700",
+  offer: "bg-green-100 text-green-700",
+  hired: "bg-emerald-100 text-emerald-700",
+  rejected: "bg-red-100 text-red-700",
+  withdrawn: "bg-gray-100 text-gray-600",
+};
 
 function ApplyDialog({ jobId }: { jobId: number }) {
   const [open, setOpen] = useState(false);
@@ -121,15 +132,96 @@ function ApplyDialog({ jobId }: { jobId: number }) {
   );
 }
 
+function ApplicationPipelineCard({ jobId }: { jobId: number }) {
+  const { data: applications = [], isLoading } = useGetApplications({ job_id: jobId });
+
+  const byStatus = applications.reduce<Record<string, Application[]>>((acc, app) => {
+    (acc[app.status] = acc[app.status] || []).push(app);
+    return acc;
+  }, {});
+
+  const statusOrder = ["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn"];
+  const activeStatuses = statusOrder.filter((s) => (byStatus[s]?.length ?? 0) > 0);
+
+  return (
+    <Card data-testid="card-pipeline">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users2 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-base">Recruitment Pipeline</CardTitle>
+          </div>
+          <Badge variant="outline">{applications.length} application{applications.length !== 1 ? "s" : ""}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+        ) : applications.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No applications yet for this position.</p>
+        ) : (
+          <div className="space-y-4">
+            {/* Status summary row */}
+            <div className="flex flex-wrap gap-2">
+              {activeStatuses.map((status) => (
+                <span
+                  key={status}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600"}`}
+                >
+                  {status} ({byStatus[status]?.length})
+                </span>
+              ))}
+            </div>
+            <Separator />
+            {/* Applications table */}
+            <div className="space-y-1">
+              {applications.slice(0, 20).map((app) => (
+                <Link key={app.id} href={`/applications/${app.id}`}>
+                  <div
+                    className="flex items-center justify-between p-2.5 rounded-md hover:bg-muted/60 cursor-pointer transition-colors"
+                    data-testid={`pipeline-row-${app.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[app.status] ?? "bg-gray-100 text-gray-600"}`}
+                      >
+                        {app.status}
+                      </span>
+                      <span className="text-sm font-medium">Candidate #{app.candidateId}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {app.createdAt && <span>{new Date(app.createdAt).toLocaleDateString()}</span>}
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+              {applications.length > 20 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">
+                  +{applications.length - 20} more —{" "}
+                  <Link href="/applications" className="text-primary hover:underline">view all applications</Link>
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function JobDetailPage() {
   const [match, params] = useRoute("/jobs/:id");
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
+  const { isAdmin, isHR, isHiringManager } = useRole();
 
   const jobId = match ? parseInt(params!.id) : 0;
   const { data: job, isLoading } = useGetJob(jobId, {
     query: { enabled: !!jobId, queryKey: getGetJobQueryKey(jobId) }
   });
+
+  const canViewPipeline = isAuthenticated && (isAdmin || isHR || isHiringManager);
 
   if (isLoading) {
     return (
@@ -189,6 +281,7 @@ export default function JobDetailPage() {
             </Card>
           )}
 
+          {canViewPipeline && <ApplicationPipelineCard jobId={job.id} />}
         </div>
       </div>
     </AppLayout>

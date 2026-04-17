@@ -410,6 +410,13 @@ export interface UserWithRole {
   createdAt?: string;
 }
 
+export interface CreateUserRequest {
+  name: string;
+  email: string;
+  password: string;
+  roleId: number;
+}
+
 export type UpdateUserRequestStatus =
   (typeof UpdateUserRequestStatus)[keyof typeof UpdateUserRequestStatus];
 

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { db, usersTable, rolesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
@@ -7,10 +8,56 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
+const CreateUserBody = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8),
+  roleId: z.number().int().positive(),
+});
+
 const UpdateUserBody = z.object({
   name: z.string().min(1).optional(),
   roleId: z.number().int().positive().optional(),
   status: z.enum(["active", "inactive"]).optional(),
+});
+
+router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  const body = CreateUserBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, body.data.email));
+  if (existing.length > 0) {
+    res.status(409).json({ error: "Email already in use" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(body.data.password, 10);
+
+  const [user] = await db.insert(usersTable).values({
+    name: body.data.name,
+    email: body.data.email,
+    passwordHash,
+    roleId: body.data.roleId,
+    agencyId: agencyId ?? undefined,
+    status: "active",
+  }).returning({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    roleId: usersTable.roleId,
+    agencyId: usersTable.agencyId,
+    status: usersTable.status,
+    createdAt: usersTable.createdAt,
+  });
+
+  const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
+  const roleName = roles[0]?.name ?? null;
+
+  res.status(201).json({ ...user, roleName });
 });
 
 router.get("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {

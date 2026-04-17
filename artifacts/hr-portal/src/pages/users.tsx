@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGetUsers, useGetRoles, useUpdateUser } from "@workspace/api-client-react";
+import { useGetUsers, useGetRoles, useUpdateUser, useCreateUser } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Users, Search, Edit } from "lucide-react";
+import { Users, Search, Edit, UserPlus } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -20,6 +20,115 @@ const ROLE_LABELS: Record<string, string> = {
   executive: "Executive",
   applicant: "Applicant",
 };
+
+function CreateUserDialog({
+  roles,
+  open,
+  onClose,
+}: {
+  roles: Role[];
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [roleId, setRoleId] = useState("");
+
+  const createUser = useCreateUser();
+
+  const handleCreate = async () => {
+    if (!name.trim() || !email.trim() || !password.trim() || !roleId) {
+      toast({ title: "All fields required", variant: "destructive" });
+      return;
+    }
+    try {
+      await createUser.mutateAsync({
+        data: {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          roleId: parseInt(roleId),
+        },
+      });
+      toast({ title: "User created", description: `${name} has been added.` });
+      setName(""); setEmail(""); setPassword(""); setRoleId("");
+      onClose();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast({ title: "Creation failed", description: msg ?? "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const staffRoles = roles.filter((r) => r.name !== "applicant");
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Create New Staff User</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Full Name</p>
+            <Input
+              placeholder="Jane Smith"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              data-testid="input-create-user-name"
+            />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Email</p>
+            <Input
+              type="email"
+              placeholder="jane@agency.gov.pg"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              data-testid="input-create-user-email"
+            />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Temporary Password</p>
+            <Input
+              type="password"
+              placeholder="Min. 8 characters"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              data-testid="input-create-user-password"
+            />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Role</p>
+            <Select value={roleId} onValueChange={setRoleId}>
+              <SelectTrigger data-testid="select-create-user-role">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {staffRoles.map((r) => (
+                  <SelectItem key={r.id} value={r.id.toString()}>
+                    {ROLE_LABELS[r.name] ?? r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button
+              onClick={handleCreate}
+              disabled={createUser.isPending}
+              data-testid="button-confirm-create-user"
+            >
+              {createUser.isPending ? "Creating..." : "Create User"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function EditUserDialog({
   user,
@@ -112,6 +221,7 @@ function EditUserDialog({
 export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [editUser, setEditUser] = useState<UserWithRole | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   const { data: users = [], isLoading: loadingUsers, refetch } = useGetUsers();
   const { data: roles = [], isLoading: loadingRoles } = useGetRoles();
@@ -130,7 +240,16 @@ export default function UsersPage() {
             <Users className="h-5 w-5 text-primary" />
             <h1 className="text-2xl font-bold" data-testid="heading-users">User Management</h1>
           </div>
-          <p className="text-sm text-muted-foreground">{users.length} user{users.length !== 1 ? "s" : ""}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">{users.length} user{users.length !== 1 ? "s" : ""}</p>
+            <Button
+              size="sm"
+              onClick={() => setShowCreate(true)}
+              data-testid="button-create-user"
+            >
+              <UserPlus className="h-4 w-4 mr-1" /> Invite Staff
+            </Button>
+          </div>
         </div>
 
         <div className="relative max-w-sm">
@@ -202,6 +321,12 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      <CreateUserDialog
+        roles={roles}
+        open={showCreate}
+        onClose={() => { setShowCreate(false); refetch(); }}
+      />
 
       {editUser && (
         <EditUserDialog

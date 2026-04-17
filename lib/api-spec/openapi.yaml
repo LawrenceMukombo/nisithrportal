@@ -1264,6 +1264,31 @@ paths:
 
   # USER MANAGEMENT ENDPOINTS
   /users:
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user in the admin's agency
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserWithRole"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     get:
       operationId: getUsers
       tags: [users]
@@ -2199,6 +2224,23 @@ components:
         - name
         - email
         - status
+
+    CreateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        roleId:
+          type: integer
+      required:
+        - name
+        - email
+        - password
+        - roleId
 
     UpdateUserRequest:
       type: object

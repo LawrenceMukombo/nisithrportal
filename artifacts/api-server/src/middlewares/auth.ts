@@ -2,18 +2,18 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { logger } from "../lib/logger";
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET ?? process.env.SESSION_SECRET;
 
 if (!JWT_SECRET) {
-  if (process.env.NODE_ENV === "test") {
-    logger.warn("JWT_SECRET not set — using test-only fallback. Never deploy without JWT_SECRET.");
-  } else {
-    logger.error("JWT_SECRET environment variable is not set — cannot start the server");
-    process.exit(1);
-  }
+  logger.error("Neither JWT_SECRET nor SESSION_SECRET environment variable is set — cannot start the server");
+  process.exit(1);
 }
 
-const effectiveSecret: string = JWT_SECRET ?? "hr-portal-test-only-secret";
+if (!process.env.JWT_SECRET && process.env.SESSION_SECRET) {
+  logger.warn("JWT_SECRET not set — falling back to SESSION_SECRET. Set JWT_SECRET for production.");
+}
+
+const effectiveSecret: string = JWT_SECRET;
 
 export interface JwtPayload {
   userId: number;

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db, positionsTable, departmentsTable } from "@workspace/db";
 import {
   GetPositionsQueryParams,
@@ -24,30 +24,23 @@ router.get("/positions", authMiddleware, async (req, res): Promise<void> => {
     return;
   }
   const agencyId = getTenantAgencyId(req);
+  const conditions = [];
 
   if (agencyId != null) {
-    const depts = await db.select({ id: departmentsTable.id })
-      .from(departmentsTable).where(eq(departmentsTable.agencyId, agencyId));
-    const deptIds = depts.map((d) => d.id);
-
-    if (deptIds.length === 0) {
-      res.json([]);
-      return;
-    }
-
-    let positions = await db.select().from(positionsTable).orderBy(positionsTable.title);
-    positions = positions.filter((p) => p.departmentId != null && deptIds.includes(p.departmentId));
-
-    if (query.data.department_id != null) {
-      positions = positions.filter((p) => p.departmentId === query.data.department_id);
-    }
-
-    res.json(positions);
-    return;
+    conditions.push(
+      inArray(
+        positionsTable.departmentId,
+        db.select({ id: departmentsTable.id }).from(departmentsTable).where(eq(departmentsTable.agencyId, agencyId))
+      )
+    );
   }
 
-  const results = query.data.department_id != null
-    ? await db.select().from(positionsTable).where(eq(positionsTable.departmentId, query.data.department_id)).orderBy(positionsTable.title)
+  if (query.data.department_id != null) {
+    conditions.push(eq(positionsTable.departmentId, query.data.department_id));
+  }
+
+  const results = conditions.length > 0
+    ? await db.select().from(positionsTable).where(and(...conditions)).orderBy(positionsTable.title)
     : await db.select().from(positionsTable).orderBy(positionsTable.title);
   res.json(results);
 });

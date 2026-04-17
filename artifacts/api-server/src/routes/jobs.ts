@@ -109,6 +109,14 @@ router.put("/jobs/:id", authMiddleware, requireRole("admin", "hr_officer"), asyn
     res.status(400).json({ error: body.error.message });
     return;
   }
+  if (body.data.departmentId != null) {
+    const dept = await db.select({ agencyId: departmentsTable.agencyId })
+      .from(departmentsTable).where(eq(departmentsTable.id, body.data.departmentId)).then((r) => r[0]);
+    if (!dept || dept.agencyId !== existing.agencyId) {
+      res.status(403).json({ error: "Forbidden: department does not belong to this agency" });
+      return;
+    }
+  }
   const [job] = await db.update(jobsTable).set({
     title: body.data.title,
     description: body.data.description,

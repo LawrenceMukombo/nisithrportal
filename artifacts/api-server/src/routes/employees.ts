@@ -104,6 +104,26 @@ router.patch("/employees/:id", authMiddleware, requireRole("admin", "hr_officer"
     res.status(400).json({ error: body.error.message });
     return;
   }
+  if (body.data.departmentId != null) {
+    const dept = await db.select({ agencyId: departmentsTable.agencyId })
+      .from(departmentsTable).where(eq(departmentsTable.id, body.data.departmentId)).then((r) => r[0]);
+    if (!dept || dept.agencyId !== existing.agencyId) {
+      res.status(403).json({ error: "Forbidden: department does not belong to this agency" });
+      return;
+    }
+  }
+  if (body.data.positionId != null) {
+    const pos = await db
+      .select({ agencyId: departmentsTable.agencyId })
+      .from(positionsTable)
+      .innerJoin(departmentsTable, eq(positionsTable.departmentId, departmentsTable.id))
+      .where(eq(positionsTable.id, body.data.positionId))
+      .then((r) => r[0]);
+    if (!pos || pos.agencyId !== existing.agencyId) {
+      res.status(403).json({ error: "Forbidden: position does not belong to this agency" });
+      return;
+    }
+  }
   const [employee] = await db.update(employeesTable)
     .set({
       name: body.data.name,

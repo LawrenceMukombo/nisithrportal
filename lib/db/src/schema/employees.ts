@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, date, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { departmentsTable } from "./departments";
@@ -15,7 +15,7 @@ export const employeesTable = pgTable("employees", {
   agencyId: integer("agency_id").notNull().references(() => agenciesTable.id, { onDelete: "cascade" }),
   contractId: integer("contract_id"),
   status: text("status").notNull().default("active"),
-  startDate: text("start_date"),
+  startDate: date("start_date"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -70,11 +70,6 @@ router.post("/applications", async (req, res): Promise<void> => {
       phone: candidatePhone ?? null,
       cvUrl: cvUrl ?? null,
     }).returning();
-  } else if (cvUrl) {
-    [candidate] = await db.update(candidatesTable)
-      .set({ cvUrl, name: candidateName })
-      .where(eq(candidatesTable.id, candidate.id))
-      .returning();
   }
 
   const [application] = await db.insert(applicationsTable).values({

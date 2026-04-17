@@ -1021,7 +1021,9 @@ export const UploadFileResponse = zod.object({
 });
 
 /**
- * @summary Request a presigned URL for file upload
+ * Returns a GCS presigned PUT URL for direct client-to-GCS upload. Restricted to HR staff roles. After uploading, call POST /storage/uploads/confirm to apply tenant ACL so the file is retrievable via GET /storage/objects/*.
+
+ * @summary Request a presigned URL for direct file upload (HR staff only)
  */
 
 export const RequestUploadUrlBody = zod.object({
@@ -1033,6 +1035,24 @@ export const RequestUploadUrlBody = zod.object({
 export const RequestUploadUrlResponse = zod.object({
   uploadURL: zod.string().url(),
   objectPath: zod.string(),
+});
+
+/**
+ * After uploading a file via the presigned URL returned by POST /storage/uploads/request-url, call this endpoint to apply the tenant ACL (sets the calling user's agency as the owner). Without this step, the file is not retrievable via GET /storage/objects/*. Restricted to HR staff roles.
+
+ * @summary Apply tenant ACL to a staff-uploaded object
+ */
+export const ConfirmUploadBody = zod.object({
+  objectPath: zod
+    .string()
+    .describe(
+      "The objectPath returned by POST \/storage\/uploads\/request-url",
+    ),
+});
+
+export const ConfirmUploadResponse = zod.object({
+  objectPath: zod.string(),
+  owner: zod.string().describe("The agencyId set as the ACL owner"),
 });
 
 /**

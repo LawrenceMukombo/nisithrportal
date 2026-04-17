@@ -118,13 +118,15 @@ router.post("/upload", (req: Request, res: Response) => {
 /**
  * POST /storage/uploads/request-url
  *
- * Request a presigned URL for direct client-to-GCS upload (authenticated staff only).
- * Requires JWT authentication. The client sends JSON metadata, then uploads directly to GCS.
- * After uploading, the client should call POST /storage/uploads/set-acl to apply tenant ACL.
+ * Request a presigned URL for direct client-to-GCS upload (HR staff only).
+ * Requires JWT authentication and an HR staff role.
+ * The client sends JSON metadata, then uploads directly to GCS.
+ * After uploading, call POST /storage/uploads/confirm to apply tenant ACL.
  */
 router.post(
   "/storage/uploads/request-url",
   authMiddleware,
+  requireRole("admin", "hr_officer", "hiring_manager", "executive"),
   async (req: Request, res: Response) => {
     const parsed = RequestUploadUrlBody.safeParse(req.body);
     if (!parsed.success) {
@@ -148,6 +150,50 @@ router.post(
     } catch (error) {
       req.log.error({ err: error }, "Error generating upload URL");
       res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  },
+);
+
+/**
+ * POST /storage/uploads/confirm
+ *
+ * Apply tenant ACL policy to an object that was uploaded via a presigned URL (staff flow).
+ * Must be called AFTER the client has PUT the file to the GCS presigned URL.
+ * Requires JWT authentication and HR staff role. Sets ACL owner to the caller's agencyId.
+ *
+ * Body: { objectPath: string } — the objectPath returned by POST /storage/uploads/request-url
+ */
+router.post(
+  "/storage/uploads/confirm",
+  authMiddleware,
+  requireRole("admin", "hr_officer", "hiring_manager", "executive"),
+  async (req: Request, res: Response) => {
+    const { objectPath } = req.body as { objectPath?: string };
+    if (!objectPath || typeof objectPath !== "string") {
+      res.status(400).json({ error: "objectPath is required" });
+      return;
+    }
+
+    const user = req.user!;
+    if (user.agencyId == null) {
+      res.status(400).json({ error: "User has no agency assignment; cannot set tenant ACL" });
+      return;
+    }
+
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+      await setObjectAclPolicy(objectFile, {
+        owner: String(user.agencyId),
+        visibility: "private",
+      });
+      res.json({ objectPath, owner: String(user.agencyId) });
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "Object not found — ensure the file was uploaded before confirming" });
+        return;
+      }
+      req.log.error({ err: error }, "Error setting object ACL");
+      res.status(500).json({ error: "Failed to confirm upload ACL" });
     }
   },
 );

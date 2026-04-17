@@ -24,6 +24,8 @@ import type {
   ApplicationTrackResult,
   AuthResponse,
   Candidate,
+  ConfirmUpload200,
+  ConfirmUploadBody,
   Contract,
   ContractExpiry,
   CreateAgencyRequest,
@@ -5302,7 +5304,9 @@ export const useUploadFile = <
 };
 
 /**
- * @summary Request a presigned URL for file upload
+ * Returns a GCS presigned PUT URL for direct client-to-GCS upload. Restricted to HR staff roles. After uploading, call POST /storage/uploads/confirm to apply tenant ACL so the file is retrievable via GET /storage/objects/*.
+
+ * @summary Request a presigned URL for direct file upload (HR staff only)
  */
 export const getRequestUploadUrlUrl = () => {
   return `/api/storage/uploads/request-url`;
@@ -5365,7 +5369,7 @@ export type RequestUploadUrlMutationBody = BodyType<UploadUrlRequest>;
 export type RequestUploadUrlMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Request a presigned URL for file upload
+ * @summary Request a presigned URL for direct file upload (HR staff only)
  */
 export const useRequestUploadUrl = <
   TError = ErrorType<ErrorResponse>,
@@ -5385,6 +5389,94 @@ export const useRequestUploadUrl = <
   TContext
 > => {
   return useMutation(getRequestUploadUrlMutationOptions(options));
+};
+
+/**
+ * After uploading a file via the presigned URL returned by POST /storage/uploads/request-url, call this endpoint to apply the tenant ACL (sets the calling user's agency as the owner). Without this step, the file is not retrievable via GET /storage/objects/*. Restricted to HR staff roles.
+
+ * @summary Apply tenant ACL to a staff-uploaded object
+ */
+export const getConfirmUploadUrl = () => {
+  return `/api/storage/uploads/confirm`;
+};
+
+export const confirmUpload = async (
+  confirmUploadBody: ConfirmUploadBody,
+  options?: RequestInit,
+): Promise<ConfirmUpload200> => {
+  return customFetch<ConfirmUpload200>(getConfirmUploadUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(confirmUploadBody),
+  });
+};
+
+export const getConfirmUploadMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmUpload>>,
+    TError,
+    { data: BodyType<ConfirmUploadBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof confirmUpload>>,
+  TError,
+  { data: BodyType<ConfirmUploadBody> },
+  TContext
+> => {
+  const mutationKey = ["confirmUpload"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof confirmUpload>>,
+    { data: BodyType<ConfirmUploadBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return confirmUpload(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ConfirmUploadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof confirmUpload>>
+>;
+export type ConfirmUploadMutationBody = BodyType<ConfirmUploadBody>;
+export type ConfirmUploadMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Apply tenant ACL to a staff-uploaded object
+ */
+export const useConfirmUpload = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof confirmUpload>>,
+    TError,
+    { data: BodyType<ConfirmUploadBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof confirmUpload>>,
+  TError,
+  { data: BodyType<ConfirmUploadBody> },
+  TContext
+> => {
+  return useMutation(getConfirmUploadMutationOptions(options));
 };
 
 /**

@@ -544,6 +544,17 @@ export type UploadFile200 = {
   objectPath: string;
 };
 
+export type ConfirmUploadBody = {
+  /** The objectPath returned by POST /storage/uploads/request-url */
+  objectPath: string;
+};
+
+export type ConfirmUpload200 = {
+  objectPath: string;
+  /** The agencyId set as the ACL owner */
+  owner: string;
+};
+
 export type GetNotificationsParams = {
   /**
    * If true, returns all notifications (read and unread). Default is false (unread only).

@@ -94,6 +94,17 @@ router.post("/applications", async (req, res): Promise<void> => {
       phone: candidatePhone ?? null,
       cvUrl: cvUrl ?? null,
     }).returning();
+  } else {
+    // Update candidate record with the latest CV URL and contact details for repeat applicants
+    const updates: Record<string, string | null> = {};
+    if (cvUrl) updates.cvUrl = cvUrl;
+    if (candidatePhone && !candidate.phone) updates.phone = candidatePhone;
+    if (Object.keys(updates).length > 0) {
+      [candidate] = await db.update(candidatesTable)
+        .set(updates)
+        .where(eq(candidatesTable.id, candidate.id))
+        .returning();
+    }
   }
 
   const [application] = await db.insert(applicationsTable).values({

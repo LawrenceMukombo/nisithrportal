@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { Plus, Search, Eye, Pencil, Trash2, CheckCircle, XCircle } from "lucide-react";
-import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, getGetJobsQueryKey } from "@workspace/api-client-react";
+import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/layouts/app-layout";
@@ -122,12 +122,30 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
 export default function JobsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [deptFilter, setDeptFilter] = useState<string>("all");
   const { canManageJobs } = useRole();
   const { agencyId } = useAuth();
 
+  const { data: departments = [] } = useGetDepartments(
+    { agency_id: agencyId ?? undefined },
+    {}
+  );
+
   const jobs = useGetJobs(
-    { agency_id: agencyId ?? undefined, status: statusFilter !== "all" ? statusFilter : undefined },
-    { query: { queryKey: getGetJobsQueryKey({ agency_id: agencyId ?? undefined, status: statusFilter !== "all" ? statusFilter : undefined }) } }
+    {
+      agency_id: agencyId ?? undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      department_id: deptFilter !== "all" ? parseInt(deptFilter) : undefined,
+    },
+    {
+      query: {
+        queryKey: getGetJobsQueryKey({
+          agency_id: agencyId ?? undefined,
+          status: statusFilter !== "all" ? statusFilter : undefined,
+          department_id: deptFilter !== "all" ? parseInt(deptFilter) : undefined,
+        }),
+      },
+    }
   );
 
   const filtered = jobs.data?.filter((j) =>
@@ -153,8 +171,8 @@ export default function JobsPage() {
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex gap-3">
-              <div className="relative flex-1">
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-48">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search job titles..."
@@ -164,6 +182,19 @@ export default function JobsPage() {
                   data-testid="input-search-jobs"
                 />
               </div>
+              {departments.length > 0 && (
+                <Select value={deptFilter} onValueChange={setDeptFilter}>
+                  <SelectTrigger className="w-44" data-testid="select-dept-filter">
+                    <SelectValue placeholder="Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All departments</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36" data-testid="select-status-filter">
                   <SelectValue placeholder="Status" />

@@ -53,6 +53,7 @@ All routes under `/api/`:
 - `GET/POST /jobs` + publish/close — job vacancy management
 - `GET/POST /candidates` — candidate management
 - `GET/POST /applications` + status update — application tracking
+- `GET /applications/my` — returns only the authenticated user's own applications (scoped by email → candidate lookup)
 - `GET/POST /employees` — employee records
 - `GET/POST /contracts` — contract lifecycle management
 - `GET /ai-scores` — AI scoring results
@@ -107,12 +108,20 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 - **Landing page** — public job listings with search and apply flow
 - **Auth pages** — login and register with JWT stored in `localStorage` as `hr_portal_token`
 - **Dashboard** — KPI cards (open vacancies, applications, employees, expiring contracts), recruitment pipeline bar chart, workforce gaps, contract expiry table
-- **Jobs** — list with publish/close/delete actions; create/edit form
-- **Applications** — list with status filter; detail page with AI score display; inline status update
+- **Jobs** — list with search + department filter + status filter; publish/close/delete actions; create/edit form
+- **Applications** — list with normalized status pipeline (applied → screening → interview → offer → hired / rejected / withdrawn); detail page with AI score display; inline status update
 - **Candidates** — list with search; detail page with parsed CV data (skills, education)
 - **Employees** — list with search/filter; detail with contract history
 - **Contracts** — list with status filter; detail page
 - **Agencies & Departments** — admin-only CRUD management pages
+- **My Applications** — applicant-only view of own submitted applications (scoped by authenticated user's email, uses `GET /applications/my`)
+- **Apply Dialog** — includes CV/Résumé URL field in addition to name, email, phone, cover letter
+
+### Auth Notes
+
+- `AuthProvider` sets `isLoading: true` on init; flips `false` after reading token from localStorage
+- `ProtectedRoute` waits for `isLoading=false` before deciding to redirect — prevents premature `/login` redirects on page load/refresh
+- Token stored in `localStorage` as `hr_portal_token`
 
 ### Key Implementation Notes
 
@@ -122,6 +131,7 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 - `useGetAgencies` takes only 1 argument (options), no params
 - `useGetDepartments` takes (params?, options?) — pass `undefined` first if no params
 - `CreateApplicationRequest` accepts `candidateName`/`candidateEmail` directly (no pre-create candidate needed)
+- Application status pipeline: `applied` (initial) → `screening` → `interview` → `offer` → `hired` (terminal: `rejected`, `withdrawn`)
 
 ## Seeding
 

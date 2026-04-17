@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
-const STATUS_OPTIONS = ["submitted", "screening", "interview", "offered", "hired", "rejected"];
+const STATUS_OPTIONS = ["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn"];
 
 function StatusSelect({ app }: { app: Application }) {
   const queryClient = useQueryClient();

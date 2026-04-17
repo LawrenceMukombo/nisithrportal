@@ -22,6 +22,7 @@ const appSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
   email: z.string().email("Valid email required"),
   phone: z.string().optional(),
+  cvUrl: z.string().url("Please enter a valid URL").optional().or(z.literal("")),
   coverLetter: z.string().optional(),
 });
 type AppForm = z.infer<typeof appSchema>;
@@ -32,7 +33,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
 
   const form = useForm<AppForm>({
     resolver: zodResolver(appSchema),
-    defaultValues: { fullName: "", email: "", phone: "", coverLetter: "" },
+    defaultValues: { fullName: "", email: "", phone: "", cvUrl: "", coverLetter: "" },
   });
 
   const createApp = useCreateApplication();
@@ -44,8 +45,9 @@ function ApplyDialog({ jobId }: { jobId: number }) {
           jobId,
           candidateName: values.fullName,
           candidateEmail: values.email,
-          candidatePhone: values.phone,
-          coverLetter: values.coverLetter,
+          candidatePhone: values.phone || undefined,
+          cvUrl: values.cvUrl || undefined,
+          coverLetter: values.coverLetter || undefined,
         }
       });
       toast({ title: "Application submitted!", description: "We'll review your application and be in touch." });
@@ -87,6 +89,13 @@ function ApplyDialog({ jobId }: { jobId: number }) {
               <FormItem>
                 <FormLabel>Phone (optional)</FormLabel>
                 <FormControl><Input placeholder="+675..." data-testid="input-apply-phone" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="cvUrl" render={({ field }) => (
+              <FormItem>
+                <FormLabel>CV / Résumé URL (optional)</FormLabel>
+                <FormControl><Input type="url" placeholder="https://drive.google.com/..." data-testid="input-apply-cv-url" {...field} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />

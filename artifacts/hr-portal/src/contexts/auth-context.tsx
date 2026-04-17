@@ -12,6 +12,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (token: string) => void;
   logout: () => void;
   role: string | null;
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     initApiAuth();
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser({ userId: payload.userId, role: payload.roleName, agencyId: payload.agencyId, email: payload.email });
       }
     }
+    setIsLoading(false);
   }, []);
 
   const login = useCallback((newToken: string) => {
@@ -56,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       token,
       isAuthenticated: !!user,
+      isLoading,
       login,
       logout,
       role: user?.role ?? null,

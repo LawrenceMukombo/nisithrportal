@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db, candidatesTable, jobsTable, applicationsTable, aiScoresTable, employeesTable, contractsTable, departmentsTable } from "@workspace/db";
 import { AiParseCvBody, AiRankCandidatesBody, AiGenerateInterviewQuestionsBody } from "@workspace/api-zod";
 import { authMiddleware, requireRole } from "../middlewares/auth";
@@ -233,7 +233,17 @@ router.get("/ai/predictions/workforce", authMiddleware, requireRole("admin", "hr
     ? await db.select().from(employeesTable).where(eq(employeesTable.agencyId, agencyId))
     : await db.select().from(employeesTable);
 
-  const contracts = await db.select().from(contractsTable).where(eq(contractsTable.status, "active"));
+  // Scope contracts to the same employees visible to this agency to prevent cross-tenant leaks.
+  const contracts = agencyId != null && employees.length > 0
+    ? await db.select().from(contractsTable).where(
+        and(
+          eq(contractsTable.status, "active"),
+          inArray(contractsTable.employeeId, employees.map((e) => e.id)),
+        ),
+      )
+    : agencyId != null
+    ? [] // Agency has no employees → no contracts
+    : await db.select().from(contractsTable).where(eq(contractsTable.status, "active"));
   const departments = agencyId != null
     ? await db.select().from(departmentsTable).where(eq(departmentsTable.agencyId, agencyId))
     : await db.select().from(departmentsTable);

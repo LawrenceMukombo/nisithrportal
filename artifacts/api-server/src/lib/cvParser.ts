@@ -206,7 +206,11 @@ export async function extractTextFromUrl(url: string): Promise<string> {
       }
     }
 
-    buffer = Buffer.concat(chunks.map((c) => Buffer.from(c))).buffer as ArrayBuffer;
+    const concatenated = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    buffer = concatenated.buffer.slice(
+      concatenated.byteOffset,
+      concatenated.byteOffset + concatenated.byteLength,
+    ) as ArrayBuffer;
     contentType = response.headers.get("content-type") ?? "";
   }
 

@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
 import { eq } from "drizzle-orm";
 import {
   RequestUploadUrlBody,
@@ -9,11 +10,21 @@ import {
 import { db } from "@workspace/db";
 import { jobsTable } from "@workspace/db/schema";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { setObjectAclPolicy, getObjectAclPolicy } from "../lib/objectAcl";
+import { setObjectAclPolicy, canAccessObjectForAgency } from "../lib/objectAcl";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+// Rate limit for the public unauthenticated upload endpoint (CV submissions).
+// 10 uploads per IP per 15-minute window prevents scripted flood attacks.
+const uploadRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload requests. Please try again later." },
+});
 
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
@@ -45,7 +56,7 @@ const upload = multer({
  * Uploads the file server-side to GCS and sets an ACL policy so only users from the
  * same agency can retrieve it. Returns the serving URL.
  */
-router.post("/upload", (req: Request, res: Response) => {
+router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
       const message =
@@ -241,19 +252,10 @@ router.get(
  * GET /storage/objects/*
  *
  * Serve private object entities (uploaded CVs, contracts, certificates).
- * Access control is enforced at two levels:
- *   1. Role-level: must be an authenticated HR staff member (admin, hr_officer, hiring_manager, executive)
- *   2. Tenant-level: user's agencyId must match the ACL policy owner set at upload time
- *
- * Users with agencyId === null (system-level accounts) bypass tenant isolation.
- * Returns 403 if the ACL policy is absent or the user's agency does not match the document owner.
- *
- * NOTE: We intentionally use getObjectAclPolicy + direct agencyId comparison rather than
- * canAccessObject / canAccessObjectEntity from objectAcl.ts. Those helpers rely on
- * ObjectAccessGroupType enum entries and createObjectAccessGroup, which are scaffold
- * stubs that would throw at runtime because the enum has no defined values for this project.
- * Our access rule is simple: ACL owner (agencyId string) must equal the requesting user's
- * agencyId. No group-based rules are needed, so we bypass the group helper entirely.
+ * Access is enforced at two levels:
+ *   1. Role-level: authenticated HR staff (admin, hr_officer, hiring_manager, executive)
+ *   2. Tenant-level: user's agencyId must match the ACL owner stamped at upload time
+ *      (system accounts with agencyId === null bypass tenant isolation)
  */
 router.get(
   "/storage/objects/*path",
@@ -266,20 +268,10 @@ router.get(
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-      // Enforce tenant (agency) isolation via stored ACL metadata
-      const aclPolicy = await getObjectAclPolicy(objectFile);
-      if (!aclPolicy) {
-        // No ACL policy set — fail secure
-        res.status(403).json({ error: "Forbidden: document has no access policy" });
-        return;
-      }
-
       const user = req.user!;
-      const userAgencyId = user.agencyId;
-
-      // System-level accounts (agencyId null) bypass tenant isolation
-      if (userAgencyId !== null && aclPolicy.owner !== String(userAgencyId)) {
-        res.status(403).json({ error: "Forbidden: document belongs to a different agency" });
+      const allowed = await canAccessObjectForAgency(objectFile, user.agencyId ?? null);
+      if (!allowed) {
+        res.status(403).json({ error: "Forbidden: no access to this document" });
         return;
       }
 

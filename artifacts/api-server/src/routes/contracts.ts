@@ -47,7 +47,7 @@ async function applyContractDocumentAcl(documentUrl: string | null | undefined, 
  * Check for contracts expiring within 30 days and notify HR officers.
  * Skips contracts that already have a recent (last 24h) expiry notification.
  */
-async function triggerContractExpiryNotifications(agencyId: number | null): Promise<void> {
+export async function triggerContractExpiryNotifications(agencyId: number | null = null): Promise<void> {
   try {
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -125,9 +125,6 @@ router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "exe
     : await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
 
   res.json(allContracts);
-
-  // Fire-and-forget contract expiry notification check
-  void triggerContractExpiryNotifications(agencyId ?? null);
 });
 
 router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {

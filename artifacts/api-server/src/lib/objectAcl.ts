@@ -38,7 +38,10 @@ export async function getObjectAclPolicy(
 
 /**
  * Check whether a user (identified by agencyId) may read an object.
- * - agencyId === null: system-level user — access always granted.
+ * - agencyId === null: system-level user — access granted unconditionally.
+ *   This is intentional: callers of this function must already have been
+ *   authenticated and role-checked (e.g. requireRole middleware). Only users
+ *   with admin/system roles should have agencyId === null in this application.
  * - Non-null agencyId: must match the ACL owner field exactly.
  * - No policy set: access denied (fail-secure).
  */

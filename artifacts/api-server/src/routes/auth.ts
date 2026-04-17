@@ -14,7 +14,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, email, password, agencyName, agencyType, roleName } = parsed.data;
+  const { name, email, password, agencyName, agencyType } = parsed.data;
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email));
   if (existing.length > 0) {
@@ -30,13 +30,13 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       type: agencyType ?? "government",
     }).returning();
 
-    const targetRoleName = roleName ?? "admin";
-    const existingRoles = await tx.select().from(rolesTable).where(eq(rolesTable.name, targetRoleName));
+    const initialRole = "admin";
+    const existingRoles = await tx.select().from(rolesTable).where(eq(rolesTable.name, initialRole));
     let roleId: number;
     if (existingRoles.length > 0) {
       roleId = existingRoles[0].id;
     } else {
-      const [role] = await tx.insert(rolesTable).values({ name: targetRoleName }).returning();
+      const [role] = await tx.insert(rolesTable).values({ name: initialRole }).returning();
       roleId = role.id;
     }
 
@@ -49,7 +49,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       status: "active",
     }).returning();
 
-    return { user, targetRoleName };
+    return { user, roleName: initialRole };
   });
 
   const token = generateToken({
@@ -57,7 +57,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     email: result.user.email,
     roleId: result.user.roleId ?? null,
     agencyId: result.user.agencyId ?? null,
-    roleName: result.targetRoleName,
+    roleName: result.roleName,
   });
 
   res.status(201).json({

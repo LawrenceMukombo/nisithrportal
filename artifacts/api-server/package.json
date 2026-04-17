@@ -23,6 +23,7 @@
     "google-auth-library": "^10.6.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "pdfjs-dist": "4.9.155",
     "pino": "^9",
     "pino-http": "^10",
     "zod": "catalog:"

@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, candidatesTable, jobsTable, applicationsTable, aiScoresTable, employeesTable, contractsTable, departmentsTable } from "@workspace/db";
 import { AiParseCvBody, AiRankCandidatesBody, AiGenerateInterviewQuestionsBody } from "@workspace/api-zod";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { extractTextFromUrl } from "../lib/cvParser";
 
 const router: IRouter = Router();
 const aiRoles = requireRole("admin", "hr_officer");
@@ -31,7 +32,12 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { candidateId, cvText } = parsed.data;
+  const { candidateId, cvUrl, cvText } = parsed.data;
+
+  if (!cvUrl && !cvText) {
+    res.status(400).json({ error: "Provide either cvUrl (file URL) or cvText (raw text)" });
+    return;
+  }
 
   const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
   if (!candidate) {
@@ -55,9 +61,16 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
   }
 
   try {
+    let textToparse: string;
+    if (cvUrl) {
+      textToparse = await extractTextFromUrl(cvUrl);
+    } else {
+      textToparse = cvText as string;
+    }
+
     const result = await callAI(
       "You are an expert CV parser. Extract structured information from the CV text. Return JSON only.",
-      `Parse this CV and return JSON with fields: name (string|null), email (string|null), phone (string|null), skills (string[]), experience (string[]), education (string[]), summary (string|null).\n\nCV:\n${cvText}`,
+      `Parse this CV and return JSON with fields: name (string|null), email (string|null), phone (string|null), skills (string[]), experience (string[]), education (string[]), summary (string|null).\n\nCV:\n${textToparse}`,
     );
     const parsedData = JSON.parse(result);
     await db.update(candidatesTable).set({ parsedData }).where(eq(candidatesTable.id, candidateId));

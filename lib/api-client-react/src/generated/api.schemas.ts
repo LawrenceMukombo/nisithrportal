@@ -346,7 +346,10 @@ export interface RecruitmentPipelineItem {
 
 export interface ParseCvRequest {
   candidateId: number;
-  cvText: string;
+  /** Public URL of the uploaded CV document (PDF or plain text). The server downloads and extracts text automatically. */
+  cvUrl?: string;
+  /** Raw CV text to parse. Use when no file URL is available (e.g. paste-in text). At least one of cvUrl or cvText must be provided. */
+  cvText?: string;
 }
 
 export interface ParsedCvData {

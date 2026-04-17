@@ -11,34 +11,8 @@ import {
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { autoParseCvBackground } from "../lib/cvParser";
 const router: IRouter = Router();
-
-async function autoParseCv(candidateId: number, cvText: string): Promise<void> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      max_completion_tokens: 4096,
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert CV parser. Extract structured information from the provided text. Return JSON only.",
-        },
-        {
-          role: "user",
-          content: `Parse the following text and extract candidate information. Return JSON with fields: name (string|null), email (string|null), phone (string|null), skills (string[]), experience (string[]), education (string[]), summary (string|null).\n\nText:\n${cvText}`,
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
-    const content = response.choices[0]?.message?.content;
-    if (!content) return;
-    const parsedData = JSON.parse(content) as Record<string, unknown>;
-    await db.update(candidatesTable).set({ parsedData }).where(eq(candidatesTable.id, candidateId));
-  } catch (err) {
-    console.error("[applications] Auto CV parse failed:", err);
-  }
-}
 
 async function getJobAgencyId(jobId: number): Promise<number | null> {
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
@@ -163,8 +137,13 @@ router.post("/applications", async (req, res): Promise<void> => {
 
   // Auto-parse CV in the background using the cover letter text when the candidate
   // has not been parsed before. Fire-and-forget: errors are swallowed.
-  if (coverLetter && !candidate.parsedData) {
-    void autoParseCv(candidate.id, `Name: ${candidateName}\nEmail: ${candidateEmail}\n\n${coverLetter}`);
+  if (!candidate.parsedData && (cvUrl || coverLetter)) {
+    void autoParseCvBackground(candidate.id, {
+      cvUrl: cvUrl ?? null,
+      fallbackText: coverLetter
+        ? `Name: ${candidateName}\nEmail: ${candidateEmail}\n\n${coverLetter}`
+        : null,
+    });
   }
 });
 

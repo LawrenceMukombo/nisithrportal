@@ -2370,11 +2370,14 @@ components:
       properties:
         candidateId:
           type: integer
+        cvUrl:
+          type: string
+          description: Public URL of the uploaded CV document (PDF or plain text). The server downloads and extracts text automatically.
         cvText:
           type: string
+          description: Raw CV text to parse. Use when no file URL is available (e.g. paste-in text). At least one of cvUrl or cvText must be provided.
       required:
         - candidateId
-        - cvText
 
     ParsedCvData:
       type: object

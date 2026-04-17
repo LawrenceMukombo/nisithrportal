@@ -926,7 +926,18 @@ export const GetRolesResponse = zod.array(GetRolesResponseItem);
  */
 export const AiParseCvBody = zod.object({
   candidateId: zod.number(),
-  cvText: zod.string(),
+  cvUrl: zod
+    .string()
+    .optional()
+    .describe(
+      "Public URL of the uploaded CV document (PDF or plain text). The server downloads and extracts text automatically.",
+    ),
+  cvText: zod
+    .string()
+    .optional()
+    .describe(
+      "Raw CV text to parse. Use when no file URL is available (e.g. paste-in text). At least one of cvUrl or cvText must be provided.",
+    ),
 });
 
 export const AiParseCvResponse = zod.object({

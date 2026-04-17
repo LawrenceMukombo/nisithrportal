@@ -82,7 +82,7 @@ router.put("/departments/:id", authMiddleware, requireRole("admin", "hr_officer"
 
 router.delete("/departments/:id", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const id = parseIntParam(req.params.id);
-  if (id < 0) {
+  if (Number.isNaN(id) || id <= 0) {
     res.status(400).json({ error: "Invalid department id" });
     return;
   }

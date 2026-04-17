@@ -83,6 +83,5 @@ export function generateToken(payload: JwtPayload): string {
 export function parseIntParam(raw: string | string[]): number {
   const str = Array.isArray(raw) ? raw[0] : raw;
   const n = parseInt(str, 10);
-  if (Number.isNaN(n)) return -1;
   return n;
 }

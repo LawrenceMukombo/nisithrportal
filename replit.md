@@ -81,6 +81,18 @@ JWT-based authentication. Tokens expire in 7 days. `JWT_SECRET` env var controls
 
 All write routes use Zod validation via generated schemas from `@workspace/api-zod`. Dashboard endpoints apply agency_id scoping so non-admin users only see their own agency's data.
 
+### Multi-Tenant Isolation
+
+Every authenticated request is scoped to the user's `agencyId` from their JWT:
+- **List endpoints**: automatically filtered to the user's agency
+- **GET /id endpoints**: return 403 if resource belongs to a different agency
+- **Write endpoints**: check ownership before updating/deleting
+- **Transitive resources**: applications are scoped via their job's agencyId; contracts via their employee's agencyId
+- **Public endpoints** (job listings, submitting applications): use optional auth — unauthenticated users see all published jobs, authenticated users see only their agency's jobs
+- `admin` is a **per-agency admin**, not a super-admin — scoped to their own agency
+
+Tenant enforcement middleware: `artifacts/api-server/src/middlewares/tenant.ts`
+
 ## Environment Variables
 
 - `DATABASE_URL` — PostgreSQL connection string (required)

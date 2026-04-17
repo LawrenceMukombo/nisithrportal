@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
-import { db, applicationsTable, candidatesTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, applicationsTable, candidatesTable, jobsTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
   CreateApplicationBody,
@@ -9,21 +9,35 @@ import {
   UpdateApplicationStatusBody,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
+async function getJobAgencyId(jobId: number): Promise<number | null> {
+  const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  return job?.agencyId ?? null;
+}
+
 router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const query = GetApplicationsQueryParams.safeParse(req.query);
-  const conditions = [];
-  if (query.success) {
-    if (query.data.job_id != null) conditions.push(eq(applicationsTable.jobId, query.data.job_id));
-    if (query.data.candidate_id != null) conditions.push(eq(applicationsTable.candidateId, query.data.candidate_id));
-    if (query.data.status != null) conditions.push(eq(applicationsTable.status, query.data.status));
+  const agencyId = getTenantAgencyId(req);
+
+  let allApps = await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
+
+  if (agencyId != null) {
+    const agencyJobs = await db.select({ id: jobsTable.id })
+      .from(jobsTable).where(eq(jobsTable.agencyId, agencyId));
+    const jobIds = new Set(agencyJobs.map((j) => j.id));
+    allApps = allApps.filter((a) => jobIds.has(a.jobId));
   }
-  const results = conditions.length > 0
-    ? await db.select().from(applicationsTable).where(and(...conditions)).orderBy(applicationsTable.createdAt)
-    : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
-  res.json(results);
+
+  if (query.success) {
+    if (query.data.job_id != null) allApps = allApps.filter((a) => a.jobId === query.data.job_id);
+    if (query.data.candidate_id != null) allApps = allApps.filter((a) => a.candidateId === query.data.candidate_id);
+    if (query.data.status != null) allApps = allApps.filter((a) => a.status === query.data.status);
+  }
+
+  res.json(allApps);
 });
 
 router.post("/applications", async (req, res): Promise<void> => {
@@ -33,6 +47,13 @@ router.post("/applications", async (req, res): Promise<void> => {
     return;
   }
   const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl, coverLetter } = parsed.data;
+
+  const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status })
+    .from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!jobExists) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
 
   let [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.email, candidateEmail));
   if (!candidate) {
@@ -70,6 +91,11 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
     res.status(404).json({ error: "Application not found" });
     return;
   }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const jobAgencyId = await getJobAgencyId(application.jobId);
+    if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
+  }
   res.json(application);
 });
 
@@ -78,6 +104,16 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
   if (!params.success) {
     res.status(400).json({ error: "Invalid application id" });
     return;
+  }
+  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const jobAgencyId = await getJobAgencyId(existing.jobId);
+    if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
   }
   const body = UpdateApplicationStatusBody.safeParse(req.body);
   if (!body.success) {
@@ -92,10 +128,6 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     })
     .where(eq(applicationsTable.id, params.data.id))
     .returning();
-  if (!application) {
-    res.status(404).json({ error: "Application not found" });
-    return;
-  }
   res.json(application);
 });
 

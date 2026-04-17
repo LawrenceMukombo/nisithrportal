@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, contractsTable } from "@workspace/db";
+import { db, contractsTable, employeesTable } from "@workspace/db";
 import {
   GetContractsQueryParams,
   CreateContractBody,
@@ -9,20 +9,34 @@ import {
   UpdateContractBody,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
+async function getEmployeeAgencyId(employeeId: number): Promise<number | null> {
+  const [emp] = await db.select({ agencyId: employeesTable.agencyId }).from(employeesTable).where(eq(employeesTable.id, employeeId));
+  return emp?.agencyId ?? null;
+}
+
 router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
   const query = GetContractsQueryParams.safeParse(req.query);
-  const conditions = [];
-  if (query.success) {
-    if (query.data.employee_id != null) conditions.push(eq(contractsTable.employeeId, query.data.employee_id));
-    if (query.data.status != null) conditions.push(eq(contractsTable.status, query.data.status));
+  const agencyId = getTenantAgencyId(req);
+
+  let allContracts = await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
+
+  if (agencyId != null) {
+    const employeesInAgency = await db.select({ id: employeesTable.id })
+      .from(employeesTable).where(eq(employeesTable.agencyId, agencyId));
+    const empIds = new Set(employeesInAgency.map((e) => e.id));
+    allContracts = allContracts.filter((c) => empIds.has(c.employeeId));
   }
-  const results = conditions.length > 0
-    ? await db.select().from(contractsTable).where(and(...conditions)).orderBy(contractsTable.createdAt)
-    : await db.select().from(contractsTable).orderBy(contractsTable.createdAt);
-  res.json(results);
+
+  if (query.success) {
+    if (query.data.employee_id != null) allContracts = allContracts.filter((c) => c.employeeId === query.data.employee_id);
+    if (query.data.status != null) allContracts = allContracts.filter((c) => c.status === query.data.status);
+  }
+
+  res.json(allContracts);
 });
 
 router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
@@ -30,6 +44,11 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const empAgencyId = await getEmployeeAgencyId(parsed.data.employeeId);
+    if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
   }
   const [contract] = await db.insert(contractsTable).values({
     employeeId: parsed.data.employeeId,
@@ -53,6 +72,11 @@ router.get("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer", 
     res.status(404).json({ error: "Contract not found" });
     return;
   }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const empAgencyId = await getEmployeeAgencyId(contract.employeeId);
+    if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
+  }
   res.json(contract);
 });
 
@@ -61,6 +85,16 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
   if (!params.success) {
     res.status(400).json({ error: "Invalid contract id" });
     return;
+  }
+  const [existing] = await db.select().from(contractsTable).where(eq(contractsTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Contract not found" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const empAgencyId = await getEmployeeAgencyId(existing.employeeId);
+    if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
   }
   const body = UpdateContractBody.safeParse(req.body);
   if (!body.success) {
@@ -76,10 +110,6 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
     })
     .where(eq(contractsTable.id, params.data.id))
     .returning();
-  if (!contract) {
-    res.status(404).json({ error: "Contract not found" });
-    return;
-  }
   res.json(contract);
 });
 

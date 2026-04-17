@@ -31,6 +31,20 @@ declare global {
   }
 }
 
+export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.slice(7);
+      const payload = jwt.verify(token, effectiveSecret) as JwtPayload;
+      req.user = payload;
+    } catch {
+      // Token invalid — proceed unauthenticated
+    }
+  }
+  next();
+}
+
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {

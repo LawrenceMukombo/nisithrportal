@@ -9,6 +9,7 @@ import {
   UpdateEmployeeBody,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -16,13 +17,14 @@ router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "exe
   const query = GetEmployeesQueryParams.safeParse(req.query);
   const conditions = [];
 
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    conditions.push(eq(employeesTable.agencyId, agencyId));
+  }
+
   if (query.success) {
-    const agencyId = query.data.agency_id ?? req.user?.agencyId ?? undefined;
-    if (agencyId != null) conditions.push(eq(employeesTable.agencyId, agencyId));
     if (query.data.department_id != null) conditions.push(eq(employeesTable.departmentId, query.data.department_id));
     if (query.data.status != null) conditions.push(eq(employeesTable.status, query.data.status));
-  } else if (req.user?.agencyId != null) {
-    conditions.push(eq(employeesTable.agencyId, req.user.agencyId));
   }
 
   const results = conditions.length > 0
@@ -37,13 +39,14 @@ router.post("/employees", authMiddleware, requireRole("admin", "hr_officer"), as
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
   const [employee] = await db.insert(employeesTable).values({
     name: parsed.data.name,
     email: parsed.data.email ?? null,
     phone: parsed.data.phone ?? null,
     positionId: parsed.data.positionId ?? null,
     departmentId: parsed.data.departmentId ?? null,
-    agencyId: parsed.data.agencyId ?? req.user?.agencyId ?? null,
+    agencyId,
     status: parsed.data.status ?? "active",
     startDate: parsed.data.startDate ?? null,
   }).returning();
@@ -61,6 +64,7 @@ router.get("/employees/:id", authMiddleware, requireRole("admin", "hr_officer", 
     res.status(404).json({ error: "Employee not found" });
     return;
   }
+  if (!assertTenantAccess(res, employee.agencyId, getTenantAgencyId(req))) return;
   res.json(employee);
 });
 
@@ -70,6 +74,12 @@ router.patch("/employees/:id", authMiddleware, requireRole("admin", "hr_officer"
     res.status(400).json({ error: "Invalid employee id" });
     return;
   }
+  const [existing] = await db.select().from(employeesTable).where(eq(employeesTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Employee not found" });
+    return;
+  }
+  if (!assertTenantAccess(res, existing.agencyId, getTenantAgencyId(req))) return;
   const body = UpdateEmployeeBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
@@ -88,10 +98,6 @@ router.patch("/employees/:id", authMiddleware, requireRole("admin", "hr_officer"
     })
     .where(eq(employeesTable.id, params.data.id))
     .returning();
-  if (!employee) {
-    res.status(404).json({ error: "Employee not found" });
-    return;
-  }
   res.json(employee);
 });
 

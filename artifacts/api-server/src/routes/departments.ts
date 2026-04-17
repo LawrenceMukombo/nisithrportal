@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, departmentsTable } from "@workspace/db";
 import {
   CreateDepartmentBody,
@@ -9,15 +9,23 @@ import {
   GetDepartmentsQueryParams,
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
 router.get("/departments", authMiddleware, async (req, res): Promise<void> => {
   const query = GetDepartmentsQueryParams.safeParse(req.query);
-  const agencyId = query.success ? (query.data.agency_id ?? req.user?.agencyId ?? undefined) : (req.user?.agencyId ?? undefined);
+  const conditions = [];
 
-  const results = agencyId
-    ? await db.select().from(departmentsTable).where(eq(departmentsTable.agencyId, agencyId)).orderBy(departmentsTable.name)
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    conditions.push(eq(departmentsTable.agencyId, agencyId));
+  } else if (query.success && query.data.agency_id != null) {
+    conditions.push(eq(departmentsTable.agencyId, query.data.agency_id));
+  }
+
+  const results = conditions.length > 0
+    ? await db.select().from(departmentsTable).where(and(...conditions)).orderBy(departmentsTable.name)
     : await db.select().from(departmentsTable).orderBy(departmentsTable.name);
   res.json(results);
 });
@@ -28,7 +36,7 @@ router.post("/departments", authMiddleware, requireRole("admin", "hr_officer"), 
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const agencyId = parsed.data.agencyId ?? req.user?.agencyId ?? null;
+  const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
   const [dept] = await db.insert(departmentsTable).values({ name: parsed.data.name, agencyId }).returning();
   res.status(201).json(dept);
 });
@@ -44,6 +52,7 @@ router.get("/departments/:id", authMiddleware, async (req, res): Promise<void> =
     res.status(404).json({ error: "Department not found" });
     return;
   }
+  if (!assertTenantAccess(res, dept.agencyId, getTenantAgencyId(req))) return;
   res.json(dept);
 });
 
@@ -53,19 +62,21 @@ router.put("/departments/:id", authMiddleware, requireRole("admin", "hr_officer"
     res.status(400).json({ error: "Invalid department id" });
     return;
   }
+  const [existing] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Department not found" });
+    return;
+  }
+  if (!assertTenantAccess(res, existing.agencyId, getTenantAgencyId(req))) return;
   const body = UpdateDepartmentBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
     return;
   }
   const [dept] = await db.update(departmentsTable)
-    .set({ name: body.data.name, agencyId: body.data.agencyId })
+    .set({ name: body.data.name })
     .where(eq(departmentsTable.id, params.data.id))
     .returning();
-  if (!dept) {
-    res.status(404).json({ error: "Department not found" });
-    return;
-  }
   res.json(dept);
 });
 

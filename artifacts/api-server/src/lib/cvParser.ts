@@ -15,6 +15,77 @@ if (typeof g["Path2D"] === "undefined") {
   g["Path2D"] = class Path2D {};
 }
 
+// ---------------------------------------------------------------------------
+// SSRF protection
+// ---------------------------------------------------------------------------
+
+/** IPv4 CIDR-style prefix blocks for private/link-local ranges. */
+const PRIVATE_IPV4_PREFIXES = [
+  "10.",
+  "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+  "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+  "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+  "192.168.",
+  "169.254.", // link-local / AWS metadata
+  "127.",     // loopback
+];
+
+/** Known cloud metadata IP. */
+const METADATA_IP = "169.254.169.254";
+
+/**
+ * Validate that a URL is safe to fetch server-side.
+ * Enforces: HTTPS-only, no private/loopback/link-local hosts.
+ * Throws a descriptive error on violations.
+ */
+function assertSafeCvUrl(rawUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("cvUrl is not a valid URL");
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error("cvUrl must use HTTPS");
+  }
+
+  const host = parsed.hostname.toLowerCase();
+
+  // Block loopback / well-known internal hostnames
+  const blockedHosts = ["localhost", "127.0.0.1", "::1", "0.0.0.0", METADATA_IP];
+  if (blockedHosts.includes(host)) {
+    throw new Error(`cvUrl hostname '${host}' is not permitted`);
+  }
+
+  // Block *.local and *.internal patterns
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) {
+    throw new Error(`cvUrl hostname '${host}' is not permitted`);
+  }
+
+  // If hostname looks like a bare IPv4 address, block private ranges
+  const ipv4Re = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  if (ipv4Re.test(host)) {
+    for (const prefix of PRIVATE_IPV4_PREFIXES) {
+      if (host.startsWith(prefix)) {
+        throw new Error(`cvUrl resolves to a private network address`);
+      }
+    }
+  }
+
+  // Block known GCP metadata endpoint
+  if (host === "metadata.google.internal") {
+    throw new Error(`cvUrl hostname '${host}' is not permitted`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDF extraction via pdfjs-dist
+// ---------------------------------------------------------------------------
+
+const MAX_CV_BYTES = 10 * 1024 * 1024; // 10 MB
+const FETCH_TIMEOUT_MS = 15_000;
+
 /**
  * Extract plain text from a PDF buffer using pdfjs-dist.
  * Iterates all pages and concatenates their text content.
@@ -36,34 +107,78 @@ async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   return parts.join("\n").trim();
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
- * Download a file from a public URL and extract its text content.
+ * Download a document from a public HTTPS URL and extract its text content.
  * Supports PDF (via pdfjs-dist) and plain text files.
- * Throws if the URL is unreachable or the content type is unsupported.
+ *
+ * Enforces strict SSRF safeguards:
+ *   - HTTPS-only
+ *   - Private/loopback/link-local IP ranges are blocked
+ *   - 15-second fetch timeout
+ *   - 10 MB response size cap
+ *
+ * Throws on validation failure, unreachable URLs, or unsupported content.
  */
 export async function extractTextFromUrl(url: string): Promise<string> {
-  const response = await fetch(url);
+  assertSafeCvUrl(url);
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+
   if (!response.ok) {
     throw new Error(`Failed to fetch CV from URL (HTTP ${response.status}): ${url}`);
   }
-  const contentType = response.headers.get("content-type") ?? "";
-  const buffer = await response.arrayBuffer();
 
-  if (contentType.includes("application/pdf") || url.toLowerCase().endsWith(".pdf")) {
-    return extractPdfText(buffer);
+  // Enforce max response size via streaming read
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body for CV URL");
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_CV_BYTES) {
+        await reader.cancel();
+        throw new Error(`CV file exceeds maximum allowed size of ${MAX_CV_BYTES / 1024 / 1024} MB`);
+      }
+      chunks.push(value);
+    }
   }
 
-  return Buffer.from(buffer).toString("utf-8").trim();
+  const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/pdf") || url.toLowerCase().endsWith(".pdf")) {
+    return extractPdfText(buffer.buffer as ArrayBuffer);
+  }
+
+  return buffer.toString("utf-8").trim();
 }
 
 /**
  * Fire-and-forget background CV parse.
- * Priority: cvUrl (download actual CV doc) → fallback text (e.g. cover letter stub).
- * Only runs when the candidate has no parsedData yet.
+ *
+ * Priority: cvUrl (download actual CV doc) → fallbackText (e.g. cover letter stub).
+ * Always re-parses when cvUrl is provided (catches returning candidates uploading
+ * a new CV), falls back to text when no URL is available and no data yet exists.
  */
 export async function autoParseCvBackground(
   candidateId: number,
-  opts: { cvUrl?: string | null; fallbackText?: string | null }
+  opts: { cvUrl?: string | null; fallbackText?: string | null; forceReparse?: boolean }
 ): Promise<void> {
   try {
     let text: string | null = null;

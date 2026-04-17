@@ -135,9 +135,12 @@ router.post("/applications", async (req, res): Promise<void> => {
     console.error("[applications] New application HR notification failed:", err);
   }
 
-  // Auto-parse CV in the background using the cover letter text when the candidate
-  // has not been parsed before. Fire-and-forget: errors are swallowed.
-  if (!candidate.parsedData && (cvUrl || coverLetter)) {
+  // Auto-parse CV in the background. Fire-and-forget: errors are swallowed.
+  // Always re-parse when a new CV file was uploaded in this submission (cvUrl),
+  // so returning candidates with a freshly uploaded document get updated parsed data.
+  // For text-only submissions (no file), only parse on first application (no parsedData yet).
+  const shouldParse = Boolean(cvUrl) || (!candidate.parsedData && Boolean(coverLetter));
+  if (shouldParse) {
     void autoParseCvBackground(candidate.id, {
       cvUrl: cvUrl ?? null,
       fallbackText: coverLetter

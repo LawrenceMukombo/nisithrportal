@@ -39,26 +39,19 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 async function uploadCvFile(file: File): Promise<string> {
-  const token = localStorage.getItem("hr_portal_token");
-  const urlRes = await fetch("/api/storage/uploads/request-url", {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("/api/upload", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+    body: formData,
   });
-  if (!urlRes.ok) throw new Error("Failed to get upload URL");
-  const { uploadURL, objectPath } = await urlRes.json() as { uploadURL: string; objectPath: string };
-
-  const uploadRes = await fetch(uploadURL, {
-    method: "PUT",
-    headers: { "Content-Type": file.type },
-    body: file,
-  });
-  if (!uploadRes.ok) throw new Error("Failed to upload file to storage");
-
-  return `/api/storage${objectPath}`;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error ?? "Failed to upload CV");
+  }
+  const { url } = await res.json() as { url: string };
+  return url;
 }
 
 function ApplyDialog({ jobId }: { jobId: number }) {

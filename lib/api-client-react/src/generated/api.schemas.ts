@@ -530,6 +530,18 @@ export type AiPredictWorkforceParams = {
   agency_id?: number;
 };
 
+export type UploadFileBody = {
+  /** The file to upload (PDF, DOC, or DOCX, max 10 MB) */
+  file: Blob;
+};
+
+export type UploadFile200 = {
+  /** Serving URL for the uploaded file via /api/storage/objects/* */
+  url: string;
+  /** Internal object path for reference */
+  objectPath: string;
+};
+
 export type GetNotificationsParams = {
   unread_only?: boolean;
 };

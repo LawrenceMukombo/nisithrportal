@@ -74,6 +74,8 @@ import type {
   UpdateContractRequest,
   UpdateEmployeeRequest,
   UpdateUserRequest,
+  UploadFile200,
+  UploadFileBody,
   UploadUrlRequest,
   UploadUrlResponse,
   UserProfile,
@@ -5209,6 +5211,96 @@ export function useAiPredictWorkforce<
 }
 
 /**
+ * Public multipart upload endpoint for applicants submitting CVs during job application. Accepts a single file via multipart/form-data. Allowed types: PDF, DOC, DOCX (max 10 MB). Authentication is NOT required — enables unauthenticated applicants to attach CVs.
+
+ * @summary Upload a document file (CV, certificate, contract)
+ */
+export const getUploadFileUrl = () => {
+  return `/api/upload`;
+};
+
+export const uploadFile = async (
+  uploadFileBody: UploadFileBody,
+  options?: RequestInit,
+): Promise<UploadFile200> => {
+  const formData = new FormData();
+  formData.append(`file`, uploadFileBody.file);
+
+  return customFetch<UploadFile200>(getUploadFileUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getUploadFileMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadFile>>,
+    TError,
+    { data: BodyType<UploadFileBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadFile>>,
+  TError,
+  { data: BodyType<UploadFileBody> },
+  TContext
+> => {
+  const mutationKey = ["uploadFile"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadFile>>,
+    { data: BodyType<UploadFileBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadFile(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadFile>>
+>;
+export type UploadFileMutationBody = BodyType<UploadFileBody>;
+export type UploadFileMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Upload a document file (CV, certificate, contract)
+ */
+export const useUploadFile = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadFile>>,
+    TError,
+    { data: BodyType<UploadFileBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadFile>>,
+  TError,
+  { data: BodyType<UploadFileBody> },
+  TContext
+> => {
+  return useMutation(getUploadFileMutationOptions(options));
+};
+
+/**
  * @summary Request a presigned URL for file upload
  */
 export const getRequestUploadUrlUrl = () => {
@@ -5295,7 +5387,9 @@ export const useRequestUploadUrl = <
 };
 
 /**
- * @summary Serve an uploaded object entity
+ * Returns the raw file content for private uploaded objects (CVs, contracts, certificates). Restricted to authenticated HR staff roles: admin, hr_officer, hiring_manager, executive. Applicants and unauthenticated users receive 401/403.
+
+ * @summary Serve an uploaded object entity (HR staff only)
  */
 export const getGetStorageObjectUrl = (objectPath: string) => {
   return `/api/storage/objects/${objectPath}`;
@@ -5357,7 +5451,7 @@ export type GetStorageObjectQueryResult = NonNullable<
 export type GetStorageObjectQueryError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Serve an uploaded object entity
+ * @summary Serve an uploaded object entity (HR staff only)
  */
 
 export function useGetStorageObject<

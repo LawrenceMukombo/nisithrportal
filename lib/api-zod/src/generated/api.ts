@@ -996,6 +996,26 @@ export const AiPredictWorkforceResponse = zod.object({
 });
 
 /**
+ * Public multipart upload endpoint for applicants submitting CVs during job application. Accepts a single file via multipart/form-data. Allowed types: PDF, DOC, DOCX (max 10 MB). Authentication is NOT required — enables unauthenticated applicants to attach CVs.
+
+ * @summary Upload a document file (CV, certificate, contract)
+ */
+export const UploadFileBody = zod.object({
+  file: zod
+    .instanceof(File)
+    .describe("The file to upload (PDF, DOC, or DOCX, max 10 MB)"),
+});
+
+export const UploadFileResponse = zod.object({
+  url: zod
+    .string()
+    .describe(
+      "Serving URL for the uploaded file via \/api\/storage\/objects\/\*",
+    ),
+  objectPath: zod.string().describe("Internal object path for reference"),
+});
+
+/**
  * @summary Request a presigned URL for file upload
  */
 
@@ -1011,7 +1031,9 @@ export const RequestUploadUrlResponse = zod.object({
 });
 
 /**
- * @summary Serve an uploaded object entity
+ * Returns the raw file content for private uploaded objects (CVs, contracts, certificates). Restricted to authenticated HR staff roles: admin, hr_officer, hiring_manager, executive. Applicants and unauthenticated users receive 401/403.
+
+ * @summary Serve an uploaded object entity (HR staff only)
  */
 export const GetStorageObjectParams = zod.object({
   objectPath: zod.coerce.string(),

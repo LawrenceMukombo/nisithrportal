@@ -1483,6 +1483,55 @@ paths:
                 $ref: "#/components/schemas/WorkforcePrediction"
 
   # Storage Endpoints
+  /upload:
+    post:
+      tags: [storage]
+      operationId: uploadFile
+      summary: Upload a document file (CV, certificate, contract)
+      description: >
+        Public multipart upload endpoint for applicants submitting CVs during job application.
+        Accepts a single file via multipart/form-data. Allowed types: PDF, DOC, DOCX (max 10 MB).
+        Authentication is NOT required — enables unauthenticated applicants to attach CVs.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload (PDF, DOC, or DOCX, max 10 MB)
+      responses:
+        "200":
+          description: File uploaded successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, objectPath]
+                properties:
+                  url:
+                    type: string
+                    description: Serving URL for the uploaded file via /api/storage/objects/*
+                  objectPath:
+                    type: string
+                    description: Internal object path for reference
+        "400":
+          description: No file uploaded or invalid file type/size.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to store file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /storage/uploads/request-url:
     post:
       tags: [storage]
@@ -1520,7 +1569,11 @@ paths:
     get:
       tags: [storage]
       operationId: getStorageObject
-      summary: Serve an uploaded object entity
+      summary: Serve an uploaded object entity (HR staff only)
+      description: >
+        Returns the raw file content for private uploaded objects (CVs, contracts, certificates).
+        Restricted to authenticated HR staff roles: admin, hr_officer, hiring_manager, executive.
+        Applicants and unauthenticated users receive 401/403.
       security:
         - bearerAuth: []
       parameters:

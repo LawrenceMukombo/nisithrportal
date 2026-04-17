@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/auth-context";
+import { decodeToken } from "@/lib/api-config";
 import { useLogin } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,7 +33,9 @@ export default function LoginPage() {
     mutation: {
       onSuccess: (data) => {
         login(data.token);
-        setLocation("/dashboard");
+        const payload = decodeToken(data.token);
+        const dest = payload?.roleName === "applicant" ? "/my-applications" : "/dashboard";
+        setLocation(dest);
       },
       onError: () => {
         toast({ title: "Login failed", description: "Invalid email or password.", variant: "destructive" });

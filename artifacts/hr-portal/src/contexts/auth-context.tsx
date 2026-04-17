@@ -81,6 +81,7 @@ export function useRole() {
   return {
     isAdmin: role === "admin",
     isHR: role === "hr_officer",
+    isHrOfficer: role === "hr_officer",
     isHiringManager: role === "hiring_manager",
     isExecutive: role === "executive",
     isApplicant: role === "applicant",

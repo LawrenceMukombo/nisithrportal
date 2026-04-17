@@ -16,7 +16,7 @@ interface NavItem {
 }
 
 function useNavItems() {
-  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager } = useRole();
+  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager, isHrOfficer } = useRole();
 
   const items: NavItem[] = [];
 
@@ -52,6 +52,9 @@ function useNavItems() {
 
   if (canManageAgencies) {
     items.push({ label: "Agencies", href: "/agencies", icon: Building2 });
+  }
+
+  if (canManageAgencies || isHrOfficer) {
     items.push({ label: "Departments", href: "/departments", icon: FolderKanban });
   }
 

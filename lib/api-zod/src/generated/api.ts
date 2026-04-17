@@ -437,6 +437,24 @@ export const UpdateCandidateResponse = zod.object({
 });
 
 /**
+ * @summary Get the current authenticated user's own applications
+ */
+export const GetMyApplicationsResponseItem = zod.object({
+  id: zod.number(),
+  jobId: zod.number(),
+  candidateId: zod.number(),
+  status: zod.string(),
+  score: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  coverLetter: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+  updatedAt: zod.string().optional(),
+});
+export const GetMyApplicationsResponse = zod.array(
+  GetMyApplicationsResponseItem,
+);
+
+/**
  * @summary List applications
  */
 export const GetApplicationsQueryParams = zod.object({

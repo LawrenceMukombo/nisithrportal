@@ -10,7 +10,6 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
-
 const router: IRouter = Router();
 
 async function getJobAgencyId(jobId: number): Promise<number | null> {
@@ -41,6 +40,30 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
     : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
 
   res.json(allApps);
+});
+
+router.get("/applications/my", authMiddleware, async (req, res): Promise<void> => {
+  const userEmail = req.user?.email;
+  if (!userEmail) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const candidates = await db.select({ id: candidatesTable.id })
+    .from(candidatesTable)
+    .where(eq(candidatesTable.email, userEmail));
+
+  if (candidates.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const candidateIds = candidates.map((c) => c.id);
+  const apps = await db.select()
+    .from(applicationsTable)
+    .where(inArray(applicationsTable.candidateId, candidateIds))
+    .orderBy(applicationsTable.createdAt);
+
+  res.json(apps);
 });
 
 router.post("/applications", async (req, res): Promise<void> => {

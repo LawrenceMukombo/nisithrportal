@@ -90,7 +90,6 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
-
       {/* Hero: PNG flag-inspired diagonal split — black & red with gold accent bar */}
       <section className="relative overflow-hidden py-20 px-6" style={{
         background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)"
@@ -105,9 +104,7 @@ export default function LandingPage() {
           <h1 className="text-4xl font-bold text-white mb-4 drop-shadow-sm">
             Government Careers in Papua New Guinea
           </h1>
-          <p className="text-white/75 text-lg mb-8 max-w-2xl mx-auto">
-            Explore current vacancies across government agencies and departments. Build your career in public service.
-          </p>
+          <p className="text-white/75 text-lg mb-8 max-w-2xl mx-auto">Explore current vacancies at NISIT. Start your career Journey here.</p>
           <div className="relative max-w-xl mx-auto">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
@@ -120,7 +117,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
       <section className="max-w-6xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -152,7 +148,6 @@ export default function LandingPage() {
           </div>
         )}
       </section>
-
       <footer className="border-t border-border bg-card mt-12">
         <div className="max-w-6xl mx-auto px-6 py-8 text-center">
           <p className="text-sm text-muted-foreground">

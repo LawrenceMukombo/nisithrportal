@@ -2436,6 +2436,81 @@ export const useUpdateCandidate = <
 };
 
 /**
+ * @summary Get the current authenticated user's own applications
+ */
+export const getGetMyApplicationsUrl = () => {
+  return `/api/applications/my`;
+};
+
+export const getMyApplications = async (
+  options?: RequestInit,
+): Promise<Application[]> => {
+  return customFetch<Application[]>(getGetMyApplicationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMyApplicationsQueryKey = () => {
+  return [`/api/applications/my`] as const;
+};
+
+export const getGetMyApplicationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyApplications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMyApplications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyApplicationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyApplications>>
+  > = ({ signal }) => getMyApplications({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyApplications>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyApplicationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyApplications>>
+>;
+export type GetMyApplicationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current authenticated user's own applications
+ */
+
+export function useGetMyApplications<
+  TData = Awaited<ReturnType<typeof getMyApplications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMyApplications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyApplicationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary List applications
  */
 export const getGetApplicationsUrl = (params?: GetApplicationsParams) => {

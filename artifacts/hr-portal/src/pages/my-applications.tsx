@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { useGetApplications, useGetJobs } from "@workspace/api-client-react";
+import { useGetMyApplications, useGetJobs } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { useAuth } from "@/contexts/auth-context";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, {
@@ -24,10 +23,9 @@ const STATUS_CONFIG: Record<string, {
 };
 
 export default function MyApplicationsPage() {
-  const { user } = useAuth();
   const [filter, setFilter] = useState<string>("all");
 
-  const { data: allApplications = [], isLoading } = useGetApplications({});
+  const { data: allApplications = [], isLoading } = useGetMyApplications();
   const { data: jobs = [] } = useGetJobs({});
 
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));

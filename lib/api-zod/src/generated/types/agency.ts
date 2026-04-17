@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface Agency {
+  id: number;
+  name: string;
+  type: string;
+  configuration?: unknown | null;
+  createdAt?: string;
+  updatedAt?: string;
 }

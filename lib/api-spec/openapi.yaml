@@ -3,13 +3,35 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: AI-Enabled Government HR Recruitment & Workforce Management Portal API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: agencies
+    description: Agency management
+  - name: departments
+    description: Department management
+  - name: positions
+    description: Position management
+  - name: jobs
+    description: Job vacancy management
+  - name: candidates
+    description: Candidate management
+  - name: applications
+    description: Application management
+  - name: employees
+    description: Employee management
+  - name: contracts
+    description: Contract management
+  - name: aiScores
+    description: AI scoring
+  - name: dashboard
+    description: Dashboard analytics
 paths:
   /healthz:
     get:
@@ -24,7 +46,1152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # AUTH
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user and agency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login and get JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # AGENCIES
+  /agencies:
+    get:
+      operationId: getAgencies
+      tags: [agencies]
+      summary: List all agencies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of agencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agency"
+    post:
+      operationId: createAgency
+      tags: [agencies]
+      summary: Create a new agency
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgencyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agency"
+
+  /agencies/{id}:
+    get:
+      operationId: getAgency
+      tags: [agencies]
+      summary: Get agency by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agency"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateAgency
+      tags: [agencies]
+      summary: Update agency
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgencyRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agency"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # DEPARTMENTS
+  /departments:
+    get:
+      operationId: getDepartments
+      tags: [departments]
+      summary: List departments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Department"
+    post:
+      operationId: createDepartment
+      tags: [departments]
+      summary: Create a department
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  /departments/{id}:
+    get:
+      operationId: getDepartment
+      tags: [departments]
+      summary: Get department by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateDepartment
+      tags: [departments]
+      summary: Update department
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # POSITIONS
+  /positions:
+    get:
+      operationId: getPositions
+      tags: [positions]
+      summary: List positions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: department_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Position"
+    post:
+      operationId: createPosition
+      tags: [positions]
+      summary: Create a position
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePositionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Position"
+
+  /positions/{id}:
+    get:
+      operationId: getPosition
+      tags: [positions]
+      summary: Get position by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Position
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Position"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # JOBS
+  /jobs:
+    get:
+      operationId: getJobs
+      tags: [jobs]
+      summary: List job vacancies
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+        - name: department_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Create a job vacancy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get job by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateJob
+      tags: [jobs]
+      summary: Update job vacancy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      summary: Delete a job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /jobs/{id}/publish:
+    patch:
+      operationId: publishJob
+      tags: [jobs]
+      summary: Publish a job vacancy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /jobs/{id}/close:
+    patch:
+      operationId: closeJob
+      tags: [jobs]
+      summary: Close a job vacancy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # CANDIDATES
+  /candidates:
+    get:
+      operationId: getCandidates
+      tags: [candidates]
+      summary: List candidates
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Candidate"
+    post:
+      operationId: createCandidate
+      tags: [candidates]
+      summary: Create a candidate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCandidateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Candidate"
+
+  /candidates/{id}:
+    get:
+      operationId: getCandidate
+      tags: [candidates]
+      summary: Get candidate by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Candidate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Candidate"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateCandidate
+      tags: [candidates]
+      summary: Update candidate
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCandidateRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Candidate"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # APPLICATIONS
+  /applications:
+    get:
+      operationId: getApplications
+      tags: [applications]
+      summary: List applications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: query
+          schema:
+            type: integer
+        - name: candidate_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Application"
+    post:
+      operationId: createApplication
+      tags: [applications]
+      summary: Submit a job application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationRequest"
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /applications/{id}:
+    get:
+      operationId: getApplication
+      tags: [applications]
+      summary: Get application by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /applications/{id}/status:
+    patch:
+      operationId: updateApplicationStatus
+      tags: [applications]
+      summary: Update application status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApplicationStatusRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # EMPLOYEES
+  /employees:
+    get:
+      operationId: getEmployees
+      tags: [employees]
+      summary: List employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+        - name: department_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: Create an employee record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+
+  /employees/{id}:
+    get:
+      operationId: getEmployee
+      tags: [employees]
+      summary: Get employee by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: Update employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # CONTRACTS
+  /contracts:
+    get:
+      operationId: getContracts
+      tags: [contracts]
+      summary: List contracts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employee_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of contracts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contract"
+    post:
+      operationId: createContract
+      tags: [contracts]
+      summary: Create a contract
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContractRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contract"
+
+  /contracts/{id}:
+    get:
+      operationId: getContract
+      tags: [contracts]
+      summary: Get contract by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Contract
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contract"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateContract
+      tags: [contracts]
+      summary: Update contract
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContractRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contract"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # AI SCORES
+  /ai-scores:
+    get:
+      operationId: getAiScores
+      tags: [aiScores]
+      summary: List AI scores
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: query
+          schema:
+            type: integer
+        - name: candidate_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of AI scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiScore"
+
+  # DASHBOARD
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/workforce-gaps:
+    get:
+      operationId: getDashboardWorkforceGaps
+      tags: [dashboard]
+      summary: Get workforce gap analysis by department
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workforce gaps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkforceGap"
+
+  /dashboard/contract-expiries:
+    get:
+      operationId: getDashboardContractExpiries
+      tags: [dashboard]
+      summary: Get contracts expiring in the next 90 days
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+        - name: days
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Contract expiries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContractExpiry"
+
+  /dashboard/recruitment-pipeline:
+    get:
+      operationId: getDashboardRecruitmentPipeline
+      tags: [dashboard]
+      summary: Get recruitment pipeline grouped by status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recruitment pipeline
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecruitmentPipelineItem"
+
+  # AI ENDPOINTS
+  /ai/parse-cv:
+    post:
+      operationId: aiParseCv
+      tags: [aiScores]
+      summary: Parse a candidate CV and extract structured data
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParseCvRequest"
+      responses:
+        "200":
+          description: Parsed CV data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParsedCvData"
+
+  /ai/rank-candidates:
+    post:
+      operationId: aiRankCandidates
+      tags: [aiScores]
+      summary: Rank candidates for a job using AI
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RankCandidatesRequest"
+      responses:
+        "200":
+          description: Ranked candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RankedCandidate"
+
+  /ai/interview-questions:
+    post:
+      operationId: aiGenerateInterviewQuestions
+      tags: [aiScores]
+      summary: Generate interview questions for a candidate-job pair
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewQuestionsRequest"
+      responses:
+        "200":
+          description: Interview questions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewQuestionsResponse"
+
+  /ai/predictions/workforce:
+    get:
+      operationId: aiPredictWorkforce
+      tags: [aiScores]
+      summary: Get AI-powered workforce predictions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agency_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workforce predictions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkforcePrediction"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +1201,723 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    # Auth Schemas
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        agencyName:
+          type: string
+        agencyType:
+          type: string
+        roleName:
+          type: string
+      required:
+        - name
+        - email
+        - password
+        - agencyName
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+      required:
+        - token
+        - user
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        roleId:
+          type: ["integer", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - email
+        - status
+
+    # Agency Schemas
+    Agency:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+        configuration:
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - type
+
+    CreateAgencyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+      required:
+        - name
+
+    # Department Schemas
+    Department:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        agencyId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+
+    CreateDepartmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        agencyId:
+          type: ["integer", "null"]
+      required:
+        - name
+
+    # Position Schemas
+    Position:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        filledCount:
+          type: integer
+        totalCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - title
+        - filledCount
+        - totalCount
+
+    CreatePositionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        totalCount:
+          type: integer
+      required:
+        - title
+
+    # Job Schemas
+    Job:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        closingDate:
+          type: ["string", "null"]
+        createdBy:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - title
+        - description
+        - status
+
+    CreateJobRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        closingDate:
+          type: ["string", "null"]
+      required:
+        - title
+        - description
+
+    # Candidate Schemas
+    Candidate:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        cvUrl:
+          type: ["string", "null"]
+        parsedData:
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - email
+
+    CreateCandidateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        cvUrl:
+          type: ["string", "null"]
+      required:
+        - name
+        - email
+
+    UpdateCandidateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        cvUrl:
+          type: ["string", "null"]
+        parsedData:
+          nullable: true
+
+    # Application Schemas
+    Application:
+      type: object
+      properties:
+        id:
+          type: integer
+        jobId:
+          type: integer
+        candidateId:
+          type: integer
+        status:
+          type: string
+        score:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        coverLetter:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - jobId
+        - candidateId
+        - status
+
+    CreateApplicationRequest:
+      type: object
+      properties:
+        jobId:
+          type: integer
+        candidateName:
+          type: string
+        candidateEmail:
+          type: string
+        candidatePhone:
+          type: ["string", "null"]
+        cvUrl:
+          type: ["string", "null"]
+        coverLetter:
+          type: ["string", "null"]
+      required:
+        - jobId
+        - candidateName
+        - candidateEmail
+
+    UpdateApplicationStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        notes:
+          type: ["string", "null"]
+        score:
+          type: ["string", "null"]
+      required:
+        - status
+
+    # Employee Schemas
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        positionId:
+          type: ["integer", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        contractId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        startDate:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - status
+
+    CreateEmployeeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        positionId:
+          type: ["integer", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        agencyId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        startDate:
+          type: ["string", "null"]
+      required:
+        - name
+
+    UpdateEmployeeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        positionId:
+          type: ["integer", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        contractId:
+          type: ["integer", "null"]
+        status:
+          type: string
+        startDate:
+          type: ["string", "null"]
+
+    # Contract Schemas
+    Contract:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        startDate:
+          type: string
+        endDate:
+          type: ["string", "null"]
+        type:
+          type: string
+        status:
+          type: string
+        documentUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - employeeId
+        - startDate
+        - type
+        - status
+
+    CreateContractRequest:
+      type: object
+      properties:
+        employeeId:
+          type: integer
+        startDate:
+          type: string
+        endDate:
+          type: ["string", "null"]
+        type:
+          type: string
+        documentUrl:
+          type: ["string", "null"]
+      required:
+        - employeeId
+        - startDate
+
+    UpdateContractRequest:
+      type: object
+      properties:
+        endDate:
+          type: ["string", "null"]
+        type:
+          type: string
+        status:
+          type: string
+        documentUrl:
+          type: ["string", "null"]
+
+    # AI Score Schemas
+    AiScore:
+      type: object
+      properties:
+        id:
+          type: integer
+        candidateId:
+          type: integer
+        jobId:
+          type: integer
+        score:
+          type: ["string", "null"]
+        recommendation:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - candidateId
+        - jobId
+
+    # Dashboard Schemas
+    DashboardSummary:
+      type: object
+      properties:
+        totalEmployees:
+          type: integer
+        activeEmployees:
+          type: integer
+        openVacancies:
+          type: integer
+        totalJobs:
+          type: integer
+        contractsExpiringIn30Days:
+          type: integer
+        applicationsInPipeline:
+          type: integer
+        totalApplications:
+          type: integer
+        departmentsCount:
+          type: integer
+      required:
+        - totalEmployees
+        - activeEmployees
+        - openVacancies
+        - totalJobs
+        - contractsExpiringIn30Days
+        - applicationsInPipeline
+        - totalApplications
+        - departmentsCount
+
+    WorkforceGap:
+      type: object
+      properties:
+        departmentId:
+          type: ["integer", "null"]
+        departmentName:
+          type: string
+        filledPositions:
+          type: integer
+        totalPositions:
+          type: integer
+        gapCount:
+          type: integer
+        fillRate:
+          type: number
+      required:
+        - departmentName
+        - filledPositions
+        - totalPositions
+        - gapCount
+        - fillRate
+
+    ContractExpiry:
+      type: object
+      properties:
+        contractId:
+          type: integer
+        employeeId:
+          type: integer
+        employeeName:
+          type: string
+        contractType:
+          type: string
+        endDate:
+          type: string
+        daysUntilExpiry:
+          type: integer
+        status:
+          type: string
+      required:
+        - contractId
+        - employeeId
+        - employeeName
+        - contractType
+        - endDate
+        - daysUntilExpiry
+        - status
+
+    RecruitmentPipelineItem:
+      type: object
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+      required:
+        - status
+        - count
+
+    # AI Request/Response Schemas
+    ParseCvRequest:
+      type: object
+      properties:
+        candidateId:
+          type: integer
+        cvText:
+          type: string
+      required:
+        - candidateId
+        - cvText
+
+    ParsedCvData:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        skills:
+          type: array
+          items:
+            type: string
+        experience:
+          type: array
+          items:
+            type: string
+        education:
+          type: array
+          items:
+            type: string
+        summary:
+          type: ["string", "null"]
+      required:
+        - skills
+        - experience
+        - education
+
+    RankCandidatesRequest:
+      type: object
+      properties:
+        jobId:
+          type: integer
+      required:
+        - jobId
+
+    RankedCandidate:
+      type: object
+      properties:
+        candidateId:
+          type: integer
+        candidateName:
+          type: string
+        score:
+          type: number
+        recommendation:
+          type: string
+        applicationId:
+          type: integer
+      required:
+        - candidateId
+        - candidateName
+        - score
+        - recommendation
+
+    InterviewQuestionsRequest:
+      type: object
+      properties:
+        jobId:
+          type: integer
+        candidateId:
+          type: integer
+      required:
+        - jobId
+        - candidateId
+
+    InterviewQuestionsResponse:
+      type: object
+      properties:
+        questions:
+          type: array
+          items:
+            type: string
+        jobTitle:
+          type: string
+      required:
+        - questions
+        - jobTitle
+
+    WorkforcePrediction:
+      type: object
+      properties:
+        attritionRisk:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttritionRiskItem"
+        predictedVacancies:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictedVacancyItem"
+        recommendations:
+          type: array
+          items:
+            type: string
+      required:
+        - attritionRisk
+        - predictedVacancies
+        - recommendations
+
+    AttritionRiskItem:
+      type: object
+      properties:
+        departmentName:
+          type: string
+        riskLevel:
+          type: string
+        staffAtRisk:
+          type: integer
+        reason:
+          type: string
+      required:
+        - departmentName
+        - riskLevel
+        - staffAtRisk
+        - reason
+
+    PredictedVacancyItem:
+      type: object
+      properties:
+        departmentName:
+          type: string
+        predictedVacancies:
+          type: integer
+        timeframe:
+          type: string
+        confidence:
+          type: string
+      required:
+        - departmentName
+        - predictedVacancies
+        - timeframe
+        - confidence

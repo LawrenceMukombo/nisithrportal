@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
-}
+export type GetApplicationsParams = {
+  job_id?: number;
+  candidate_id?: number;
+  status?: string;
+};

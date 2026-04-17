@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface ContractExpiry {
+  contractId: number;
+  employeeId: number;
+  employeeName: string;
+  contractType: string;
+  endDate: string;
+  daysUntilExpiry: number;
   status: string;
 }

@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface UpdateApplicationStatusRequest {
   status: string;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  score?: string | null;
 }

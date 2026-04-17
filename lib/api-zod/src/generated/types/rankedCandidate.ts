@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface RankedCandidate {
+  candidateId: number;
+  candidateName: string;
+  score: number;
+  recommendation: string;
+  applicationId?: number;
 }

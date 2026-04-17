@@ -1,5 +1,5 @@
 import { useGetDashboardSummary, useGetDashboardRecruitmentPipeline, useGetDashboardContractExpiries, useGetDashboardWorkforceGaps, getGetDashboardSummaryQueryKey, getGetDashboardRecruitmentPipelineQueryKey, getGetDashboardContractExpiriesQueryKey, getGetDashboardWorkforceGapsQueryKey } from "@workspace/api-client-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Briefcase, Users, FileText, UserCheck, ScrollText, TrendingUp, AlertTriangle, Clock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -111,28 +111,35 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
-                Workforce Gaps
+                Filled vs. Vacant by Department
               </CardTitle>
-              <CardDescription>Positions with unfilled vacancies</CardDescription>
+              <CardDescription>Workforce capacity per department</CardDescription>
             </CardHeader>
             <CardContent>
               {gaps.isLoading ? (
                 <Skeleton className="h-48 w-full" />
               ) : gaps.data && gaps.data.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {gaps.data.map((gap, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-border last:border-0" data-testid={`row-gap-${i}`}>
-                      <div>
-                        <p className="text-sm font-medium">{gap.departmentName}</p>
-                        <p className="text-xs text-muted-foreground">{gap.gapCount} gap(s) / {gap.totalPositions} total</p>
-                      </div>
-                      <Badge variant="destructive">{gap.gapCount} open</Badge>
-                    </div>
-                  ))}
-                </div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart
+                    data={gaps.data.map((g) => ({
+                      dept: g.departmentName?.slice(0, 12) ?? "Dept",
+                      Filled: (g.totalPositions ?? 0) - (g.gapCount ?? 0),
+                      Vacant: g.gapCount ?? 0,
+                    }))}
+                    margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="dept" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Filled" stackId="a" fill="hsl(var(--primary))" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="Vacant" stackId="a" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               ) : (
                 <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                  No workforce gaps detected
+                  No workforce data available
                 </div>
               )}
             </CardContent>

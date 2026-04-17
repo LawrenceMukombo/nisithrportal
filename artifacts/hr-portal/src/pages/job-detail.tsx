@@ -23,7 +23,7 @@ const appSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
   email: z.string().email("Valid email required"),
   phone: z.string().optional(),
-  cvUrl: z.string().url("Please enter a valid URL").optional().or(z.literal("")),
+  cvUrl: z.string().optional(),
   coverLetter: z.string().optional(),
 });
 type AppForm = z.infer<typeof appSchema>;
@@ -105,8 +105,35 @@ function ApplyDialog({ jobId }: { jobId: number }) {
             )} />
             <FormField control={form.control} name="cvUrl" render={({ field }) => (
               <FormItem>
-                <FormLabel>CV / Résumé URL (optional)</FormLabel>
-                <FormControl><Input type="url" placeholder="https://drive.google.com/..." data-testid="input-apply-cv-url" {...field} /></FormControl>
+                <FormLabel>CV / Résumé Upload (optional)</FormLabel>
+                <FormControl>
+                  <div className="space-y-2">
+                    <Input
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      className="cursor-pointer"
+                      data-testid="input-apply-cv-url"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 2 * 1024 * 1024) {
+                          e.target.value = "";
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === "string") field.onChange(reader.result);
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    {field.value && !field.value.startsWith("data:") && null}
+                    {field.value?.startsWith("data:") && (
+                      <p className="text-xs text-green-600">CV file selected and ready to submit</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Supported: PDF, DOC, DOCX — max 2 MB</p>
+                  </div>
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )} />

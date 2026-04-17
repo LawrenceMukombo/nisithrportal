@@ -82,7 +82,6 @@ export default function EmployeesPage() {
                 <thead>
                   <tr className="border-b border-border text-muted-foreground">
                     <th className="text-left py-3 px-4 font-medium">Employee</th>
-                    <th className="text-left py-3 px-4 font-medium">Number</th>
                     <th className="text-left py-3 px-4 font-medium">Department</th>
                     <th className="text-left py-3 px-4 font-medium">Start Date</th>
                     <th className="text-left py-3 px-4 font-medium">Status</th>

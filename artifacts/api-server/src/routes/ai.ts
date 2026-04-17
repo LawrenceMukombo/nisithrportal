@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { db, candidatesTable, jobsTable, applicationsTable, aiScoresTable, employeesTable, contractsTable, departmentsTable } from "@workspace/db";
 import { AiParseCvBody, AiRankCandidatesBody, AiGenerateInterviewQuestionsBody } from "@workspace/api-zod";
 import { authMiddleware, requireRole } from "../middlewares/auth";
@@ -9,6 +10,47 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { extractTextFromUrl } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency } from "../lib/objectAcl";
+
+// ---------------------------------------------------------------------------
+// Zod schemas for validating AI JSON responses
+// ---------------------------------------------------------------------------
+
+const RankingItemSchema = z.object({
+  applicationId: z.number().int().positive(),
+  candidateId: z.number().int().positive(),
+  candidateName: z.string().optional().default("Unknown"),
+  score: z.number().min(0).max(100),
+  recommendation: z.string(),
+});
+
+const RankingResponseSchema = z.object({
+  rankings: z.array(RankingItemSchema),
+});
+
+const InterviewQuestionsSchema = z.object({
+  questions: z.array(z.string()).min(1),
+  jobTitle: z.string().optional(),
+});
+
+const AttritionRiskSchema = z.object({
+  departmentName: z.string(),
+  riskLevel: z.enum(["low", "medium", "high"]),
+  staffAtRisk: z.number().int().min(0),
+  reason: z.string(),
+});
+
+const PredictedVacancySchema = z.object({
+  departmentName: z.string(),
+  predictedVacancies: z.number().int().min(0),
+  timeframe: z.string(),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+
+const WorkforcePredictionSchema = z.object({
+  attritionRisk: z.array(AttritionRiskSchema),
+  predictedVacancies: z.array(PredictedVacancySchema),
+  recommendations: z.array(z.string()),
+});
 
 const INTERNAL_STORAGE_PREFIX = "/api/storage/";
 
@@ -160,10 +202,21 @@ router.post("/ai/rank-candidates", authMiddleware, aiRoles, async (req, res): Pr
       `Job Title: ${job.title}\nJob Description: ${job.description}\n\nCandidates:\n${JSON.stringify(summaries, null, 2)}\n\nReturn JSON with field: rankings (array of { applicationId, candidateId, candidateName, score (0-100 number), recommendation (string) }) ordered by score descending.`,
     );
 
-    const parsedResult = JSON.parse(result) as { rankings: Array<{ applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string }> };
+    const rawResult = RankingResponseSchema.safeParse(JSON.parse(result));
+    if (!rawResult.success) {
+      logger.warn({ err: rawResult.error }, "AI ranking response failed schema validation");
+      res.status(500).json({ error: "Candidate ranking failed: unexpected AI response format" });
+      return;
+    }
 
-    for (const ranked of parsedResult.rankings) {
-      if (!ranked.candidateId) continue;
+    // Enforce membership: only persist/return rankings for IDs actually in this job
+    const validApplicationIds = new Set(applications.map((a) => a.id));
+    const validCandidateIds = new Set(applications.map((a) => a.candidateId));
+    const validRankings = rawResult.data.rankings.filter(
+      (r) => validApplicationIds.has(r.applicationId) && validCandidateIds.has(r.candidateId),
+    );
+
+    for (const ranked of validRankings) {
       await db.insert(aiScoresTable).values({
         candidateId: ranked.candidateId,
         jobId,
@@ -173,7 +226,7 @@ router.post("/ai/rank-candidates", authMiddleware, aiRoles, async (req, res): Pr
       }).onConflictDoNothing();
     }
 
-    res.json(parsedResult.rankings);
+    res.json(validRankings);
   } catch (err) {
     logger.error(err, "Candidate ranking failed");
     res.status(500).json({ error: "Candidate ranking failed" });
@@ -218,8 +271,13 @@ router.post("/ai/interview-questions", authMiddleware, aiRoles, async (req, res)
       "You are an expert interviewer. Generate targeted interview questions for a candidate. Return JSON only.",
       `Job Title: ${job.title}\nJob Description: ${job.description}\n\nCandidate: ${candidate.name}\nProfile: ${JSON.stringify(candidate.parsedData ?? { name: candidate.name })}\n\nGenerate 8-10 targeted interview questions. Return JSON: { questions: string[], jobTitle: string }`,
     );
-    const parsedResult = JSON.parse(result);
-    res.json(parsedResult);
+    const rawResult = InterviewQuestionsSchema.safeParse(JSON.parse(result));
+    if (!rawResult.success) {
+      logger.warn({ err: rawResult.error }, "AI interview questions response failed schema validation");
+      res.status(500).json({ error: "Interview question generation failed: unexpected AI response format" });
+      return;
+    }
+    res.json(rawResult.data);
   } catch (err) {
     logger.error(err, "Interview question generation failed");
     res.status(500).json({ error: "Interview question generation failed" });
@@ -253,8 +311,13 @@ router.get("/ai/predictions/workforce", authMiddleware, requireRole("admin", "hr
       "You are an HR workforce planning expert. Analyze employee and contract data to predict workforce risks. Return JSON only.",
       `Employees (${employees.length} total, showing up to 20):\n${JSON.stringify(employees.slice(0, 20), null, 2)}\n\nActive Contracts (${contracts.length}):\n${JSON.stringify(contracts.slice(0, 20), null, 2)}\n\nDepartments:\n${JSON.stringify(departments, null, 2)}\n\nReturn JSON: { attritionRisk: Array<{ departmentName: string, riskLevel: 'low'|'medium'|'high', staffAtRisk: number, reason: string }>, predictedVacancies: Array<{ departmentName: string, predictedVacancies: number, timeframe: string, confidence: 'low'|'medium'|'high' }>, recommendations: string[] }`,
     );
-    const parsedResult = JSON.parse(result);
-    res.json(parsedResult);
+    const rawResult = WorkforcePredictionSchema.safeParse(JSON.parse(result));
+    if (!rawResult.success) {
+      logger.warn({ err: rawResult.error }, "AI workforce prediction response failed schema validation");
+      res.status(500).json({ error: "Workforce prediction failed: unexpected AI response format" });
+      return;
+    }
+    res.json(rawResult.data);
   } catch (err) {
     logger.error(err, "Workforce prediction failed");
     res.status(500).json({ error: "Workforce prediction failed" });

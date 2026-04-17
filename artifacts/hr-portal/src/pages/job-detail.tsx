@@ -39,9 +39,13 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 async function uploadCvFile(file: File): Promise<string> {
+  const token = localStorage.getItem("hr_portal_token");
   const urlRes = await fetch("/api/storage/uploads/request-url", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
   });
   if (!urlRes.ok) throw new Error("Failed to get upload URL");

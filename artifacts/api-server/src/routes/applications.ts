@@ -10,7 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
-import { createNotification, getUserIdByEmail } from "../lib/notificationService";
+import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 const router: IRouter = Router();
 
 async function getJobAgencyId(jobId: number): Promise<number | null> {
@@ -104,6 +104,21 @@ router.post("/applications", async (req, res): Promise<void> => {
   }).returning();
 
   res.status(201).json(application);
+
+  // Notify HR Officers in the job's agency about the new application
+  try {
+    const [job] = await db.select({ agencyId: jobsTable.agencyId, title: jobsTable.title })
+      .from(jobsTable).where(eq(jobsTable.id, jobId));
+    if (job?.agencyId != null) {
+      await notifyHrOfficers(
+        job.agencyId,
+        "new_application",
+        `New application received from ${candidateName} for "${job.title}".`,
+      );
+    }
+  } catch (err) {
+    console.error("[applications] New application HR notification failed:", err);
+  }
 });
 
 router.get("/applications/track", async (req, res): Promise<void> => {

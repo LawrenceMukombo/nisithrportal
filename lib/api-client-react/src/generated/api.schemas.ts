@@ -287,6 +287,18 @@ export interface AiScore {
   createdAt?: string;
 }
 
+export interface CreateAiScoreRequest {
+  candidateId: number;
+  jobId: number;
+  score?: string;
+  recommendation?: string;
+}
+
+export interface UpdateAiScoreRequest {
+  score?: string;
+  recommendation?: string;
+}
+
 export interface DashboardSummary {
   totalEmployees: number;
   activeEmployees: number;

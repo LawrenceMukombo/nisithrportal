@@ -10,7 +10,7 @@ export const jobsTable = pgTable("jobs", {
   title: text("title").notNull(),
   description: text("description").notNull(),
   departmentId: integer("department_id").references(() => departmentsTable.id),
-  agencyId: integer("agency_id").references(() => agenciesTable.id),
+  agencyId: integer("agency_id").notNull().references(() => agenciesTable.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("draft"),
   closingDate: date("closing_date"),
   createdBy: integer("created_by").references(() => usersTable.id),

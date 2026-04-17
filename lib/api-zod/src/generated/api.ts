@@ -704,6 +704,60 @@ export const GetAiScoresResponseItem = zod.object({
 export const GetAiScoresResponse = zod.array(GetAiScoresResponseItem);
 
 /**
+ * @summary Create an AI score record
+ */
+export const CreateAiScoreBody = zod.object({
+  candidateId: zod.number(),
+  jobId: zod.number(),
+  score: zod.string().optional(),
+  recommendation: zod.string().optional(),
+});
+
+/**
+ * @summary Get AI score by ID
+ */
+export const GetAiScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetAiScoreResponse = zod.object({
+  id: zod.number(),
+  candidateId: zod.number(),
+  jobId: zod.number(),
+  score: zod.string().nullish(),
+  recommendation: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update an AI score
+ */
+export const UpdateAiScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAiScoreBody = zod.object({
+  score: zod.string().optional(),
+  recommendation: zod.string().optional(),
+});
+
+export const UpdateAiScoreResponse = zod.object({
+  id: zod.number(),
+  candidateId: zod.number(),
+  jobId: zod.number(),
+  score: zod.string().nullish(),
+  recommendation: zod.string().nullish(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary Delete an AI score
+ */
+export const DeleteAiScoreParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Get dashboard summary metrics
  */
 export const GetDashboardSummaryQueryParams = zod.object({

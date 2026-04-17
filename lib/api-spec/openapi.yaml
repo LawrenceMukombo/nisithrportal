@@ -1049,6 +1049,110 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AiScore"
+    post:
+      operationId: createAiScore
+      tags: [aiScores]
+      summary: Create an AI score record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAiScoreRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiScore"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai-scores/{id}:
+    get:
+      operationId: getAiScore
+      tags: [aiScores]
+      summary: Get AI score by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: AI score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiScore"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateAiScore
+      tags: [aiScores]
+      summary: Update an AI score
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAiScoreRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiScore"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAiScore
+      tags: [aiScores]
+      summary: Delete an AI score
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # DASHBOARD
   /dashboard/summary:
@@ -1729,6 +1833,29 @@ components:
         - id
         - candidateId
         - jobId
+
+    CreateAiScoreRequest:
+      type: object
+      required:
+        - candidateId
+        - jobId
+      properties:
+        candidateId:
+          type: integer
+        jobId:
+          type: integer
+        score:
+          type: string
+        recommendation:
+          type: string
+
+    UpdateAiScoreRequest:
+      type: object
+      properties:
+        score:
+          type: string
+        recommendation:
+          type: string
 
     # Dashboard Schemas
     DashboardSummary:

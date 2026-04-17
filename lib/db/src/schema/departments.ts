@@ -6,7 +6,7 @@ import { agenciesTable } from "./agencies";
 export const departmentsTable = pgTable("departments", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  agencyId: integer("agency_id").references(() => agenciesTable.id),
+  agencyId: integer("agency_id").notNull().references(() => agenciesTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

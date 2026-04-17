@@ -12,7 +12,7 @@ export const employeesTable = pgTable("employees", {
   phone: text("phone"),
   positionId: integer("position_id").references(() => positionsTable.id),
   departmentId: integer("department_id").references(() => departmentsTable.id),
-  agencyId: integer("agency_id").references(() => agenciesTable.id),
+  agencyId: integer("agency_id").notNull().references(() => agenciesTable.id, { onDelete: "cascade" }),
   contractId: integer("contract_id"),
   status: text("status").notNull().default("active"),
   startDate: text("start_date"),

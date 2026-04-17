@@ -26,6 +26,7 @@ import type {
   Contract,
   ContractExpiry,
   CreateAgencyRequest,
+  CreateAiScoreRequest,
   CreateApplicationRequest,
   CreateCandidateRequest,
   CreateContractRequest,
@@ -60,6 +61,7 @@ import type {
   RankedCandidate,
   RecruitmentPipelineItem,
   RegisterRequest,
+  UpdateAiScoreRequest,
   UpdateApplicationStatusRequest,
   UpdateCandidateRequest,
   UpdateContractRequest,
@@ -3586,6 +3588,350 @@ export function useGetAiScores<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create an AI score record
+ */
+export const getCreateAiScoreUrl = () => {
+  return `/api/ai-scores`;
+};
+
+export const createAiScore = async (
+  createAiScoreRequest: CreateAiScoreRequest,
+  options?: RequestInit,
+): Promise<AiScore> => {
+  return customFetch<AiScore>(getCreateAiScoreUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAiScoreRequest),
+  });
+};
+
+export const getCreateAiScoreMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAiScore>>,
+    TError,
+    { data: BodyType<CreateAiScoreRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAiScore>>,
+  TError,
+  { data: BodyType<CreateAiScoreRequest> },
+  TContext
+> => {
+  const mutationKey = ["createAiScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAiScore>>,
+    { data: BodyType<CreateAiScoreRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAiScore(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAiScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAiScore>>
+>;
+export type CreateAiScoreMutationBody = BodyType<CreateAiScoreRequest>;
+export type CreateAiScoreMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create an AI score record
+ */
+export const useCreateAiScore = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAiScore>>,
+    TError,
+    { data: BodyType<CreateAiScoreRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAiScore>>,
+  TError,
+  { data: BodyType<CreateAiScoreRequest> },
+  TContext
+> => {
+  return useMutation(getCreateAiScoreMutationOptions(options));
+};
+
+/**
+ * @summary Get AI score by ID
+ */
+export const getGetAiScoreUrl = (id: number) => {
+  return `/api/ai-scores/${id}`;
+};
+
+export const getAiScore = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AiScore> => {
+  return customFetch<AiScore>(getGetAiScoreUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAiScoreQueryKey = (id: number) => {
+  return [`/api/ai-scores/${id}`] as const;
+};
+
+export const getGetAiScoreQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAiScore>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAiScore>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAiScoreQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiScore>>> = ({
+    signal,
+  }) => getAiScore(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAiScore>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAiScoreQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAiScore>>
+>;
+export type GetAiScoreQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get AI score by ID
+ */
+
+export function useGetAiScore<
+  TData = Awaited<ReturnType<typeof getAiScore>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAiScore>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAiScoreQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update an AI score
+ */
+export const getUpdateAiScoreUrl = (id: number) => {
+  return `/api/ai-scores/${id}`;
+};
+
+export const updateAiScore = async (
+  id: number,
+  updateAiScoreRequest: UpdateAiScoreRequest,
+  options?: RequestInit,
+): Promise<AiScore> => {
+  return customFetch<AiScore>(getUpdateAiScoreUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateAiScoreRequest),
+  });
+};
+
+export const getUpdateAiScoreMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAiScore>>,
+    TError,
+    { id: number; data: BodyType<UpdateAiScoreRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAiScore>>,
+  TError,
+  { id: number; data: BodyType<UpdateAiScoreRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateAiScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAiScore>>,
+    { id: number; data: BodyType<UpdateAiScoreRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAiScore(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAiScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAiScore>>
+>;
+export type UpdateAiScoreMutationBody = BodyType<UpdateAiScoreRequest>;
+export type UpdateAiScoreMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update an AI score
+ */
+export const useUpdateAiScore = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAiScore>>,
+    TError,
+    { id: number; data: BodyType<UpdateAiScoreRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAiScore>>,
+  TError,
+  { id: number; data: BodyType<UpdateAiScoreRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateAiScoreMutationOptions(options));
+};
+
+/**
+ * @summary Delete an AI score
+ */
+export const getDeleteAiScoreUrl = (id: number) => {
+  return `/api/ai-scores/${id}`;
+};
+
+export const deleteAiScore = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAiScoreUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAiScoreMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiScore>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAiScore>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAiScore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAiScore>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAiScore(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAiScoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAiScore>>
+>;
+
+export type DeleteAiScoreMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete an AI score
+ */
+export const useDeleteAiScore = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiScore>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAiScore>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAiScoreMutationOptions(options));
+};
 
 /**
  * @summary Get dashboard summary metrics

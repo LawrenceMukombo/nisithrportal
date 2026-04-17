@@ -101,6 +101,28 @@ Tenant enforcement middleware: `artifacts/api-server/src/middlewares/tenant.ts`
 - `OPENAI_BASE_URL` — optional custom AI API base URL
 - `PORT` — server port (auto-assigned by Replit)
 
+## Frontend HR Portal
+
+The React + Vite frontend (`artifacts/hr-portal/`) includes:
+- **Landing page** — public job listings with search and apply flow
+- **Auth pages** — login and register with JWT stored in `localStorage` as `hr_portal_token`
+- **Dashboard** — KPI cards (open vacancies, applications, employees, expiring contracts), recruitment pipeline bar chart, workforce gaps, contract expiry table
+- **Jobs** — list with publish/close/delete actions; create/edit form
+- **Applications** — list with status filter; detail page with AI score display; inline status update
+- **Candidates** — list with search; detail page with parsed CV data (skills, education)
+- **Employees** — list with search/filter; detail with contract history
+- **Contracts** — list with status filter; detail page
+- **Agencies & Departments** — admin-only CRUD management pages
+
+### Key Implementation Notes
+
+- JWT payload field is `roleName` (not `role`) — `decodeToken()` reads `payload.roleName`
+- Role names in DB: `admin`, `hr_officer`, `hiring_manager`, `executive`, `applicant`
+- All API response fields are camelCase (`jobId`, `candidateId`, `closingDate`, etc.)
+- `useGetAgencies` takes only 1 argument (options), no params
+- `useGetDepartments` takes (params?, options?) — pass `undefined` first if no params
+- `CreateApplicationRequest` accepts `candidateName`/`candidateEmail` directly (no pre-create candidate needed)
+
 ## Seeding
 
 On startup, the server automatically seeds: 5 default roles, the NISIT agency, and 8 departments if no agencies exist. Seed logic: `artifacts/api-server/src/lib/seed.ts`.

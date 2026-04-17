@@ -13,6 +13,11 @@ export const employeesTable = pgTable("employees", {
   positionId: integer("position_id").references(() => positionsTable.id),
   departmentId: integer("department_id").references(() => departmentsTable.id),
   agencyId: integer("agency_id").notNull().references(() => agenciesTable.id, { onDelete: "cascade" }),
+  // contractId is an app-managed soft reference to the employee's current active contract.
+  // It is NOT a DB foreign key: contracts.ts already imports employeesTable, so adding a
+  // reverse FK here would create a circular import. The authoritative source of truth for
+  // all contracts is the contracts table (contracts.employeeId → employees.id). This field
+  // is a convenience denormalization updated by the API when a contract is activated/closed.
   contractId: integer("contract_id"),
   status: text("status").notNull().default("active"),
   startDate: text("start_date"),

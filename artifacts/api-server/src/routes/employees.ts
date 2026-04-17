@@ -21,9 +21,11 @@ router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "exe
   }
   const conditions = [];
 
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null) {
-    conditions.push(eq(employeesTable.agencyId, agencyId));
+  const tenantAgencyId = getTenantAgencyId(req);
+  if (tenantAgencyId != null) {
+    conditions.push(eq(employeesTable.agencyId, tenantAgencyId));
+  } else if (query.data.agency_id != null) {
+    conditions.push(eq(employeesTable.agencyId, query.data.agency_id));
   }
 
   if (query.data.department_id != null) conditions.push(eq(employeesTable.departmentId, query.data.department_id));

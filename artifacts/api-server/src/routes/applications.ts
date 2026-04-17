@@ -53,10 +53,14 @@ router.post("/applications", async (req, res): Promise<void> => {
   }
   const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl, coverLetter } = parsed.data;
 
-  const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status })
+  const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate })
     .from(jobsTable).where(eq(jobsTable.id, jobId));
-  if (!jobExists) {
-    res.status(404).json({ error: "Job not found" });
+  if (!jobExists || jobExists.status !== "published") {
+    res.status(422).json({ error: "Job is not accepting applications" });
+    return;
+  }
+  if (jobExists.closingDate != null && new Date(jobExists.closingDate) < new Date()) {
+    res.status(422).json({ error: "Job closing date has passed" });
     return;
   }
 

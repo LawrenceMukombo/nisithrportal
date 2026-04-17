@@ -23,13 +23,19 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
     return;
   }
   const conditions = [];
+  const isAuthenticated = req.user != null;
 
   if (req.user?.agencyId != null) {
     conditions.push(eq(jobsTable.agencyId, req.user.agencyId));
   }
 
+  if (!isAuthenticated) {
+    conditions.push(eq(jobsTable.status, "published"));
+  } else if (query.data.status != null) {
+    conditions.push(eq(jobsTable.status, query.data.status));
+  }
+
   if (query.data.department_id != null) conditions.push(eq(jobsTable.departmentId, query.data.department_id));
-  if (query.data.status != null) conditions.push(eq(jobsTable.status, query.data.status));
   if (query.data.agency_id != null && req.user?.agencyId == null) {
     conditions.push(eq(jobsTable.agencyId, query.data.agency_id));
   }
@@ -75,6 +81,10 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   }
   const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, params.data.id));
   if (!job) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
+  if (req.user == null && job.status !== "published") {
     res.status(404).json({ error: "Job not found" });
     return;
   }

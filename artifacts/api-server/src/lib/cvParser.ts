@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import { eq } from "drizzle-orm";
+import dns from "dns/promises";
 import { db, candidatesTable } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { ObjectStorageService } from "./objectStorage.js";
@@ -21,18 +22,50 @@ if (typeof g["Path2D"] === "undefined") {
 // SSRF protection (applied to external/absolute URLs only)
 // ---------------------------------------------------------------------------
 
-/** IPv4 prefix blocks for private/link-local ranges. */
+/** IPv4 private/link-local/loopback prefixes (CIDR-approximated). */
 const PRIVATE_IPV4_PREFIXES = [
   "10.",
   "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
   "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
   "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
   "192.168.",
-  "169.254.", // link-local / AWS/GCP metadata IMDS
+  "169.254.", // link-local / AWS/GCP/Azure IMDS
   "127.",     // loopback
+  "100.64.",  // CGNAT shared address space
+  "0.",       // unspecified / reserved
 ];
 
-function assertSafeCvUrl(rawUrl: string): void {
+/** IPv6 prefixes for loopback, link-local, ULA, and IPv4-mapped addresses. */
+const PRIVATE_IPV6_PREFIXES = [
+  "::1",          // loopback
+  "fc", "fd",     // Unique Local Addresses (fc00::/7)
+  "fe80",         // link-local (fe80::/10)
+  "::ffff:",      // IPv4-mapped (::ffff:0:0/96)
+  "64:ff9b:",     // IPv4-translated (64:ff9b::/96)
+];
+
+/** Return true when the resolved IP belongs to a private/internal range. */
+function isPrivateIp(address: string): boolean {
+  const addr = address.toLowerCase().trim();
+  // IPv4
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(addr)) {
+    return PRIVATE_IPV4_PREFIXES.some((prefix) => addr.startsWith(prefix));
+  }
+  // IPv6
+  const expanded = addr.replace(/^\[/, "").replace(/\]$/, "");
+  return PRIVATE_IPV6_PREFIXES.some((prefix) => expanded.startsWith(prefix));
+}
+
+/**
+ * Validate that a URL is safe to fetch as an external CV source.
+ *
+ * Defence layers:
+ * 1. Must be HTTPS.
+ * 2. Hostname/IP literal blocklist (loopback, link-local, private, metadata).
+ * 3. DNS pre-resolution: look up A/AAAA records and reject private IPs before
+ *    connect (prevents redirect-to-private SSRF and DNS-rebinding attacks).
+ */
+async function assertSafeCvUrl(rawUrl: string): Promise<void> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -46,25 +79,47 @@ function assertSafeCvUrl(rawUrl: string): void {
 
   const host = parsed.hostname.toLowerCase();
 
+  // Hostname literal blocklist
   const blockedHosts = ["localhost", "127.0.0.1", "::1", "0.0.0.0", "169.254.169.254"];
   if (blockedHosts.includes(host)) {
     throw new Error(`cvUrl hostname '${host}' is not permitted`);
   }
 
-  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".localhost")) {
+  if (
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".localhost") ||
+    host === "metadata.google.internal"
+  ) {
     throw new Error(`cvUrl hostname '${host}' is not permitted`);
   }
 
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
-    for (const prefix of PRIVATE_IPV4_PREFIXES) {
-      if (host.startsWith(prefix)) {
-        throw new Error("cvUrl resolves to a private network address");
-      }
+  // If the hostname is already an IP literal, validate it directly
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[")) {
+    if (isPrivateIp(host)) {
+      throw new Error("cvUrl resolves to a private/internal network address");
     }
+    return; // IP literals cannot redirect to a different IP, no further DNS needed
   }
 
-  if (host === "metadata.google.internal") {
-    throw new Error(`cvUrl hostname '${host}' is not permitted`);
+  // DNS pre-resolution: resolve all A/AAAA records and reject private addresses
+  let addresses: { address: string; family: number }[];
+  try {
+    addresses = await dns.lookup(host, { all: true });
+  } catch {
+    throw new Error(`cvUrl hostname '${host}' could not be resolved`);
+  }
+
+  if (addresses.length === 0) {
+    throw new Error(`cvUrl hostname '${host}' resolved to no addresses`);
+  }
+
+  for (const { address } of addresses) {
+    if (isPrivateIp(address)) {
+      throw new Error(
+        `cvUrl hostname '${host}' resolves to a private/internal address (${address})`,
+      );
+    }
   }
 }
 
@@ -172,14 +227,17 @@ export async function extractTextFromUrl(url: string): Promise<string> {
     contentType = result.contentType;
   } else {
     // External URL — validate and fetch with SSRF protection.
-    assertSafeCvUrl(url);
+    // DNS pre-resolution ensures the resolved IP is not in a private/internal
+    // range before any connection is made. redirect:"error" prevents the fetch
+    // from following 3xx responses (which could redirect to internal hosts).
+    await assertSafeCvUrl(url);
 
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     let response: Response;
     try {
-      response = await fetch(url, { signal: controller.signal });
+      response = await fetch(url, { signal: controller.signal, redirect: "error" });
     } finally {
       clearTimeout(timeoutHandle);
     }

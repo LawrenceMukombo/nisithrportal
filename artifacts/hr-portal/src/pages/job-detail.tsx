@@ -40,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 function ApplyDialog({ jobId }: { jobId: number }) {
   const [open, setOpen] = useState(false);
+  const [submitted, setSubmitted] = useState<{ id: number; email: string } | null>(null);
   const { toast } = useToast();
 
   const form = useForm<AppForm>({
@@ -51,7 +52,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
 
   const onSubmit = async (values: AppForm) => {
     try {
-      await createApp.mutateAsync({
+      const result = await createApp.mutateAsync({
         data: {
           jobId,
           candidateName: values.fullName,
@@ -61,8 +62,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
           coverLetter: values.coverLetter || undefined,
         }
       });
-      toast({ title: "Application submitted!", description: "We'll review your application and be in touch." });
-      setOpen(false);
+      setSubmitted({ id: (result as { id: number }).id, email: values.email });
       form.reset();
     } catch {
       toast({ title: "Submission failed", description: "Please try again.", variant: "destructive" });
@@ -70,7 +70,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSubmitted(null); }}>
       <DialogTrigger asChild>
         <Button size="lg" data-testid="button-apply-now">
           <Send className="h-4 w-4 mr-2" /> Apply Now
@@ -78,8 +78,26 @@ function ApplyDialog({ jobId }: { jobId: number }) {
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Submit Application</DialogTitle>
+          <DialogTitle>{submitted ? "Application Submitted" : "Submit Application"}</DialogTitle>
         </DialogHeader>
+        {submitted && (
+          <div className="space-y-4 py-2" data-testid="apply-success">
+            <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center space-y-2">
+              <p className="text-green-700 font-semibold text-sm">Your application was received!</p>
+              <p className="text-xs text-muted-foreground">Save your reference number to track your application status.</p>
+              <div className="bg-white border rounded-md px-4 py-2 mt-2 font-mono text-lg font-bold tracking-widest text-primary" data-testid="apply-reference">
+                REF-{String(submitted.id).padStart(6, "0")}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Use your email <strong>{submitted.email}</strong> and the reference number above at{" "}
+              <Link href="/track-application" className="text-primary underline">Track Application</Link>{" "}
+              to check your status.
+            </p>
+            <Button className="w-full" onClick={() => setOpen(false)}>Close</Button>
+          </div>
+        )}
+        {!submitted && (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField control={form.control} name="fullName" render={({ field }) => (
@@ -154,6 +172,7 @@ function ApplyDialog({ jobId }: { jobId: number }) {
             </Button>
           </form>
         </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

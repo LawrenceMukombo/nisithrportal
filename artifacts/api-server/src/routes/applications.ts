@@ -105,6 +105,39 @@ router.post("/applications", async (req, res): Promise<void> => {
   res.status(201).json(application);
 });
 
+router.get("/applications/track", async (req, res): Promise<void> => {
+  const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+  const refId = parseInt(typeof req.query.ref === "string" ? req.query.ref : "", 10);
+
+  if (!email || isNaN(refId)) {
+    res.status(400).json({ error: "email and ref are required" });
+    return;
+  }
+
+  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, refId));
+  if (!application) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+
+  const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, application.candidateId));
+  if (!candidate || candidate.email.toLowerCase() !== email) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+
+  const [job] = await db.select({ title: jobsTable.title, location: jobsTable.location })
+    .from(jobsTable).where(eq(jobsTable.id, application.jobId));
+
+  res.json({
+    id: application.id,
+    status: application.status,
+    submittedAt: application.createdAt,
+    jobTitle: job?.title ?? "Unknown Position",
+    jobLocation: job?.location ?? null,
+  });
+});
+
 router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const params = GetApplicationParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {

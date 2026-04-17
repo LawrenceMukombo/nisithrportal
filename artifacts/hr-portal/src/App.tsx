@@ -25,6 +25,7 @@ import DepartmentsPage from "@/pages/departments";
 import UsersPage from "@/pages/users";
 import ContractFormPage from "@/pages/contract-form";
 import MyApplicationsPage from "@/pages/my-applications";
+import TrackApplicationPage from "@/pages/track-application";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,8 +46,8 @@ function ThemeInit() {
   return null;
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated, isLoading } = useAuth();
+function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
@@ -57,6 +58,19 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (isLoading) return null;
   if (!isAuthenticated) return null;
+
+  if (roles && user && !roles.includes(user.role)) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-3 text-center px-4">
+        <h2 className="text-xl font-semibold">Access Restricted</h2>
+        <p className="text-muted-foreground text-sm max-w-xs">
+          You don't have permission to view this page. Contact your HR administrator if you believe this is an error.
+        </p>
+        <a href="/" className="text-primary text-sm underline">Return to Home</a>
+      </div>
+    );
+  }
+
   return <Component />;
 }
 
@@ -75,7 +89,7 @@ function Router() {
       </Route>
       <Route path="/jobs/:id" component={JobDetailPage} />
       <Route path="/dashboard">
-        {() => <ProtectedRoute component={DashboardPage} />}
+        {() => <ProtectedRoute component={DashboardPage} roles={["admin", "hr_officer", "hiring_manager", "executive"]} />}
       </Route>
       <Route path="/candidates">
         {() => <ProtectedRoute component={CandidatesPage} />}
@@ -105,17 +119,18 @@ function Router() {
         {() => <ProtectedRoute component={ContractDetailPage} />}
       </Route>
       <Route path="/agencies">
-        {() => <ProtectedRoute component={AgenciesPage} />}
+        {() => <ProtectedRoute component={AgenciesPage} roles={["admin"]} />}
       </Route>
       <Route path="/departments">
-        {() => <ProtectedRoute component={DepartmentsPage} />}
+        {() => <ProtectedRoute component={DepartmentsPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/users">
-        {() => <ProtectedRoute component={UsersPage} />}
+        {() => <ProtectedRoute component={UsersPage} roles={["admin"]} />}
       </Route>
       <Route path="/my-applications">
         {() => <ProtectedRoute component={MyApplicationsPage} />}
       </Route>
+      <Route path="/track-application" component={TrackApplicationPage} />
       <Route component={NotFound} />
     </Switch>
   );

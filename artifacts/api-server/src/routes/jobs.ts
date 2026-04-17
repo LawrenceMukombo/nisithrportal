@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, inArray } from "drizzle-orm";
-import { db, jobsTable } from "@workspace/db";
+import { db, jobsTable, departmentsTable } from "@workspace/db";
 import {
   GetJobsQueryParams,
   CreateJobBody,
@@ -50,6 +50,10 @@ router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (
   if (agencyId == null) {
     res.status(403).json({ error: "Forbidden: no agency context — cannot create job" });
     return;
+  }
+  if (parsed.data.departmentId != null) {
+    const dept = await db.select({ agencyId: departmentsTable.agencyId }).from(departmentsTable).where(eq(departmentsTable.id, parsed.data.departmentId)).then((r) => r[0]);
+    if (!assertTenantAccess(res, dept?.agencyId ?? null, agencyId)) return;
   }
   const [job] = await db.insert(jobsTable).values({
     title: parsed.data.title,

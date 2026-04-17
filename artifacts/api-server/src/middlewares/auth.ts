@@ -4,16 +4,16 @@ import { logger } from "../lib/logger";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-if (!JWT_SECRET && process.env.NODE_ENV === "production") {
-  logger.error("JWT_SECRET environment variable is not set — this is a critical security misconfiguration");
-  process.exit(1);
-}
-
-const effectiveSecret = JWT_SECRET ?? "hr-portal-dev-only-secret-do-not-use-in-production";
-
 if (!JWT_SECRET) {
-  logger.warn("JWT_SECRET is not set — using insecure dev fallback. Set JWT_SECRET in production.");
+  if (process.env.NODE_ENV === "test") {
+    logger.warn("JWT_SECRET not set — using test-only fallback. Never deploy without JWT_SECRET.");
+  } else {
+    logger.error("JWT_SECRET environment variable is not set — cannot start the server");
+    process.exit(1);
+  }
 }
+
+const effectiveSecret: string = JWT_SECRET ?? "hr-portal-test-only-secret";
 
 export interface JwtPayload {
   userId: number;

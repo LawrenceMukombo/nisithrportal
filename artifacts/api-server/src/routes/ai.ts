@@ -32,12 +32,7 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { candidateId, cvUrl, cvText } = parsed.data;
-
-  if (!cvUrl && !cvText) {
-    res.status(400).json({ error: "Provide either cvUrl (file URL) or cvText (raw text)" });
-    return;
-  }
+  const { candidateId, cvText } = parsed.data;
 
   const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
   if (!candidate) {
@@ -58,6 +53,14 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
       res.status(403).json({ error: "Forbidden: candidate has no applications to your agency's jobs" });
       return;
     }
+  }
+
+  // Source CV text: use the candidate's uploaded document from storage (tenant-scoped,
+  // already ACL-verified via the application lookup above), then fall back to inline cvText.
+  const cvUrl = candidate.cvUrl ?? null;
+  if (!cvUrl && !cvText) {
+    res.status(400).json({ error: "No CV available: upload a CV file first, or provide cvText" });
+    return;
   }
 
   try {

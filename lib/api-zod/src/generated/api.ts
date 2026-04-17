@@ -925,18 +925,16 @@ export const GetRolesResponse = zod.array(GetRolesResponseItem);
  * @summary Parse a candidate CV and extract structured data
  */
 export const AiParseCvBody = zod.object({
-  candidateId: zod.number(),
-  cvUrl: zod
-    .string()
-    .optional()
+  candidateId: zod
+    .number()
     .describe(
-      "Public URL of the uploaded CV document (PDF or plain text). The server downloads and extracts text automatically.",
+      "The candidate to parse. The server automatically retrieves the candidate's uploaded CV document from storage. Provide cvText only when no file has been uploaded yet.",
     ),
   cvText: zod
     .string()
     .optional()
     .describe(
-      "Raw CV text to parse. Use when no file URL is available (e.g. paste-in text). At least one of cvUrl or cvText must be provided.",
+      "Raw CV text to parse. Used as fallback when the candidate has no uploaded CV document on record.",
     ),
 });
 

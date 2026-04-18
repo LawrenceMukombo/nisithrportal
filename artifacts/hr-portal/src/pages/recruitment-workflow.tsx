@@ -344,8 +344,11 @@ function StageCard({
               return (
                 <div
                   key={app.id}
-                  className="flex items-center justify-between p-2 rounded-md hover:bg-muted/60 cursor-pointer transition-colors group"
+                  role="link"
+                  tabIndex={0}
+                  className="flex items-center justify-between p-2 rounded-md hover:bg-muted/60 cursor-pointer transition-colors group focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={() => setLocation(`/applications/${app.id}`)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setLocation(`/applications/${app.id}`); }}
                   data-testid={`pipeline-app-${app.id}`}
                 >
                   <div className="flex-1 min-w-0">

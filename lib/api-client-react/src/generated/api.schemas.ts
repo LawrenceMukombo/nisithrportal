@@ -145,6 +145,52 @@ export interface Job {
   createdBy?: number | null;
   createdAt?: string;
   updatedAt?: string;
+  /** @nullable */
+  referenceNumber?: string | null;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  employmentType?: string | null;
+  /** @nullable */
+  workArrangement?: string | null;
+  /** @nullable */
+  jobSummary?: string | null;
+  /** @nullable */
+  responsibilities?: string[] | null;
+  /** @nullable */
+  reportingLine?: string | null;
+  /** @nullable */
+  minEducation?: string | null;
+  /** @nullable */
+  yearsExperience?: number | null;
+  /** @nullable */
+  technicalSkills?: string[] | null;
+  /** @nullable */
+  softSkills?: string[] | null;
+  /** @nullable */
+  certifications?: string[] | null;
+  /** @nullable */
+  languageRequirements?: string | null;
+  /** @nullable */
+  salaryMin?: number | null;
+  /** @nullable */
+  salaryMax?: number | null;
+  /** @nullable */
+  salaryCurrency?: string | null;
+  /** @nullable */
+  salaryVisibility?: string | null;
+  /** @nullable */
+  gradeBand?: string | null;
+  /** @nullable */
+  contractDuration?: string | null;
+  /** @nullable */
+  openingDate?: string | null;
+  /** @nullable */
+  requiredDocuments?: string[] | null;
+  /** @nullable */
+  maxApplicants?: number | null;
+  /** @nullable */
+  isFeatured?: boolean | null;
 }
 
 export interface CreateJobRequest {
@@ -157,6 +203,52 @@ export interface CreateJobRequest {
   status?: string;
   /** @nullable */
   closingDate?: string | null;
+  /** @nullable */
+  referenceNumber?: string | null;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  employmentType?: string | null;
+  /** @nullable */
+  workArrangement?: string | null;
+  /** @nullable */
+  jobSummary?: string | null;
+  /** @nullable */
+  responsibilities?: string[] | null;
+  /** @nullable */
+  reportingLine?: string | null;
+  /** @nullable */
+  minEducation?: string | null;
+  /** @nullable */
+  yearsExperience?: number | null;
+  /** @nullable */
+  technicalSkills?: string[] | null;
+  /** @nullable */
+  softSkills?: string[] | null;
+  /** @nullable */
+  certifications?: string[] | null;
+  /** @nullable */
+  languageRequirements?: string | null;
+  /** @nullable */
+  salaryMin?: number | null;
+  /** @nullable */
+  salaryMax?: number | null;
+  /** @nullable */
+  salaryCurrency?: string | null;
+  /** @nullable */
+  salaryVisibility?: string | null;
+  /** @nullable */
+  gradeBand?: string | null;
+  /** @nullable */
+  contractDuration?: string | null;
+  /** @nullable */
+  openingDate?: string | null;
+  /** @nullable */
+  requiredDocuments?: string[] | null;
+  /** @nullable */
+  maxApplicants?: number | null;
+  /** @nullable */
+  isFeatured?: boolean | null;
 }
 
 export interface Candidate {

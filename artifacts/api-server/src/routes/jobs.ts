@@ -47,6 +47,39 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   res.json(jobs);
 });
 
+function extractJobFields(data: typeof CreateJobBody._type | typeof UpdateJobBody._type) {
+  return {
+    title: data.title,
+    description: data.description,
+    departmentId: data.departmentId ?? null,
+    status: "status" in data ? (data.status ?? undefined) : undefined,
+    closingDate: data.closingDate ?? null,
+    referenceNumber: data.referenceNumber ?? null,
+    location: data.location ?? null,
+    employmentType: data.employmentType ?? null,
+    workArrangement: data.workArrangement ?? null,
+    jobSummary: data.jobSummary ?? null,
+    responsibilities: (data.responsibilities as string[] | null | undefined) ?? null,
+    reportingLine: data.reportingLine ?? null,
+    minEducation: data.minEducation ?? null,
+    yearsExperience: data.yearsExperience ?? null,
+    technicalSkills: (data.technicalSkills as string[] | null | undefined) ?? null,
+    softSkills: (data.softSkills as string[] | null | undefined) ?? null,
+    certifications: (data.certifications as string[] | null | undefined) ?? null,
+    languageRequirements: data.languageRequirements ?? null,
+    salaryMin: data.salaryMin ?? null,
+    salaryMax: data.salaryMax ?? null,
+    salaryCurrency: data.salaryCurrency ?? null,
+    salaryVisibility: data.salaryVisibility ?? null,
+    gradeBand: data.gradeBand ?? null,
+    contractDuration: data.contractDuration ?? null,
+    openingDate: data.openingDate ?? null,
+    requiredDocuments: (data.requiredDocuments as string[] | null | undefined) ?? null,
+    maxApplicants: data.maxApplicants ?? null,
+    isFeatured: data.isFeatured ?? null,
+  };
+}
+
 router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const parsed = CreateJobBody.safeParse(req.body);
   if (!parsed.success) {
@@ -62,13 +95,11 @@ router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (
     const dept = await db.select({ agencyId: departmentsTable.agencyId }).from(departmentsTable).where(eq(departmentsTable.id, parsed.data.departmentId)).then((r) => r[0]);
     if (!assertTenantAccess(res, dept?.agencyId ?? null, agencyId)) return;
   }
+  const fields = extractJobFields(parsed.data);
   const [job] = await db.insert(jobsTable).values({
-    title: parsed.data.title,
-    description: parsed.data.description,
-    departmentId: parsed.data.departmentId ?? null,
-    agencyId,
+    ...fields,
     status: parsed.data.status ?? "draft",
-    closingDate: parsed.data.closingDate ?? null,
+    agencyId,
     createdBy: req.user?.userId ?? null,
   }).returning();
   res.status(201).json(job);
@@ -89,7 +120,6 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   const isPublished = job.status === "published" || job.status === "open";
 
   if (!isPublished && !isOwnAgency) {
-    // Draft/closed jobs are only visible to their own agency
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
@@ -121,12 +151,10 @@ router.put("/jobs/:id", authMiddleware, requireRole("admin", "hr_officer"), asyn
       return;
     }
   }
+  const fields = extractJobFields(body.data);
   const [job] = await db.update(jobsTable).set({
-    title: body.data.title,
-    description: body.data.description,
-    departmentId: body.data.departmentId,
-    status: body.data.status,
-    closingDate: body.data.closingDate,
+    ...fields,
+    status: body.data.status ?? existing.status,
   }).where(eq(jobsTable.id, params.data.id)).returning();
   res.json(job);
 });
@@ -191,12 +219,10 @@ const ScreeningQuestionBody = z.object({
 router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.id as string);
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
-  // Fetch job visibility status and agency to enforce access control
   const [job] = await db.select({ status: jobsTable.status, agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   const isPublic = job.status === "open" || job.status === "published";
   if (!isPublic) {
-    // Non-public jobs: require authenticated HR/admin user in the same agency
     if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
     const userAgencyId = getTenantAgencyId(req);
     if (req.user.roleName !== "admin" && userAgencyId !== job.agencyId) {
@@ -214,7 +240,6 @@ router.post("/jobs/:id/screening-questions", authMiddleware, requireRole("admin"
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
   const parsed = ScreeningQuestionBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  // Ensure job belongs to same agency
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
@@ -233,7 +258,6 @@ router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole(
   const jobId = parseInt(req.params.id as string);
   const qid = parseInt(req.params.qid as string);
   if (isNaN(jobId) || isNaN(qid)) { res.status(400).json({ error: "Invalid id" }); return; }
-  // Verify the job belongs to the same agency before deleting
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
@@ -244,8 +268,6 @@ router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole(
   res.json({ deleted: true });
 });
 
-// PATCH /jobs/:id/screening-questions/:qid/order — reorder a question (move up/down)
-// Body: { direction: "up" | "down" }
 router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.id as string);
   const qid = parseInt(req.params.qid as string);
@@ -257,7 +279,6 @@ router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, require
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
 
-  // Fetch all questions ordered by displayOrder
   const allQuestions = await db.select().from(jobScreeningQuestionsTable)
     .where(eq(jobScreeningQuestionsTable.jobId, jobId))
     .orderBy(asc(jobScreeningQuestionsTable.displayOrder));
@@ -270,7 +291,6 @@ router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, require
     res.status(400).json({ error: "Cannot move question in that direction" }); return;
   }
 
-  // Swap displayOrder values
   const current = allQuestions[idx];
   const target = allQuestions[targetIdx];
   if (!current || !target) { res.status(500).json({ error: "Question lookup failed" }); return; }

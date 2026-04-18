@@ -94,14 +94,27 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
             )}
             <div className="flex items-center justify-between mt-3">
               <div className="flex gap-1.5 flex-wrap">
-                {(job as Job & { workType?: string }).workType && (
-                  <Badge variant="secondary" className="text-xs py-0">
-                    {WORK_TYPE_LABELS[(job as Job & { workType?: string }).workType ?? ""] ?? (job as Job & { workType?: string }).workType}
-                  </Badge>
-                )}
-                {!( job as Job & { workType?: string }).workType && (
-                  <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>
-                )}
+                {(() => {
+                  const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType ??
+                    (job as Job & { workType?: string }).workType;
+                  return empType
+                    ? <Badge variant="secondary" className="text-xs py-0">{WORK_TYPE_LABELS[empType] ?? empType}</Badge>
+                    : <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>;
+                })()}
+                {(() => {
+                  const j = job as Job & { salaryMin?: number; salaryMax?: number; salaryCurrency?: string; salaryVisibility?: string };
+                  if (j.salaryVisibility === "public" && (j.salaryMin || j.salaryMax)) {
+                    return (
+                      <Badge variant="outline" className="text-xs py-0 text-emerald-700 border-emerald-300 bg-emerald-50">
+                        {j.salaryCurrency ?? "PGK"} {(j.salaryMin ?? 0).toLocaleString()}{j.salaryMax ? `–${j.salaryMax.toLocaleString()}` : "+"}
+                      </Badge>
+                    );
+                  }
+                  if (j.salaryVisibility === "on_request") {
+                    return <Badge variant="outline" className="text-xs py-0">Salary on request</Badge>;
+                  }
+                  return null;
+                })()}
                 {job.closingDate && daysLeft !== null && daysLeft <= 14 && daysLeft >= 0 && (
                   <Badge variant="outline" className="text-xs py-0 text-amber-700 border-amber-300 bg-amber-50">Closing soon</Badge>
                 )}
@@ -176,7 +189,7 @@ export default function LandingPage() {
       const matchSearch = !search || j.title.toLowerCase().includes(search.toLowerCase()) ||
         (j.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);
-      const jobWorkType = (j as Job & { workType?: string }).workType ?? "";
+      const jobWorkType = (j as Job & { employmentType?: string; workType?: string }).employmentType ?? (j as Job & { workType?: string }).workType ?? "";
       const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
       const jobLocation = (j as Job & { location?: string }).location ?? "";
       const matchLocation = locationFilter === "all" ||

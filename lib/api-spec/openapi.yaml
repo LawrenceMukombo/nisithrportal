@@ -2363,6 +2363,62 @@ components:
           type: string
         updatedAt:
           type: string
+        referenceNumber:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        employmentType:
+          type: ["string", "null"]
+        workArrangement:
+          type: ["string", "null"]
+        jobSummary:
+          type: ["string", "null"]
+        responsibilities:
+          type: ["array", "null"]
+          items:
+            type: string
+        reportingLine:
+          type: ["string", "null"]
+        minEducation:
+          type: ["string", "null"]
+        yearsExperience:
+          type: ["integer", "null"]
+        technicalSkills:
+          type: ["array", "null"]
+          items:
+            type: string
+        softSkills:
+          type: ["array", "null"]
+          items:
+            type: string
+        certifications:
+          type: ["array", "null"]
+          items:
+            type: string
+        languageRequirements:
+          type: ["string", "null"]
+        salaryMin:
+          type: ["integer", "null"]
+        salaryMax:
+          type: ["integer", "null"]
+        salaryCurrency:
+          type: ["string", "null"]
+        salaryVisibility:
+          type: ["string", "null"]
+        gradeBand:
+          type: ["string", "null"]
+        contractDuration:
+          type: ["string", "null"]
+        openingDate:
+          type: ["string", "null"]
+        requiredDocuments:
+          type: ["array", "null"]
+          items:
+            type: string
+        maxApplicants:
+          type: ["integer", "null"]
+        isFeatured:
+          type: ["boolean", "null"]
       required:
         - id
         - title
@@ -2384,6 +2440,62 @@ components:
           type: string
         closingDate:
           type: ["string", "null"]
+        referenceNumber:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        employmentType:
+          type: ["string", "null"]
+        workArrangement:
+          type: ["string", "null"]
+        jobSummary:
+          type: ["string", "null"]
+        responsibilities:
+          type: ["array", "null"]
+          items:
+            type: string
+        reportingLine:
+          type: ["string", "null"]
+        minEducation:
+          type: ["string", "null"]
+        yearsExperience:
+          type: ["integer", "null"]
+        technicalSkills:
+          type: ["array", "null"]
+          items:
+            type: string
+        softSkills:
+          type: ["array", "null"]
+          items:
+            type: string
+        certifications:
+          type: ["array", "null"]
+          items:
+            type: string
+        languageRequirements:
+          type: ["string", "null"]
+        salaryMin:
+          type: ["integer", "null"]
+        salaryMax:
+          type: ["integer", "null"]
+        salaryCurrency:
+          type: ["string", "null"]
+        salaryVisibility:
+          type: ["string", "null"]
+        gradeBand:
+          type: ["string", "null"]
+        contractDuration:
+          type: ["string", "null"]
+        openingDate:
+          type: ["string", "null"]
+        requiredDocuments:
+          type: ["array", "null"]
+          items:
+            type: string
+        maxApplicants:
+          type: ["integer", "null"]
+        isFeatured:
+          type: ["boolean", "null"]
       required:
         - title
         - description

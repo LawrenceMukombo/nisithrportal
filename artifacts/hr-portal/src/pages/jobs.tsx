@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Eye, Pencil, Trash2, CheckCircle, XCircle } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -60,9 +60,21 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
             {job.title}
           </span>
         </Link>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
-        </p>
+        <div className="flex flex-wrap items-center gap-2 mt-0.5">
+          {(job as Job & { location?: string }).location && (
+            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+              <MapPin className="h-3 w-3" />{(job as Job & { location?: string }).location}
+            </span>
+          )}
+          {(job as Job & { employmentType?: string }).employmentType && (
+            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+              <Briefcase className="h-3 w-3" />{WORK_TYPE_LABELS[(job as Job & { employmentType?: string }).employmentType ?? ""] ?? (job as Job & { employmentType?: string }).employmentType}
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground">
+            Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
+          </span>
+        </div>
       </td>
       <td className="py-3 px-4 text-sm text-muted-foreground">{job.departmentId ? `Dept #${job.departmentId}` : "—"}</td>
       <td className="py-3 px-4">
@@ -176,7 +188,7 @@ export default function JobsPage() {
 
   const filtered = jobs.data?.filter((j) => {
     const matchSearch = j.title.toLowerCase().includes(search.toLowerCase());
-    const jobWorkType = (j as Job & { workType?: string }).workType ?? "";
+    const jobWorkType = (j as Job & { employmentType?: string; workType?: string }).employmentType ?? (j as Job & { workType?: string }).workType ?? "";
     const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
     const jobLocation = (j as Job & { location?: string }).location ?? "";
     const matchLocation = locationFilter === "all" ||

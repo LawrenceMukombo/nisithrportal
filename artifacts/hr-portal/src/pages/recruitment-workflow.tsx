@@ -81,15 +81,13 @@ function StageCard({
             <Badge variant="secondary" className="tabular-nums">
               {apps.length}
             </Badge>
-            {apps.length > 0 && (
-              <span
-                className={`text-xs font-semibold tabular-nums ${isSlowest ? "text-orange-500" : "text-muted-foreground"}`}
-                data-testid={`avg-days-${stage.id}`}
-                title="Average days applications have been in this stage"
-              >
-                avg {avgDaysInStage}d
-              </span>
-            )}
+            <span
+              className={`text-xs font-semibold tabular-nums ${isSlowest && apps.length > 0 ? "text-orange-500" : "text-muted-foreground"}`}
+              data-testid={`avg-days-${stage.id}`}
+              title="Average days applications have been in this stage"
+            >
+              avg {avgDaysInStage}d
+            </span>
           </div>
         </div>
         {isSlowest && apps.length > 0 && (
@@ -219,8 +217,8 @@ export default function RecruitmentWorkflowPage() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
+            {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-24 w-full rounded-xl" />
             ))}
           </div>
@@ -306,9 +304,7 @@ export default function RecruitmentWorkflowPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {WORKFLOW_STAGES.map((stage) => {
-                const apps = stageApps(stage);
-                const avg = avgDays(apps);
+              {stageAvgDays.map(({ stage, apps, avg }) => {
                 const isSlowest = slowestEntry?.stage.id === stage.id && apps.length > 0;
                 return (
                   <StageCard

@@ -1294,12 +1294,12 @@ export function ApplyWizard({
 
     // If authenticated, try to load server draft using JWT email (works even without localStorage)
     const token = getToken();
+    // Always use JWT email for server draft lookup — consistent with how we save
     const jwtEmail = token ? decodeToken(token)?.email ?? null : null;
-    const emailForServer = localValues?.candidateEmail ?? jwtEmail;
-    if (token && emailForServer) {
+    if (token && jwtEmail) {
       const loadServerDraft = async () => {
         try {
-          const res = await fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(emailForServer)}`, {
+          const res = await fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(jwtEmail)}`, {
             headers: { "Authorization": `Bearer ${token}` },
           });
           if (res.ok) {
@@ -1334,20 +1334,21 @@ export function ApplyWizard({
   }, [open, form, jobId, currentStep]);
 
   // Save draft to server for authenticated users.
-  // Uses the form email if filled; falls back to the JWT email so the draft is
-  // accessible cross-device even if the applicant hasn't typed their email yet.
+  // Always uses JWT email as the server-side key so access control always passes
+  // and the draft is reliably linked to the user's account regardless of what email
+  // the applicant has typed in the form so far.  The form's candidateEmail is
+  // preserved inside draftData and restored when the wizard loads.
   const saveDraftToServer = useCallback(async () => {
     const token = getToken();
     if (!token) return;
-    const values = form.getValues();
     const jwtEmail = decodeToken(token)?.email ?? null;
-    const email = values.candidateEmail || jwtEmail;
-    if (!email) return;
+    if (!jwtEmail) return;
+    const values = form.getValues();
     try {
       await fetch(`/api/applications/draft/${jobId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ candidateEmail: email, draftData: values, currentStep }),
+        body: JSON.stringify({ candidateEmail: jwtEmail, draftData: values, currentStep }),
       });
     } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
   }, [form, jobId, currentStep]);

@@ -2,7 +2,7 @@ import { useRoute, useLocation, useSearch, Link } from "wouter";
 import {
   ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2,
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
-  Monitor, CheckCircle2,
+  Monitor, CheckCircle2, Medal, Trophy,
 } from "lucide-react";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
 import { useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
@@ -89,15 +89,16 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
             {applications.length > 0 && (
               <Button
                 size="sm"
-                variant="outline"
+                variant={rankings.length > 0 ? "default" : "outline"}
                 onClick={handleRank}
                 disabled={rankMutation.isPending}
                 data-testid="button-ai-rank"
+                className="gap-1.5"
               >
                 {rankMutation.isPending ? (
-                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Ranking...</>
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Ranking…</>
                 ) : (
-                  <><Sparkles className="h-3.5 w-3.5 mr-1" /> AI Rank</>
+                  <><Sparkles className="h-3.5 w-3.5" /> Rank Candidates</>
                 )}
               </Button>
             )}
@@ -172,25 +173,70 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
       {rankings.length > 0 && (
         <>
           <Separator />
-          <div className="p-4 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> AI Candidate Rankings
-            </p>
-            <div className="space-y-2">
-              {rankings.map((r, i) => (
-                <Link key={r.applicationId} href={`/applications/${r.applicationId}`}>
-                  <div className="flex items-center gap-3 p-2.5 rounded-md hover:bg-muted/60 cursor-pointer transition-colors">
-                    <span className="text-xs text-muted-foreground w-4">#{i + 1}</span>
-                    <span className="flex-1 text-sm font-medium">{r.candidateName}</span>
-                    <Badge variant={r.score >= 80 ? "default" : r.score >= 60 ? "secondary" : "outline"}>
-                      {r.score}/100
-                    </Badge>
+          <div className="p-4 space-y-4" data-testid="section-ai-rankings">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Trophy className="h-3.5 w-3.5 text-amber-500" /> AI Ranked Shortlist
+              </p>
+              <span className="text-xs text-muted-foreground">{rankings.length} candidate{rankings.length !== 1 ? "s" : ""} ranked</span>
+            </div>
+            <div className="space-y-1" data-testid="table-rankings">
+              {/* Header row */}
+              <div className="grid grid-cols-[2rem_1fr_9rem_4.5rem] gap-2 px-2.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">
+                <span>#</span>
+                <span>Candidate</span>
+                <span>Match Score</span>
+                <span className="text-right">View</span>
+              </div>
+              {rankings.map((r, i) => {
+                const pct = Math.min(100, Math.max(0, r.score));
+                const matchLabel = pct >= 80 ? "High Match" : pct >= 60 ? "Good Match" : pct >= 40 ? "Partial Match" : "Low Match";
+                const matchColor = pct >= 80
+                  ? "text-green-700 bg-green-50 border-green-200"
+                  : pct >= 60
+                  ? "text-blue-700 bg-blue-50 border-blue-200"
+                  : pct >= 40
+                  ? "text-amber-700 bg-amber-50 border-amber-200"
+                  : "text-red-700 bg-red-50 border-red-200";
+                const barColor = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-blue-500" : pct >= 40 ? "bg-amber-400" : "bg-red-400";
+                const medalEl = i === 0
+                  ? <Medal className="h-4 w-4 text-amber-500" />
+                  : i === 1
+                  ? <Medal className="h-4 w-4 text-slate-400" />
+                  : i === 2
+                  ? <Medal className="h-4 w-4 text-amber-700" />
+                  : <span className="text-xs text-muted-foreground font-mono">{i + 1}</span>;
+
+                return (
+                  <div key={r.applicationId ?? r.candidateId} className="group rounded-lg hover:bg-muted/50 transition-colors" data-testid={`ranking-row-${r.candidateId}`}>
+                    <Link href={`/applications/${r.applicationId}`}>
+                      <div className="grid grid-cols-[2rem_1fr_9rem_4.5rem] gap-2 items-center px-2.5 py-2.5 cursor-pointer">
+                        <div className="flex items-center justify-center">
+                          {medalEl}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{r.candidateName}</p>
+                          {r.recommendation && (
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{r.recommendation}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums w-7 text-right">{pct}%</span>
+                          </div>
+                          <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${matchColor}`}>{matchLabel}</Badge>
+                        </div>
+                        <div className="flex justify-end">
+                          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
+                      </div>
+                    </Link>
                   </div>
-                  {r.recommendation && (
-                    <p className="text-xs text-muted-foreground ml-9 mb-1 line-clamp-1">{r.recommendation}</p>
-                  )}
-                </Link>
-              ))}
+                );
+              })}
             </div>
           </div>
         </>

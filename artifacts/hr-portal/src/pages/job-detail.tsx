@@ -55,7 +55,7 @@ function useScreeningQuestions(jobId: number, enabled: boolean) {
 
 type RankedCandidate = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
 
-function ApplicationPipelineCard({ jobId }: { jobId: number }) {
+function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canManageJobs: boolean }) {
   const { data: applications = [], isLoading } = useGetApplications({ job_id: jobId });
   const { toast } = useToast();
   const [rankings, setRankings] = useState<RankedCandidate[]>([]);
@@ -64,7 +64,9 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
   const handleRank = async () => {
     try {
       const result = await rankMutation.mutateAsync({ data: { jobId } });
-      setRankings(result as RankedCandidate[]);
+      // Sort descending by score to guarantee table order regardless of API response order
+      const sorted = [...(result as RankedCandidate[])].sort((a, b) => b.score - a.score);
+      setRankings(sorted);
       toast({ title: "Candidates ranked by AI" });
     } catch {
       toast({ title: "Failed to rank candidates", variant: "destructive" });
@@ -86,7 +88,7 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">{applications.length} application{applications.length !== 1 ? "s" : ""}</Badge>
-            {applications.length > 0 && (
+            {canManageJobs && applications.length > 0 && (
               <Button
                 size="sm"
                 variant={rankings.length > 0 ? "default" : "outline"}
@@ -288,7 +290,7 @@ export default function JobDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const { isAuthenticated } = useAuth();
-  const { isAdmin, isHR, isHiringManager } = useRole();
+  const { isAdmin, isHR, isHiringManager, canManageJobs } = useRole();
   const [wizardOpen, setWizardOpen] = useState(() => new URLSearchParams(searchString).get("apply") === "1");
 
   const jobId = match ? parseInt(params!.id) : 0;
@@ -544,7 +546,7 @@ export default function JobDetailPage() {
             </Card>
           )}
 
-          {canViewPipeline && <ApplicationPipelineCard jobId={job.id} />}
+          {canViewPipeline && <ApplicationPipelineCard jobId={job.id} canManageJobs={canManageJobs} />}
         </div>
 
         {/* Apply Wizard */}

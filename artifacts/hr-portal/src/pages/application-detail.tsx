@@ -31,6 +31,7 @@ import { useRole } from "@/contexts/auth-context";
 import { Badge } from "@/components/ui/badge";
 
 import { ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
+import { ApplicationTimeline } from "@/components/application-timeline";
 
 const STATUS_OPTIONS = ALL_STATUS_OPTIONS;
 
@@ -336,6 +337,15 @@ export default function ApplicationDetailPage() {
             <Badge variant="outline" className="capitalize">{app.status}</Badge>
           )}
         </div>
+
+        <Card data-testid="card-application-timeline">
+          <CardHeader>
+            <CardTitle className="text-base">Application Timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ApplicationTimeline status={app.status} statusHistory={app.statusHistory} />
+          </CardContent>
+        </Card>
 
         {score && !canEvaluate && (
           <Card>

@@ -244,7 +244,7 @@ router.get(
 router.get(
   "/pdf/contract/:contractId",
   authMiddleware,
-  requireRole("admin", "hr_officer", "hiring_manager"),
+  requireRole("admin", "hr_officer"),
   async (req: Request, res: Response) => {
     const contractId = parseIntParam(req.params.contractId);
 

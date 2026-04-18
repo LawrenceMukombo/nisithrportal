@@ -12,6 +12,7 @@ import {
   departmentsTable,
 } from "@workspace/db";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import PDFDocument from "pdfkit";
 
 const router: IRouter = Router();
@@ -105,7 +106,7 @@ function signatureBlock(doc: PDFKit.PDFDocument) {
 // ─── GET /api/pdf/offer-letter/:applicationId ────────────────────────────────
 
 router.get(
-  "/api/pdf/offer-letter/:applicationId",
+  "/pdf/offer-letter/:applicationId",
   authMiddleware,
   requireRole("admin", "hr_officer", "hiring_manager"),
   async (req: Request, res: Response) => {
@@ -125,6 +126,10 @@ router.get(
       res.status(400).json({ error: "Offer letters can only be generated for hired applications" });
       return;
     }
+
+    // Tenant access: derive the job's agency and assert the requesting user belongs to it
+    const [jobForTenant] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, appRow.jobId));
+    if (!assertTenantAccess(res, jobForTenant?.agencyId ?? null, getTenantAgencyId(req))) return;
 
     const [candidate] = await db
       .select()
@@ -237,7 +242,7 @@ router.get(
 // ─── GET /api/pdf/contract/:contractId ───────────────────────────────────────
 
 router.get(
-  "/api/pdf/contract/:contractId",
+  "/pdf/contract/:contractId",
   authMiddleware,
   requireRole("admin", "hr_officer", "hiring_manager"),
   async (req: Request, res: Response) => {
@@ -252,6 +257,12 @@ router.get(
       res.status(404).json({ error: "Contract not found" });
       return;
     }
+
+    // Tenant access: derive the employee's agency and assert the requesting user belongs to it
+    const [empForTenant] = contract.employeeId
+      ? await db.select({ agencyId: employeesTable.agencyId }).from(employeesTable).where(eq(employeesTable.id, contract.employeeId))
+      : [];
+    if (!assertTenantAccess(res, empForTenant?.agencyId ?? null, getTenantAgencyId(req))) return;
 
     const [employee] = contract.employeeId
       ? await db.select().from(employeesTable).where(eq(employeesTable.id, contract.employeeId))

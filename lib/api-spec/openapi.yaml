@@ -2020,6 +2020,25 @@ components:
           nullable: true
 
     # Application Schemas
+    ApplicationStatusHistoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicationId:
+          type: integer
+        status:
+          type: string
+        changedAt:
+          type: string
+        note:
+          type: ["string", "null"]
+      required:
+        - id
+        - applicationId
+        - status
+        - changedAt
+
     Application:
       type: object
       properties:
@@ -2041,6 +2060,10 @@ components:
           type: string
         updatedAt:
           type: string
+        statusHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationStatusHistoryItem"
       required:
         - id
         - jobId

@@ -465,6 +465,17 @@ export const GetMyApplicationsResponseItem = zod.object({
   coverLetter: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  statusHistory: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        applicationId: zod.number(),
+        status: zod.string(),
+        changedAt: zod.string(),
+        note: zod.string().nullish(),
+      }),
+    )
+    .optional(),
 });
 export const GetMyApplicationsResponse = zod.array(
   GetMyApplicationsResponseItem,
@@ -489,6 +500,17 @@ export const GetApplicationsResponseItem = zod.object({
   coverLetter: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  statusHistory: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        applicationId: zod.number(),
+        status: zod.string(),
+        changedAt: zod.string(),
+        note: zod.string().nullish(),
+      }),
+    )
+    .optional(),
 });
 export const GetApplicationsResponse = zod.array(GetApplicationsResponseItem);
 
@@ -521,6 +543,17 @@ export const GetApplicationResponse = zod.object({
   coverLetter: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  statusHistory: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        applicationId: zod.number(),
+        status: zod.string(),
+        changedAt: zod.string(),
+        note: zod.string().nullish(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -546,6 +579,17 @@ export const UpdateApplicationStatusResponse = zod.object({
   coverLetter: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
+  statusHistory: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        applicationId: zod.number(),
+        status: zod.string(),
+        changedAt: zod.string(),
+        note: zod.string().nullish(),
+      }),
+    )
+    .optional(),
 });
 
 /**

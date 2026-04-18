@@ -152,6 +152,15 @@ export interface UpdateCandidateRequest {
   parsedData?: unknown | null;
 }
 
+export interface ApplicationStatusHistoryItem {
+  id: number;
+  applicationId: number;
+  status: string;
+  changedAt: string;
+  /** @nullable */
+  note?: string | null;
+}
+
 export interface Application {
   id: number;
   jobId: number;
@@ -165,6 +174,7 @@ export interface Application {
   coverLetter?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  statusHistory?: ApplicationStatusHistoryItem[];
 }
 
 export interface ApplicationTrackResult {

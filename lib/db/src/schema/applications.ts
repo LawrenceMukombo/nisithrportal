@@ -16,6 +16,15 @@ export const applicationsTable = pgTable("applications", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+export const applicationStatusHistoryTable = pgTable("application_status_history", {
+  id: serial("id").primaryKey(),
+  applicationId: integer("application_id").notNull().references(() => applicationsTable.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  note: text("note"),
+});
+
 export const insertApplicationSchema = createInsertSchema(applicationsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;
 export type Application = typeof applicationsTable.$inferSelect;
+export type ApplicationStatusHistory = typeof applicationStatusHistoryTable.$inferSelect;

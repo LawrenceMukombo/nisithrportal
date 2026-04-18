@@ -184,7 +184,7 @@ export default function MyApplicationsPage() {
 
                     {isExpanded && (
                       <div className="mt-4 pt-1" data-testid={`timeline-${app.id}`}>
-                        <ApplicationTimeline status={app.status} />
+                        <ApplicationTimeline status={app.status} statusHistory={app.statusHistory} />
                       </div>
                     )}
                   </CardContent>

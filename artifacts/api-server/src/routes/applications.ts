@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
-import { db, applicationsTable, candidatesTable, jobsTable } from "@workspace/db";
+import { eq, and, inArray, asc } from "drizzle-orm";
+import { db, applicationsTable, applicationStatusHistoryTable, candidatesTable, jobsTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
   CreateApplicationBody,
@@ -69,7 +69,19 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
     .where(inArray(applicationsTable.candidateId, candidateIds))
     .orderBy(applicationsTable.createdAt);
 
-  res.json(apps);
+  const appIds = apps.map((a) => a.id);
+  const historyRows = appIds.length > 0
+    ? await db.select().from(applicationStatusHistoryTable)
+        .where(inArray(applicationStatusHistoryTable.applicationId, appIds))
+        .orderBy(asc(applicationStatusHistoryTable.changedAt))
+    : [];
+
+  const historyByApp: Record<number, typeof historyRows> = {};
+  for (const row of historyRows) {
+    (historyByApp[row.applicationId] ??= []).push(row);
+  }
+
+  res.json(apps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
 router.post("/applications", async (req, res): Promise<void> => {
@@ -137,7 +149,12 @@ router.post("/applications", async (req, res): Promise<void> => {
     coverLetter: coverLetter ?? null,
   }).returning();
 
-  res.status(201).json(application);
+  await db.insert(applicationStatusHistoryTable).values({
+    applicationId: application.id,
+    status: "applied",
+  });
+
+  res.status(201).json({ ...application, statusHistory: [{ id: 0, applicationId: application.id, status: "applied", changedAt: application.createdAt, note: null }] });
 
   // Notify the responsible HR officer (job poster) about the new application.
   // If the job has no assigned poster, fall back to all HR officers in the agency.
@@ -221,7 +238,10 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
     const jobAgencyId = await getJobAgencyId(application.jobId);
     if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
   }
-  res.json(application);
+  const statusHistory = await db.select().from(applicationStatusHistoryTable)
+    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  res.json({ ...application, statusHistory });
 });
 
 router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
@@ -253,6 +273,14 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     })
     .where(eq(applicationsTable.id, params.data.id))
     .returning();
+
+  if (body.data.status !== existing.status) {
+    await db.insert(applicationStatusHistoryTable).values({
+      applicationId: application.id,
+      status: body.data.status,
+      note: body.data.notes ?? null,
+    });
+  }
 
   // Trigger notification to applicant on status change
   if (body.data.status && body.data.status !== existing.status) {
@@ -286,7 +314,10 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     }
   }
 
-  res.json(application);
+  const statusHistory = await db.select().from(applicationStatusHistoryTable)
+    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  res.json({ ...application, statusHistory });
 });
 
 export default router;

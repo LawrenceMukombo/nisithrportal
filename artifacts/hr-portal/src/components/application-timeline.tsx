@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, XCircle, AlertCircle } from "lucide-react";
+import { CheckCircle2, Circle, XCircle, AlertCircle, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   WORKFLOW_STAGES,
@@ -9,15 +9,45 @@ import {
   isStageCurrent,
 } from "@/lib/workflowStages";
 
-interface ApplicationTimelineProps {
+interface StatusHistoryItem {
+  id: number;
+  applicationId: number;
   status: string;
+  changedAt: string;
+  note?: string | null;
 }
 
-export function ApplicationTimeline({ status }: ApplicationTimelineProps) {
+interface ApplicationTimelineProps {
+  status: string;
+  statusHistory?: StatusHistoryItem[];
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function elapsedDays(dateStr: string): number {
+  const d = new Date(dateStr);
+  const now = new Date();
+  return Math.max(0, Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+export function ApplicationTimeline({ status, statusHistory }: ApplicationTimelineProps) {
   const isTerminal = TERMINAL_STATUSES.includes(status);
   const activeIndex = getActiveStageIndex(status);
 
+  const historyByStatus: Record<string, string> = {};
+  if (statusHistory) {
+    for (const h of statusHistory) {
+      if (!(h.status in historyByStatus)) {
+        historyByStatus[h.status] = h.changedAt;
+      }
+    }
+  }
+
   if (isTerminal) {
+    const terminalDate = statusHistory?.find((h) => h.status === status)?.changedAt;
     return (
       <div className="rounded-lg border border-border p-4">
         <div className="flex items-center gap-3">
@@ -35,6 +65,9 @@ export function ApplicationTimeline({ status }: ApplicationTimelineProps) {
                 ? "Thank you for applying. Unfortunately your application was not successful at this time."
                 : "This application has been withdrawn from the recruitment process."}
             </p>
+            {terminalDate && (
+              <p className="text-xs text-muted-foreground mt-1">{formatDate(terminalDate)}</p>
+            )}
           </div>
         </div>
       </div>
@@ -53,6 +86,9 @@ export function ApplicationTimeline({ status }: ApplicationTimelineProps) {
           const future = !complete && !current;
           const colors = STAGE_COLOR_MAP[stage.color];
           const Icon = stage.icon;
+
+          const stageDate = historyByStatus[stage.status];
+          const days = current && stageDate ? elapsedDays(stageDate) : null;
 
           return (
             <div key={stage.id} className="flex gap-3 relative">
@@ -96,12 +132,25 @@ export function ApplicationTimeline({ status }: ApplicationTimelineProps) {
                     </Badge>
                   )}
                 </div>
+                {complete && stageDate && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{formatDate(stageDate)}</p>
+                )}
                 {(current || future) && (
                   <p className={`text-xs mt-0.5 ${current ? "text-muted-foreground" : "text-muted-foreground/50"}`}>
                     {stage.description}
                   </p>
                 )}
-                {current && (
+                {current && stageDate && (
+                  <p className={`text-xs mt-1 flex items-center gap-1 ${colors.text}`}>
+                    <Clock className="h-3 w-3" />
+                    {days === 0
+                      ? "Started today"
+                      : days === 1
+                      ? "1 day in this stage"
+                      : `${days} days in this stage`}
+                  </p>
+                )}
+                {current && !stageDate && (
                   <p className={`text-xs mt-1 font-medium ${colors.text}`}>Expected: {stage.timeframe}</p>
                 )}
               </div>

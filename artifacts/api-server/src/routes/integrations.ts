@@ -182,10 +182,10 @@ router.post("/integration/:type", authMiddleware, requireRole("admin", "hr_offic
   const inputData = (req.body ?? {}) as Record<string, unknown>;
   const result = await executeIntegration(config, inputData);
 
-  // Persist execution log
+  // Persist execution log (include DB config ID when available for traceability)
   try {
     await db.insert(integrationLogsTable).values({
-      integrationConfigId: null,
+      integrationConfigId: config.dbConfigId ?? null,
       status: result.success ? "success" : "error",
       requestPayload: inputData,
       responsePayload: result.data ?? null,

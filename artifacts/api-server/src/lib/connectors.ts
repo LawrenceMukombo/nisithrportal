@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { db, integrationConfigsTable } from "@workspace/db";
 
 // ─── Connector catalog types (UI discovery) ────────────────────────────────────
@@ -197,6 +197,7 @@ export const STATIC_INTEGRATION_CONFIGS: StaticIntegrationConfig[] = [
 // ─── Executable integration config (unified shape) ────────────────────────────
 
 export interface ExecutableIntegrationConfig {
+  dbConfigId?: number;
   type: string;
   name: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -211,47 +212,68 @@ export interface ExecutableIntegrationConfig {
 }
 
 // ─── DB-backed config loader ───────────────────────────────────────────────────
-// Prefers DB config over static config when one exists and is enabled.
+// Priority order:
+//   1. Agency-specific enabled DB config (most specific)
+//   2. Global enabled DB config (agencyId IS NULL)
+//   3. Static config (fallback, no DB record needed)
+
+function dbRowToConfig(dbCfg: typeof integrationConfigsTable.$inferSelect): ExecutableIntegrationConfig {
+  const credential = dbCfg.apiKeyRef ? resolveCredential(dbCfg.apiKeyRef) : undefined;
+  return {
+    dbConfigId: dbCfg.id,
+    type: dbCfg.integrationType,
+    name: dbCfg.name,
+    method: (dbCfg.method ?? "POST") as ExecutableIntegrationConfig["method"],
+    url: dbCfg.endpointUrl ?? "",
+    authType: (dbCfg.authType ?? "bearer") as AuthType,
+    credential,
+    authHeaderName: dbCfg.authHeaderName ?? undefined,
+    headers: (dbCfg.headers as Record<string, string>) ?? {},
+    mapping: (dbCfg.fieldMappings as Record<string, string>) ?? {},
+    responseMapping: (dbCfg.responseMapping as Record<string, string>) ?? {},
+    source: "db",
+  };
+}
 
 export async function loadIntegrationConfig(
   type: string,
   agencyId?: number | null,
 ): Promise<ExecutableIntegrationConfig | null> {
   try {
-    const filters = [
-      eq(integrationConfigsTable.integrationType, type),
-      eq(integrationConfigsTable.enabled, true),
-    ];
+    // 1. Agency-specific DB config (only when caller belongs to an agency)
     if (agencyId != null) {
-      filters.push(eq(integrationConfigsTable.agencyId, agencyId));
+      const [agencyCfg] = await db
+        .select()
+        .from(integrationConfigsTable)
+        .where(and(
+          eq(integrationConfigsTable.integrationType, type),
+          eq(integrationConfigsTable.enabled, true),
+          eq(integrationConfigsTable.agencyId, agencyId),
+        ))
+        .orderBy(desc(integrationConfigsTable.createdAt))
+        .limit(1);
+
+      if (agencyCfg) return dbRowToConfig(agencyCfg);
     }
-    const [dbCfg] = await db
+
+    // 2. Global DB config (agencyId IS NULL) — applies to all agencies
+    const [globalCfg] = await db
       .select()
       .from(integrationConfigsTable)
-      .where(and(...filters))
+      .where(and(
+        eq(integrationConfigsTable.integrationType, type),
+        eq(integrationConfigsTable.enabled, true),
+        isNull(integrationConfigsTable.agencyId),
+      ))
+      .orderBy(desc(integrationConfigsTable.createdAt))
       .limit(1);
 
-    if (dbCfg) {
-      const credential = dbCfg.apiKeyRef ? resolveCredential(dbCfg.apiKeyRef) : undefined;
-      return {
-        type: dbCfg.integrationType,
-        name: dbCfg.name,
-        method: (dbCfg.method ?? "POST") as ExecutableIntegrationConfig["method"],
-        url: dbCfg.endpointUrl ?? "",
-        authType: (dbCfg.authType ?? "bearer") as AuthType,
-        credential,
-        authHeaderName: dbCfg.authHeaderName ?? undefined,
-        headers: (dbCfg.headers as Record<string, string>) ?? {},
-        mapping: (dbCfg.fieldMappings as Record<string, string>) ?? {},
-        responseMapping: (dbCfg.responseMapping as Record<string, string>) ?? {},
-        source: "db",
-      };
-    }
+    if (globalCfg) return dbRowToConfig(globalCfg);
   } catch {
     // DB unavailable — fall through to static config
   }
 
-  // Fall back to static config
+  // 3. Static config fallback
   const staticCfg = STATIC_INTEGRATION_CONFIGS.find(c => c.type === type);
   if (!staticCfg) return null;
 

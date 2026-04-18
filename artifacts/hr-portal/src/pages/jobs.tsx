@@ -119,10 +119,18 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
   );
 }
 
+const WORK_TYPE_LABELS: Record<string, string> = {
+  full_time: "Full-time",
+  part_time: "Part-time",
+  contract: "Contract",
+  casual: "Casual",
+};
+
 export default function JobsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deptFilter, setDeptFilter] = useState<string>("all");
+  const [workTypeFilter, setWorkTypeFilter] = useState<string>("all");
   const { canManageJobs } = useRole();
   const { agencyId } = useAuth();
 
@@ -148,9 +156,12 @@ export default function JobsPage() {
     }
   );
 
-  const filtered = jobs.data?.filter((j) =>
-    j.title.toLowerCase().includes(search.toLowerCase())
-  ) ?? [];
+  const filtered = jobs.data?.filter((j) => {
+    const matchSearch = j.title.toLowerCase().includes(search.toLowerCase());
+    const jobWorkType = (j as Job & { workType?: string }).workType ?? "";
+    const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
+    return matchSearch && matchWorkType;
+  }) ?? [];
 
   return (
     <AppLayout>
@@ -195,6 +206,18 @@ export default function JobsPage() {
                   </SelectContent>
                 </Select>
               )}
+              <Select value={workTypeFilter} onValueChange={setWorkTypeFilter}>
+                <SelectTrigger className="w-44" data-testid="select-worktype-filter">
+                  <SelectValue placeholder="Employment Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="full_time">Full-time</SelectItem>
+                  <SelectItem value="part_time">Part-time</SelectItem>
+                  <SelectItem value="contract">Contract</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36" data-testid="select-status-filter">
                   <SelectValue placeholder="Status" />

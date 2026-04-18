@@ -139,16 +139,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         collapsed && !mobile ? "justify-center" : "justify-between"
       )}>
         {(!collapsed || mobile) && (
-          <div>
-            <span className="text-sidebar-foreground font-bold text-sm tracking-tight">PNG NISIT</span>
-            <span className="block text-sidebar-primary text-xs font-medium">HR Portal</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded shrink-0" />
+            <div className="min-w-0">
+              <span className="text-sidebar-foreground font-bold text-sm tracking-tight">PNG NISIT</span>
+              <span className="block text-sidebar-primary text-xs font-medium">HR Portal</span>
+            </div>
           </div>
         )}
         {collapsed && !mobile && (
-          <div className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-xs text-white"
-            style={{ background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)" }}>
-            N
-          </div>
+          <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded" />
         )}
         {!mobile && (
           <button

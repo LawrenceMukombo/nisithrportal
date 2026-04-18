@@ -381,8 +381,36 @@ function Step3Position({ form, jobTitle }: { form: ReturnType<typeof useForm<Wiz
       )} />
       <FormField control={form.control} name="preferredLocation" render={({ field }) => (
         <FormItem>
-          <FormLabel>Preferred Work Location</FormLabel>
-          <FormControl><Input placeholder="e.g. Port Moresby, Remote" {...field} /></FormControl>
+          <FormLabel>Preferred Work Location / Province</FormLabel>
+          <Select onValueChange={field.onChange} value={field.value ?? ""}>
+            <FormControl><SelectTrigger><SelectValue placeholder="Select preferred location" /></SelectTrigger></FormControl>
+            <SelectContent>
+              <SelectItem value="Any Location">Any Location / Flexible</SelectItem>
+              <SelectItem value="Remote">Remote / Work from Home</SelectItem>
+              <SelectItem value="NCD (Port Moresby)">NCD (Port Moresby)</SelectItem>
+              <SelectItem value="Central">Central Province</SelectItem>
+              <SelectItem value="Gulf">Gulf Province</SelectItem>
+              <SelectItem value="Western">Western Province</SelectItem>
+              <SelectItem value="Oro (Northern)">Oro (Northern Province)</SelectItem>
+              <SelectItem value="Milne Bay">Milne Bay Province</SelectItem>
+              <SelectItem value="Morobe">Morobe Province</SelectItem>
+              <SelectItem value="Madang">Madang Province</SelectItem>
+              <SelectItem value="Eastern Highlands">Eastern Highlands Province</SelectItem>
+              <SelectItem value="Western Highlands">Western Highlands Province</SelectItem>
+              <SelectItem value="Jiwaka">Jiwaka Province</SelectItem>
+              <SelectItem value="Chimbu (Simbu)">Chimbu (Simbu) Province</SelectItem>
+              <SelectItem value="Southern Highlands">Southern Highlands Province</SelectItem>
+              <SelectItem value="Hela">Hela Province</SelectItem>
+              <SelectItem value="Enga">Enga Province</SelectItem>
+              <SelectItem value="Sandaun (West Sepik)">Sandaun (West Sepik) Province</SelectItem>
+              <SelectItem value="East Sepik">East Sepik Province</SelectItem>
+              <SelectItem value="Manus">Manus Province</SelectItem>
+              <SelectItem value="New Ireland">New Ireland Province</SelectItem>
+              <SelectItem value="East New Britain">East New Britain Province</SelectItem>
+              <SelectItem value="West New Britain">West New Britain Province</SelectItem>
+              <SelectItem value="Bougainville (AROB)">Bougainville (AROB)</SelectItem>
+            </SelectContent>
+          </Select>
         </FormItem>
       )} />
       <FormField control={form.control} name="availability" render={({ field }) => (
@@ -983,7 +1011,21 @@ function Step8Declarations({ form }: { form: ReturnType<typeof useForm<WizardVal
                   <FormField control={form.control} name={`referees.${i}.relationship`} render={({ field }) => (
                     <FormItem>
                       <FormLabel>Relationship</FormLabel>
-                      <FormControl><Input placeholder="e.g. Former Supervisor" {...field} /></FormControl>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select relationship" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="Former Supervisor">Former Supervisor</SelectItem>
+                          <SelectItem value="Current Supervisor">Current Supervisor</SelectItem>
+                          <SelectItem value="Former Manager">Former Manager</SelectItem>
+                          <SelectItem value="Current Manager">Current Manager</SelectItem>
+                          <SelectItem value="Colleague / Peer">Colleague / Peer</SelectItem>
+                          <SelectItem value="Academic Supervisor">Academic Supervisor</SelectItem>
+                          <SelectItem value="Lecturer / Tutor">Lecturer / Tutor</SelectItem>
+                          <SelectItem value="Mentor">Mentor</SelectItem>
+                          <SelectItem value="Client / Stakeholder">Client / Stakeholder</SelectItem>
+                          <SelectItem value="Other Professional">Other Professional</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </FormItem>
                   )} />
                 </div>

@@ -23,6 +23,31 @@ const DEPT_ACCENT_COLORS = [
   "bg-rose-500", "bg-teal-500", "bg-indigo-500", "bg-orange-500",
 ];
 
+const PNG_PROVINCES = [
+  "National Capital District",
+  "Central",
+  "Gulf",
+  "Western",
+  "Oro (Northern)",
+  "Milne Bay",
+  "Morobe",
+  "Madang",
+  "Eastern Highlands",
+  "Western Highlands",
+  "Jiwaka",
+  "Chimbu (Simbu)",
+  "Southern Highlands",
+  "Hela",
+  "Enga",
+  "Sandaun (West Sepik)",
+  "East Sepik",
+  "Manus",
+  "New Ireland",
+  "East New Britain",
+  "West New Britain",
+  "Bougainville (AROB)",
+];
+
 function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; deptAccent: string }) {
   const daysLeft = job.closingDate
     ? Math.ceil((new Date(job.closingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -63,8 +88,15 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
               <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">{job.description}</p>
             )}
             <div className="flex items-center justify-between mt-3">
-              <div className="flex gap-1.5">
-                <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>
+              <div className="flex gap-1.5 flex-wrap">
+                {(job as Job & { workType?: string }).workType && (
+                  <Badge variant="secondary" className="text-xs py-0">
+                    {WORK_TYPE_LABELS[(job as Job & { workType?: string }).workType ?? ""] ?? (job as Job & { workType?: string }).workType}
+                  </Badge>
+                )}
+                {!( job as Job & { workType?: string }).workType && (
+                  <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>
+                )}
                 {job.closingDate && daysLeft !== null && daysLeft <= 14 && daysLeft >= 0 && (
                   <Badge variant="outline" className="text-xs py-0 text-amber-700 border-amber-300 bg-amber-50">Closing soon</Badge>
                 )}
@@ -82,18 +114,17 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
   );
 }
 
-function NisitLogo() {
+function NisitLogo({ size = "default" }: { size?: "default" | "large" }) {
+  const imgSize = size === "large" ? "w-12 h-12" : "w-8 h-8";
   return (
     <div className="flex items-center gap-2.5">
-      <div className="relative w-8 h-8 shrink-0">
-        <div className="absolute inset-0 rounded-lg" style={{ background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)" }} />
-        <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-lg" style={{ backgroundColor: "#FCD116" }} />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-white font-bold text-xs leading-none">N</span>
-        </div>
-      </div>
+      <img
+        src="/nisit-logo.png"
+        alt="PNG NISIT Logo"
+        className={`${imgSize} object-contain rounded-md shrink-0`}
+      />
       <div>
-        <p className="font-bold text-sm leading-none">PNG NISIT</p>
+        <p className={`font-bold leading-none ${size === "large" ? "text-base" : "text-sm"}`}>PNG NISIT</p>
         <p className="text-muted-foreground text-xs leading-none mt-0.5">HR Portal</p>
       </div>
     </div>
@@ -104,6 +135,7 @@ export default function LandingPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [workTypeFilter, setWorkTypeFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
 
@@ -130,10 +162,16 @@ export default function LandingPage() {
       const matchSearch = !search || j.title.toLowerCase().includes(search.toLowerCase()) ||
         (j.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);
-      const matchWorkType = workTypeFilter === "all";
-      return matchSearch && matchDept && matchWorkType;
+      const jobWorkType = (j as Job & { workType?: string }).workType ?? "";
+      const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
+      const jobLocation = (j as Job & { location?: string }).location ?? "";
+      const matchLocation = locationFilter === "all" ||
+        jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
+      return matchSearch && matchDept && matchWorkType && matchLocation;
     });
-  }, [jobs.data, search, deptFilter, workTypeFilter]);
+  }, [jobs.data, search, deptFilter, workTypeFilter, locationFilter]);
+
+  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all";
 
   return (
     <div className="min-h-screen bg-background">
@@ -164,6 +202,13 @@ export default function LandingPage() {
       }}>
         <div className="absolute bottom-0 left-0 right-0 h-1.5" style={{ backgroundColor: "#FCD116" }} />
         <div className="max-w-4xl mx-auto text-center relative z-10">
+          <div className="flex justify-center mb-6">
+            <img
+              src="/nisit-logo.png"
+              alt="PNG NISIT Logo"
+              className="w-20 h-20 object-contain rounded-xl shadow-lg border-2 border-white/20"
+            />
+          </div>
           <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase"
             style={{ backgroundColor: "#FCD116", color: "#0a0a0a" }}>
             Papua New Guinea Public Service
@@ -215,8 +260,19 @@ export default function LandingPage() {
               <SelectItem value="casual">Casual</SelectItem>
             </SelectContent>
           </Select>
-          {(search || deptFilter !== "all" || workTypeFilter !== "all") && (
-            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); }}>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="h-9 w-48 text-sm" data-testid="select-filter-location">
+              <SelectValue placeholder="All Locations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {PNG_PROVINCES.map(p => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {hasFilters && (
+            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); }}>
               Clear filters
             </Button>
           )}
@@ -249,7 +305,7 @@ export default function LandingPage() {
             <Briefcase className="h-12 w-12 mx-auto mb-4 opacity-20" />
             <p className="font-semibold text-lg">No vacancies match your filters</p>
             <p className="text-sm mt-1">Try adjusting your search or clearing the filters</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); }}>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); }}>
               Clear all filters
             </Button>
           </div>
@@ -269,9 +325,11 @@ export default function LandingPage() {
 
       <footer className="border-t border-border bg-card">
         <div className="max-w-6xl mx-auto px-6 py-8 text-center">
-          <NisitLogo />
+          <div className="flex justify-center">
+            <NisitLogo />
+          </div>
           <p className="text-sm text-muted-foreground mt-3">
-            Papua New Guinea National Information Systems and Information Technology Department
+            Papua New Guinea National Institute of Standards and Industrial Technology
           </p>
           <p className="text-xs text-muted-foreground mt-1">© {new Date().getFullYear()} Government of Papua New Guinea</p>
         </div>

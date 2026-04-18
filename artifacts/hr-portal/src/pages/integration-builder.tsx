@@ -111,6 +111,18 @@ function safeJsonParse(str: string): Record<string, unknown> | null {
   }
 }
 
+function parseExternalFields(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String).filter(Boolean);
+    }
+  } catch { }
+  return trimmed.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+}
+
 function JsonEditorField({
   label,
   value,
@@ -212,13 +224,9 @@ function TestPanel({
     setIsRunning(true);
     setResult(null);
     try {
-      const body = {
-        configId: config.id,
-        payload: parsedPayload ?? {},
-      };
       const res = await apiFetch<Record<string, unknown>>(
-        `/api/integration/${config.integrationType}/execute`,
-        { method: "POST", body: JSON.stringify(body) }
+        `/api/integration/${config.integrationType}`,
+        { method: "POST", body: JSON.stringify(parsedPayload ?? {}) }
       );
       setResult(res);
       const r = res as { success?: boolean; status?: number };
@@ -606,10 +614,7 @@ function EditIntegrationDialog({
     setIsAiLoading(true);
     try {
       const internalFields = connector?.fields.map(f => f.key) ?? [];
-      const externalFields = externalSchema
-        .split(/[\n,]+/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const externalFields = parseExternalFields(externalSchema);
 
       const result = await apiFetch<{ mappings: Record<string, string>; notes: string }>(
         "/api/integration/ai/suggest-mapping",
@@ -944,10 +949,7 @@ function NewIntegrationDialog({
     setIsAiLoading(true);
     try {
       const internalFields = selectedConnector?.fields.map(f => f.key) ?? [];
-      const externalFields = externalSchema
-        .split(/[\n,]+/)
-        .map(s => s.trim())
-        .filter(Boolean);
+      const externalFields = parseExternalFields(externalSchema);
 
       const result = await apiFetch<{ mappings: Record<string, string>; notes: string }>(
         "/api/integration/ai/suggest-mapping",

@@ -78,6 +78,11 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                   <Building2 className="h-3 w-3" /> {deptName}
                 </span>
               )}
+              {(job as Job & { location?: string }).location && (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3" /> {(job as Job & { location?: string }).location}
+                </span>
+              )}
               {job.closingDate && closingLabel && (
                 <span className={`inline-flex items-center gap-1 text-xs font-medium ${urgency}`}>
                   <Clock className="h-3 w-3" /> {closingLabel}
@@ -131,11 +136,20 @@ function NisitLogo({ size = "default" }: { size?: "default" | "large" }) {
   );
 }
 
+const SALARY_BANDS = [
+  { value: "lt_20k", label: "< K20,000", max: 20000 },
+  { value: "20k_40k", label: "K20,000 – K40,000", min: 20000, max: 40000 },
+  { value: "40k_70k", label: "K40,000 – K70,000", min: 40000, max: 70000 },
+  { value: "70k_100k", label: "K70,000 – K100,000", min: 70000, max: 100000 },
+  { value: "gt_100k", label: "K100,000+", min: 100000 },
+];
+
 export default function LandingPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [workTypeFilter, setWorkTypeFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
+  const [salaryFilter, setSalaryFilter] = useState("all");
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
 
@@ -167,11 +181,22 @@ export default function LandingPage() {
       const jobLocation = (j as Job & { location?: string }).location ?? "";
       const matchLocation = locationFilter === "all" ||
         jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
-      return matchSearch && matchDept && matchWorkType && matchLocation;
+      let matchSalary = true;
+      if (salaryFilter !== "all") {
+        const band = SALARY_BANDS.find(b => b.value === salaryFilter);
+        const jobSalaryMin = (j as Job & { salaryMin?: number }).salaryMin;
+        const jobSalaryMax = (j as Job & { salaryMax?: number }).salaryMax;
+        if (band && (jobSalaryMin !== undefined || jobSalaryMax !== undefined)) {
+          const mid = jobSalaryMin ?? jobSalaryMax ?? 0;
+          matchSalary = (band.min === undefined || mid >= band.min) &&
+                        (band.max === undefined || mid <= band.max);
+        }
+      }
+      return matchSearch && matchDept && matchWorkType && matchLocation && matchSalary;
     });
-  }, [jobs.data, search, deptFilter, workTypeFilter, locationFilter]);
+  }, [jobs.data, search, deptFilter, workTypeFilter, locationFilter, salaryFilter]);
 
-  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all";
+  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || salaryFilter !== "all";
 
   return (
     <div className="min-h-screen bg-background">
@@ -271,8 +296,19 @@ export default function LandingPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={salaryFilter} onValueChange={setSalaryFilter}>
+            <SelectTrigger className="h-9 w-48 text-sm" data-testid="select-filter-salary">
+              <SelectValue placeholder="Salary Range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Salary Ranges</SelectItem>
+              {SALARY_BANDS.map(b => (
+                <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {hasFilters && (
-            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); }}>
+            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setSalaryFilter("all"); }}>
               Clear filters
             </Button>
           )}
@@ -305,7 +341,7 @@ export default function LandingPage() {
             <Briefcase className="h-12 w-12 mx-auto mb-4 opacity-20" />
             <p className="font-semibold text-lg">No vacancies match your filters</p>
             <p className="text-sm mt-1">Try adjusting your search or clearing the filters</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); }}>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setSalaryFilter("all"); }}>
               Clear all filters
             </Button>
           </div>

@@ -126,11 +126,20 @@ const WORK_TYPE_LABELS: Record<string, string> = {
   casual: "Casual",
 };
 
+const PNG_PROVINCES_JOBS = [
+  "National Capital District", "Central", "Gulf", "Western", "Oro (Northern)",
+  "Milne Bay", "Morobe", "Madang", "Eastern Highlands", "Western Highlands",
+  "Jiwaka", "Chimbu (Simbu)", "Southern Highlands", "Hela", "Enga",
+  "Sandaun (West Sepik)", "East Sepik", "Manus", "New Ireland",
+  "East New Britain", "West New Britain", "Bougainville (AROB)",
+];
+
 export default function JobsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [workTypeFilter, setWorkTypeFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const { canManageJobs } = useRole();
   const { agencyId } = useAuth();
 
@@ -160,8 +169,14 @@ export default function JobsPage() {
     const matchSearch = j.title.toLowerCase().includes(search.toLowerCase());
     const jobWorkType = (j as Job & { workType?: string }).workType ?? "";
     const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
-    return matchSearch && matchWorkType;
+    const jobLocation = (j as Job & { location?: string }).location ?? "";
+    const matchLocation = locationFilter === "all" ||
+      jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
+    return matchSearch && matchWorkType && matchLocation;
   }) ?? [];
+
+  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || statusFilter !== "all";
+  const clearFilters = () => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setStatusFilter("all"); };
 
   return (
     <AppLayout>
@@ -218,6 +233,17 @@ export default function JobsPage() {
                   <SelectItem value="casual">Casual</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={locationFilter} onValueChange={setLocationFilter}>
+                <SelectTrigger className="w-48" data-testid="select-location-filter">
+                  <SelectValue placeholder="Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {PNG_PROVINCES_JOBS.map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36" data-testid="select-status-filter">
                   <SelectValue placeholder="Status" />
@@ -229,6 +255,11 @@ export default function JobsPage() {
                   <SelectItem value="closed">Closed</SelectItem>
                 </SelectContent>
               </Select>
+              {hasFilters && (
+                <Button size="sm" variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
+                  Clear filters
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -253,7 +284,12 @@ export default function JobsPage() {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={canManageJobs ? 4 : 3} className="text-center py-12 text-muted-foreground">
-                        No jobs found
+                        <p>No jobs found matching your filters.</p>
+                        {hasFilters && (
+                          <button className="text-sm text-primary underline mt-2 cursor-pointer" onClick={clearFilters}>
+                            Clear filters
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ) : (

@@ -47,6 +47,7 @@ type EducationEntry = {
 type ExperienceEntry = {
   employer: string;
   jobTitle: string;
+  employmentType: string;
   responsibilities: string;
   startDate: string;
   endDate: string;
@@ -100,6 +101,7 @@ const wizardSchema = z.object({
   experience: z.array(z.object({
     employer: z.string().min(1, "Employer required"),
     jobTitle: z.string().optional().default(""),
+    employmentType: z.string().optional().default(""),
     responsibilities: z.string().optional().default(""),
     startDate: z.string().optional().default(""),
     endDate: z.string().optional().default(""),
@@ -555,7 +557,7 @@ function Step4EducationExp({ form }: { form: ReturnType<typeof useForm<WizardVal
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold flex items-center gap-2"><Briefcase className="h-4 w-4" /> Work Experience</h3>
-          <Button type="button" size="sm" variant="outline" onClick={() => appendExp({ employer: "", jobTitle: "", responsibilities: "", startDate: "", endDate: "", current: false, reasonForLeaving: "", keyAchievements: "" })}>
+          <Button type="button" size="sm" variant="outline" onClick={() => appendExp({ employer: "", jobTitle: "", employmentType: "", responsibilities: "", startDate: "", endDate: "", current: false, reasonForLeaving: "", keyAchievements: "" })}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Add Experience
           </Button>
         </div>
@@ -584,6 +586,23 @@ function Step4EducationExp({ form }: { form: ReturnType<typeof useForm<WizardVal
                     </FormItem>
                   )} />
                 </div>
+                <FormField control={form.control} name={`experience.${i}.employmentType`} render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Employment Type</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Select employment type" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="full_time">Full-time</SelectItem>
+                        <SelectItem value="part_time">Part-time</SelectItem>
+                        <SelectItem value="contract">Contract / Fixed-term</SelectItem>
+                        <SelectItem value="casual">Casual / Temporary</SelectItem>
+                        <SelectItem value="volunteer">Volunteer</SelectItem>
+                        <SelectItem value="internship">Internship / Attachment</SelectItem>
+                        <SelectItem value="self_employed">Self-employed / Consultant</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name={`experience.${i}.responsibilities`} render={({ field }) => (
                   <FormItem>
                     <FormLabel>Key Responsibilities</FormLabel>

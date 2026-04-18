@@ -60,21 +60,33 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
             {job.title}
           </span>
         </Link>
-        <div className="flex flex-wrap items-center gap-2 mt-0.5">
-          {((job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location) && (
-            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-              <MapPin className="h-3 w-3" />{(job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location}
-            </span>
-          )}
-          {(job as Job & { employmentType?: string }).employmentType && (
-            <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-              <Briefcase className="h-3 w-3" />{WORK_TYPE_LABELS[(job as Job & { employmentType?: string }).employmentType ?? ""] ?? (job as Job & { employmentType?: string }).employmentType}
-            </span>
-          )}
+        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+          {(() => {
+            const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType
+              ?? (job as Job & { workType?: string }).workType;
+            if (!empType) return null;
+            const label = WORK_TYPE_LABELS[empType] ?? empType;
+            const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
+            return (
+              <Badge variant="outline" className={`text-xs py-0 gap-1 ${cls}`} data-testid={`badge-work-type-${job.id}`}>
+                <Briefcase className="h-3 w-3" />{label}
+              </Badge>
+            );
+          })()}
+          {(() => {
+            const province = (job as Job & { province?: string; location?: string }).province
+              || (job as Job & { location?: string }).location;
+            if (!province) return null;
+            return (
+              <Badge variant="outline" className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200" data-testid={`badge-province-${job.id}`}>
+                <MapPin className="h-3 w-3" />{province}
+              </Badge>
+            );
+          })()}
           {(job as Job & { workArrangement?: string }).workArrangement && (
-            <span className="text-xs text-muted-foreground">
+            <Badge variant="outline" className="text-xs py-0 bg-slate-50 text-slate-600 border-slate-200">
               {({ remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" } as Record<string, string>)[(job as Job & { workArrangement?: string }).workArrangement ?? ""] ?? (job as Job & { workArrangement?: string }).workArrangement}
-            </span>
+            </Badge>
           )}
           <span className="text-xs text-muted-foreground">
             Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
@@ -141,6 +153,13 @@ const WORK_TYPE_LABELS: Record<string, string> = {
   part_time: "Part-time",
   contract: "Contract",
   casual: "Casual",
+};
+
+const WORK_TYPE_BADGE_CLASSES: Record<string, string> = {
+  full_time: "bg-blue-50 text-blue-700 border-blue-200",
+  part_time: "bg-violet-50 text-violet-700 border-violet-200",
+  contract: "bg-amber-50 text-amber-700 border-amber-200",
+  casual: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
 const PNG_PROVINCES_JOBS = [

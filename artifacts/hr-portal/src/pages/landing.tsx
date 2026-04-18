@@ -18,6 +18,13 @@ const WORK_TYPE_LABELS: Record<string, string> = {
   casual: "Casual",
 };
 
+const WORK_TYPE_BADGE_CLASSES: Record<string, string> = {
+  full_time: "bg-blue-50 text-blue-700 border-blue-200",
+  part_time: "bg-violet-50 text-violet-700 border-violet-200",
+  contract: "bg-amber-50 text-amber-700 border-amber-200",
+  casual: "bg-orange-50 text-orange-700 border-orange-200",
+};
+
 const DEPT_ACCENT_COLORS = [
   "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
   "bg-rose-500", "bg-teal-500", "bg-indigo-500", "bg-orange-500",
@@ -78,12 +85,16 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                   <Building2 className="h-3 w-3" /> {deptName}
                 </span>
               )}
-              {((job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location) && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <MapPin className="h-3 w-3" />
-                  {(job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location}
-                </span>
-              )}
+              {(() => {
+                const province = (job as Job & { province?: string; location?: string }).province
+                  || (job as Job & { location?: string }).location;
+                if (!province) return null;
+                return (
+                  <Badge variant="outline" className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200" data-testid={`badge-province-${job.id}`}>
+                    <MapPin className="h-3 w-3" />{province}
+                  </Badge>
+                );
+              })()}
               {job.closingDate && closingLabel && (
                 <span className={`inline-flex items-center gap-1 text-xs font-medium ${urgency}`}>
                   <Clock className="h-3 w-3" /> {closingLabel}
@@ -98,9 +109,15 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                 {(() => {
                   const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType ??
                     (job as Job & { workType?: string }).workType;
-                  return empType
-                    ? <Badge variant="secondary" className="text-xs py-0">{WORK_TYPE_LABELS[empType] ?? empType}</Badge>
-                    : <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>;
+                  const label = empType ? (WORK_TYPE_LABELS[empType] ?? empType) : "Public Service";
+                  const cls = empType
+                    ? (WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200")
+                    : "bg-blue-50 text-blue-700 border-blue-200";
+                  return (
+                    <Badge variant="outline" className={`text-xs py-0 gap-1 ${cls}`} data-testid={`badge-work-type-${job.id}`}>
+                      <Briefcase className="h-3 w-3" />{label}
+                    </Badge>
+                  );
                 })()}
                 {(() => {
                   const arr = (job as Job & { workArrangement?: string }).workArrangement;

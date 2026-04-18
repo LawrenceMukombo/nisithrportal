@@ -1326,7 +1326,7 @@ export function ApplyWizard({
   const saveDraftLocally = useCallback(() => {
     if (!open) return;
     const values = form.getValues();
-    localStorage.setItem(DRAFT_KEY(jobId), JSON.stringify({ values, step: currentStep }));
+    localStorage.setItem(DRAFT_KEY(jobId), JSON.stringify({ values, step: currentStep, savedAt: new Date().toISOString() }));
   }, [open, form, jobId, currentStep]);
 
   // Auto-save when navigating steps (only while the dialog is open)

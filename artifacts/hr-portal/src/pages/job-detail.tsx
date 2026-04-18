@@ -1,4 +1,4 @@
-import { useRoute, useLocation, Link } from "wouter";
+import { useRoute, useLocation, useSearch, Link } from "wouter";
 import {
   ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2,
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
@@ -240,9 +240,10 @@ type ExtJob = {
 export default function JobDetailPage() {
   const [match, params] = useRoute("/jobs/:id");
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { isAuthenticated } = useAuth();
   const { isAdmin, isHR, isHiringManager } = useRole();
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(() => new URLSearchParams(searchString).get("apply") === "1");
 
   const jobId = match ? parseInt(params!.id) : 0;
   const { data: rawJob, isLoading } = useGetJob(jobId, {

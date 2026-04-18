@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGetMyApplications, useGetJobs, getGetMyApplicationsQueryKey } from "@workspace/api-client-react";
 import { getToken } from "@/lib/api-config";
@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2 } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 
 const STATUS_CONFIG: Record<string, {
@@ -38,16 +38,49 @@ const STATUS_CONFIG: Record<string, {
 
 const TERMINAL_STATUSES = ["rejected", "withdrawn", "hired"];
 
+const DRAFT_KEY_PREFIX = "apply_draft_";
+
+type LocalDraft = { jobId: number; savedAt: string | null; step: number };
+
+function scanLocalDrafts(): LocalDraft[] {
+  try {
+    const drafts: LocalDraft[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(DRAFT_KEY_PREFIX)) continue;
+      const jobId = parseInt(key.slice(DRAFT_KEY_PREFIX.length), 10);
+      if (isNaN(jobId)) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as { step?: number; savedAt?: string };
+      drafts.push({ jobId, savedAt: parsed.savedAt ?? null, step: parsed.step ?? 0 });
+    }
+    return drafts;
+  } catch {
+    return [];
+  }
+}
+
 export default function MyApplicationsPage() {
   const [filter, setFilter] = useState<string>("all");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [withdrawDialogId, setWithdrawDialogId] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<LocalDraft[]>([]);
 
   const queryClient = useQueryClient();
   const { data: allApplications = [], isLoading } = useGetMyApplications();
   const { data: jobs = [] } = useGetJobs({});
 
+  useEffect(() => {
+    setDrafts(scanLocalDrafts());
+  }, []);
+
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
+
+  const discardDraft = (jobId: number) => {
+    localStorage.removeItem(`${DRAFT_KEY_PREFIX}${jobId}`);
+    setDrafts((prev) => prev.filter((d) => d.jobId !== jobId));
+  };
 
   const withdrawMutation = useMutation({
     mutationFn: async (applicationId: number) => {
@@ -153,6 +186,59 @@ export default function MyApplicationsPage() {
             </button>
           ))}
         </div>
+
+        {drafts.length > 0 && (
+          <div data-testid="drafts-section">
+            <h2 className="text-base font-semibold flex items-center gap-2 mb-3">
+              <FileEdit className="h-4 w-4 text-primary" />
+              Saved Drafts
+              <span className="text-xs font-normal text-muted-foreground">({drafts.length})</span>
+            </h2>
+            <div className="space-y-3">
+              {drafts.map((draft) => {
+                const job = jobMap[draft.jobId];
+                return (
+                  <Card key={draft.jobId} className="border-dashed border-amber-300 bg-amber-50/40 dark:bg-amber-950/10" data-testid={`card-draft-${draft.jobId}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate">
+                            {job ? job.title : `Job #${draft.jobId}`}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {draft.savedAt
+                              ? `Last saved ${new Date(draft.savedAt).toLocaleString()}`
+                              : "Draft saved"}
+                            {" · "}Step {draft.step + 1} of application
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Link href={`/jobs/${draft.jobId}?apply=1`}>
+                            <Button size="sm" className="h-7 text-xs gap-1.5" data-testid={`btn-resume-draft-${draft.jobId}`}>
+                              <ArrowRight className="h-3 w-3" />
+                              Resume
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                            onClick={() => discardDraft(draft.jobId)}
+                            data-testid={`btn-discard-draft-${draft.jobId}`}
+                            title="Discard draft"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="space-y-3">

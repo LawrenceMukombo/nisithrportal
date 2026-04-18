@@ -338,12 +338,12 @@ router.post("/applications", async (req, res): Promise<void> => {
       res.status(422).json({ error: "You must consent to data privacy terms before submitting" });
       return;
     }
-    if (ext.conflictOfInterest === undefined || ext.conflictOfInterest === null) {
-      res.status(422).json({ error: "You must disclose whether you have a conflict of interest" });
+    if (ext.conflictOfInterest !== true) {
+      res.status(422).json({ error: "You must declare that you have no conflict of interest" });
       return;
     }
-    if (ext.criminalRecord === undefined || ext.criminalRecord === null) {
-      res.status(422).json({ error: "You must disclose your criminal record status" });
+    if (ext.criminalRecord !== true) {
+      res.status(422).json({ error: "You must declare that you have no relevant criminal record" });
       return;
     }
     // Enforce required screening question answers

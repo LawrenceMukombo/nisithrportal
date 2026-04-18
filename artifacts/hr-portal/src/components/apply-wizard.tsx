@@ -145,8 +145,8 @@ const wizardSchema = z.object({
   noticePeriod: z.string().optional(),
   declarationAgreed: z.boolean().refine(v => v === true, { message: "You must agree to the declaration" }),
   backgroundCheckConsent: z.boolean().refine(v => v === true, { message: "Background check consent required" }),
-  conflictOfInterest: z.boolean().optional(),
-  criminalRecord: z.boolean().optional(),
+  conflictOfInterest: z.boolean().refine(v => v === true, { message: "You must declare no conflict of interest" }),
+  criminalRecord: z.boolean().refine(v => v === true, { message: "You must declare no relevant criminal record" }),
   dataPrivacyConsent: z.boolean().refine(v => v === true, { message: "Data privacy consent required" }),
   // Optional D&I step
   diOptIn: z.boolean().optional(),
@@ -1224,19 +1224,20 @@ export function ApplyWizard({
       } catch { /* ignore */ }
     }
 
-    // If authenticated, try to load server draft and prefer it if it's available
+    // If authenticated, try to load server draft using JWT email (works even without localStorage)
     const token = getToken();
-    const emailFromLocal = localValues?.candidateEmail;
-    if (token && emailFromLocal) {
+    const jwtEmail = token ? decodeToken(token)?.email ?? null : null;
+    const emailForServer = localValues?.candidateEmail ?? jwtEmail;
+    if (token && emailForServer) {
       const loadServerDraft = async () => {
         try {
-          const res = await fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(emailFromLocal)}`, {
+          const res = await fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(emailForServer)}`, {
             headers: { "Authorization": `Bearer ${token}` },
           });
           if (res.ok) {
             const serverDraft = await res.json() as { draftData: Partial<WizardValues>; currentStep?: number } | null;
             if (serverDraft?.draftData) {
-              // Server draft takes precedence — restore it
+              // Server draft takes precedence — restore it (enables cross-device resume)
               Object.entries(serverDraft.draftData).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
               setCurrentStep(serverDraft.currentStep ?? 0);
               return; // server draft loaded, skip localStorage
@@ -1290,7 +1291,7 @@ export function ApplyWizard({
   const totalSteps = STEPS.length;
 
   // Fields that are declaration checkboxes — validated only at final submit, not at Next
-  const DECLARATION_FIELDS: (keyof WizardValues)[] = ["declarationAgreed", "backgroundCheckConsent", "dataPrivacyConsent"];
+  const DECLARATION_FIELDS: (keyof WizardValues)[] = ["declarationAgreed", "backgroundCheckConsent", "dataPrivacyConsent", "conflictOfInterest", "criminalRecord"];
 
   const validateCurrentStep = async (): Promise<boolean> => {
     const stepDef = STEPS[currentStep];

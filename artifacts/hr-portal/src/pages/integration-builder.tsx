@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Plus, Puzzle, Play, Trash2, ChevronDown, ChevronRight, Loader2,
   Sparkles, CheckCircle2, XCircle, Clock, Eye, EyeOff, Pencil, TestTube2, X,
+  AlertTriangle, Activity, TrendingUp, Zap,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,51 @@ interface IntegrationLog {
   responsePayload: Record<string, unknown> | null;
   createdAt: string;
   triggeredBy: string | null;
+}
+
+interface PerConfigHealth {
+  configId: number;
+  configName: string;
+  executions24h: number;
+  successRate24h: number | null;
+  lastStatus: string | null;
+  lastExecutionAt: string | null;
+  health: "healthy" | "degraded" | "failing" | "unknown";
+}
+
+interface RecentFailure {
+  logId: number;
+  configId: number | null;
+  configName: string;
+  errorMessage: string | null;
+  createdAt: string | null;
+}
+
+interface IntegrationStats {
+  totalConfigs: number;
+  activeConfigs: number;
+  executions7d: number;
+  successRate7d: number;
+  avgDurationMs: number;
+  perConfig: PerConfigHealth[];
+  recentFailures: RecentFailure[];
+}
+
+const HEALTH_META = {
+  healthy:  { label: "Healthy",  color: "bg-emerald-100 text-emerald-800 border-emerald-200", dot: "bg-emerald-500" },
+  degraded: { label: "Degraded", color: "bg-amber-100  text-amber-800  border-amber-200",  dot: "bg-amber-500"  },
+  failing:  { label: "Failing",  color: "bg-red-100    text-red-800    border-red-200",    dot: "bg-red-500"    },
+  unknown:  { label: "No data",  color: "bg-gray-100   text-gray-500   border-gray-200",   dot: "bg-gray-400"   },
+};
+
+function HealthBadge({ health }: { health: "healthy" | "degraded" | "failing" | "unknown" }) {
+  const meta = HEALTH_META[health];
+  return (
+    <Badge variant="outline" className={`text-xs gap-1 ${meta.color}`}>
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </Badge>
+  );
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -687,11 +733,13 @@ function EditIntegrationDialog({
 function IntegrationConfigCard({
   config,
   catalog,
+  health,
   onDeleted,
   onUpdated,
 }: {
   config: IntegrationConfig;
   catalog: ConnectorCatalogItem[];
+  health?: "healthy" | "degraded" | "failing" | "unknown";
   onDeleted: () => void;
   onUpdated: () => void;
 }) {
@@ -756,6 +804,7 @@ function IntegrationConfigCard({
                 )}
                 <Badge variant="outline" className="text-xs font-mono">{config.method ?? "POST"}</Badge>
                 <Badge variant="outline" className="text-xs">{config.integrationType}</Badge>
+                {health && <HealthBadge health={health} />}
               </div>
               <CardDescription className="mt-0.5 text-xs">{connector?.label ?? config.integrationType}</CardDescription>
             </div>
@@ -1080,13 +1129,23 @@ export default function IntegrationBuilderPage() {
     queryFn: () => apiFetch<IntegrationConfig[]>("/api/integration-config"),
   });
 
+  const statsQuery = useQuery({
+    queryKey: ["integration-stats"],
+    queryFn: () => apiFetch<IntegrationStats>("/api/integration-stats"),
+    refetchInterval: 60_000,
+  });
+
   const catalog = catalogQuery.data ?? [];
   const configs = configsQuery.data ?? [];
+  const stats = statsQuery.data;
 
   const grouped = catalog.reduce<Record<string, IntegrationConfig[]>>((acc, c) => {
     acc[c.type] = configs.filter(cfg => cfg.integrationType === c.type);
     return acc;
   }, {});
+
+  const healthMap: Record<number, "healthy" | "degraded" | "failing" | "unknown"> =
+    Object.fromEntries((stats?.perConfig ?? []).map(p => [p.configId, p.health]));
 
   return (
     <AppLayout>
@@ -1103,6 +1162,100 @@ export default function IntegrationBuilderPage() {
           </div>
         </div>
 
+        {/* ── Health Dashboard ── */}
+        {stats ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Puzzle className="h-3.5 w-3.5" />
+                    <span className="text-xs">Total</span>
+                  </div>
+                  <p className="text-2xl font-bold">{stats.totalConfigs}</p>
+                  <p className="text-xs text-muted-foreground">{stats.activeConfigs} active</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Activity className="h-3.5 w-3.5" />
+                    <span className="text-xs">Executions (7d)</span>
+                  </div>
+                  <p className="text-2xl font-bold">{stats.executions7d}</p>
+                  <p className="text-xs text-muted-foreground">avg {stats.avgDurationMs}ms</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <TrendingUp className="h-3.5 w-3.5" />
+                    <span className="text-xs">Success Rate (7d)</span>
+                  </div>
+                  <p className={`text-2xl font-bold ${stats.successRate7d >= 80 ? "text-emerald-600" : stats.successRate7d >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                    {stats.executions7d > 0 ? `${stats.successRate7d}%` : "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {stats.executions7d > 0
+                      ? stats.successRate7d >= 80 ? "Nominal" : stats.successRate7d >= 50 ? "Degraded" : "Critical"
+                      : "No executions"}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <Zap className="h-3.5 w-3.5" />
+                    <span className="text-xs">24h Health</span>
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {stats.perConfig.filter(p => p.health === "healthy").length}
+                    <span className="text-sm font-normal text-muted-foreground">/{stats.totalConfigs}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">integrations healthy</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Failures */}
+            {stats.recentFailures.length > 0 && (
+              <Card className="border-red-200 bg-red-50/40">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                    <CardTitle className="text-sm text-red-800">Recent Failures</CardTitle>
+                    <Badge variant="outline" className="text-xs bg-red-100 text-red-700 border-red-200 ml-auto">
+                      {stats.recentFailures.length}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2">
+                    {stats.recentFailures.map(f => (
+                      <div key={f.logId} className="flex items-start gap-3 text-xs p-2 rounded-md bg-white border border-red-100">
+                        <XCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="font-medium text-red-800">{f.configName}</span>
+                          {f.errorMessage && (
+                            <p className="text-muted-foreground truncate mt-0.5">{f.errorMessage}</p>
+                          )}
+                        </div>
+                        <span className="text-muted-foreground shrink-0 font-mono">
+                          {f.createdAt ? new Date(f.createdAt).toLocaleString() : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ) : statsQuery.isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading health data...
+          </div>
+        ) : null}
+
         {catalogQuery.isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground py-8">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading connector catalog...
@@ -1110,7 +1263,10 @@ export default function IntegrationBuilderPage() {
         ) : (
           <NewIntegrationDialog
             catalog={catalog}
-            onCreated={() => qc.invalidateQueries({ queryKey: ["integration-configs"] })}
+            onCreated={() => {
+              qc.invalidateQueries({ queryKey: ["integration-configs"] });
+              qc.invalidateQueries({ queryKey: ["integration-stats"] });
+            }}
           />
         )}
 
@@ -1168,8 +1324,15 @@ export default function IntegrationBuilderPage() {
                 key={cfg.id}
                 config={cfg}
                 catalog={catalog}
-                onDeleted={() => qc.invalidateQueries({ queryKey: ["integration-configs"] })}
-                onUpdated={() => qc.invalidateQueries({ queryKey: ["integration-configs"] })}
+                health={healthMap[cfg.id]}
+                onDeleted={() => {
+                  qc.invalidateQueries({ queryKey: ["integration-configs"] });
+                  qc.invalidateQueries({ queryKey: ["integration-stats"] });
+                }}
+                onUpdated={() => {
+                  qc.invalidateQueries({ queryKey: ["integration-configs"] });
+                  qc.invalidateQueries({ queryKey: ["integration-stats"] });
+                }}
               />
             ))}
           </div>

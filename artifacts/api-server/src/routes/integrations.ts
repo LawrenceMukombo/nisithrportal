@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, integrationConfigsTable, integrationLogsTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
@@ -355,6 +355,131 @@ Only include mappings where you are reasonably confident. Skip uncertain mapping
   } catch (err) {
     logger.error(err, "AI suggest-mapping failed");
     res.status(500).json({ error: "AI mapping suggestion failed" });
+  }
+});
+
+// ─── GET /integration-stats ────────────────────────────────────────────────────
+
+router.get("/integration-stats", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const agencyId = getTenantAgencyId(req);
+
+    // 1. Fetch all configs for this tenant
+    const configs = await db
+      .select({ id: integrationConfigsTable.id, name: integrationConfigsTable.name, enabled: integrationConfigsTable.enabled })
+      .from(integrationConfigsTable)
+      .where(agencyId ? eq(integrationConfigsTable.agencyId, agencyId) : undefined);
+
+    const configIds = configs.map(c => c.id);
+    const configMap = Object.fromEntries(configs.map(c => [c.id, c]));
+
+    const now = new Date();
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    if (configIds.length === 0) {
+      res.json({
+        totalConfigs: 0, activeConfigs: 0, executions7d: 0, successRate7d: 0, avgDurationMs: 0,
+        perConfig: [], recentFailures: [],
+      });
+      return;
+    }
+
+    // Build filter for config IDs using sql IN clause
+    const configIdIn = sql`${integrationLogsTable.integrationConfigId} IN (${sql.join(configIds.map(id => sql`${id}`), sql`, `)})`;
+
+    // 2. Logs in last 7 days
+    const logs7d = await db
+      .select({
+        integrationConfigId: integrationLogsTable.integrationConfigId,
+        status: integrationLogsTable.status,
+        durationMs: integrationLogsTable.durationMs,
+      })
+      .from(integrationLogsTable)
+      .where(and(configIdIn, gte(integrationLogsTable.createdAt, since7d)));
+
+    const executions7d = logs7d.length;
+    const successes7d = logs7d.filter(l => l.status === "success").length;
+    const successRate7d = executions7d > 0 ? Math.round((successes7d / executions7d) * 100) : 0;
+    const totalDuration = logs7d.reduce((sum, l) => sum + (l.durationMs ?? 0), 0);
+    const avgDurationMs = executions7d > 0 ? Math.round(totalDuration / executions7d) : 0;
+
+    // 3. Logs in last 24h (for per-config health)
+    const logs24h = await db
+      .select({
+        integrationConfigId: integrationLogsTable.integrationConfigId,
+        status: integrationLogsTable.status,
+        createdAt: integrationLogsTable.createdAt,
+      })
+      .from(integrationLogsTable)
+      .where(and(configIdIn, gte(integrationLogsTable.createdAt, since24h)))
+      .orderBy(desc(integrationLogsTable.createdAt));
+
+    // Group 24h logs per config
+    const perConfigLogs: Record<number, typeof logs24h> = {};
+    for (const log of logs24h) {
+      const cid = log.integrationConfigId!;
+      if (!perConfigLogs[cid]) perConfigLogs[cid] = [];
+      perConfigLogs[cid].push(log);
+    }
+
+    const perConfig = configs.map(cfg => {
+      const cfgLogs = perConfigLogs[cfg.id] ?? [];
+      const total = cfgLogs.length;
+      const success = cfgLogs.filter(l => l.status === "success").length;
+      const rate = total > 0 ? (success / total) * 100 : null;
+      const lastLog = cfgLogs[0] ?? null;
+
+      let health: "healthy" | "degraded" | "failing" | "unknown";
+      if (rate === null) health = "unknown";
+      else if (rate >= 80) health = "healthy";
+      else if (rate >= 50) health = "degraded";
+      else health = "failing";
+
+      return {
+        configId: cfg.id,
+        configName: cfg.name,
+        executions24h: total,
+        successRate24h: rate !== null ? Math.round(rate) : null,
+        lastStatus: lastLog?.status ?? null,
+        lastExecutionAt: lastLog?.createdAt?.toISOString() ?? null,
+        health,
+      };
+    });
+
+    // 4. Recent 5 failures across all configs
+    const recentFailures = await db
+      .select({
+        logId: integrationLogsTable.id,
+        configId: integrationLogsTable.integrationConfigId,
+        errorMessage: integrationLogsTable.errorMessage,
+        createdAt: integrationLogsTable.createdAt,
+      })
+      .from(integrationLogsTable)
+      .where(and(configIdIn, eq(integrationLogsTable.status, "error")))
+      .orderBy(desc(integrationLogsTable.createdAt))
+      .limit(5);
+
+    const recentFailuresWithName = recentFailures.map(f => ({
+      logId: f.logId,
+      configId: f.configId,
+      configName: f.configId ? (configMap[f.configId]?.name ?? `Config #${f.configId}`) : "Unknown",
+      errorMessage: f.errorMessage,
+      createdAt: f.createdAt?.toISOString() ?? null,
+    }));
+
+    res.json({
+      totalConfigs: configs.length,
+      activeConfigs: configs.filter(c => c.enabled).length,
+      executions7d,
+      successRate7d,
+      avgDurationMs,
+      perConfig,
+      recentFailures: recentFailuresWithName,
+    });
+  } catch (err) {
+    logger.error(err, "Failed to get integration stats");
+    res.status(500).json({ error: "Failed to get integration stats" });
   }
 });
 

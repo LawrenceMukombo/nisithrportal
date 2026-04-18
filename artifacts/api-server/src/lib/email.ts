@@ -1,6 +1,8 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
 function createTransport() {
   const host = process.env.SMTP_HOST;
   const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
@@ -49,13 +51,15 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
         text,
         html,
       });
-      logger.info({ to }, "sendPasswordResetEmail: reset email sent");
+      logger.info({ to }, "sendPasswordResetEmail: reset email sent successfully");
     } catch (err) {
       logger.error({ err, to }, "sendPasswordResetEmail: failed to send reset email via SMTP");
       throw err;
     }
   } else {
-    logger.warn({ to }, "sendPasswordResetEmail: SMTP not configured — reset link logged to console only");
-    logger.info(`[Email] Reset URL for ${to}: ${resetUrl}`);
+    logger.warn({ to }, "sendPasswordResetEmail: SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS to enable email delivery");
+    if (!IS_PRODUCTION) {
+      logger.info(`[dev] Reset URL for ${to}: ${resetUrl}`);
+    }
   }
 }

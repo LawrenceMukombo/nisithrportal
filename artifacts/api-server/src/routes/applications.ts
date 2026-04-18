@@ -268,6 +268,7 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
             interview: "has advanced to interview stage",
             offer: "has received a job offer",
             hired: "has been accepted — congratulations!",
+            onboarding: "has started the onboarding process — welcome to the team!",
             rejected: "was not successful this time",
             withdrawn: "has been withdrawn",
           };

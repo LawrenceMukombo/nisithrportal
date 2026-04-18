@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
+import { Link, useSearch } from "wouter";
 import { Search } from "lucide-react";
 import { useGetApplications, useUpdateApplicationStatus, getGetApplicationsQueryKey } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
-const STATUS_OPTIONS = ["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn"];
+const STATUS_OPTIONS = ["applied", "screening", "interview", "offer", "hired", "onboarding", "rejected", "withdrawn"];
 
 function StatusSelect({ app }: { app: Application }) {
   const queryClient = useQueryClient();
@@ -43,8 +43,17 @@ function StatusSelect({ app }: { app: Application }) {
 }
 
 export default function ApplicationsPage() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const searchString = useSearch();
+  const urlStatus = new URLSearchParams(searchString).get("status");
+  const initialStatus = urlStatus && STATUS_OPTIONS.includes(urlStatus) ? urlStatus : "all";
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (urlStatus && STATUS_OPTIONS.includes(urlStatus)) {
+      setStatusFilter(urlStatus);
+    }
+  }, [urlStatus]);
 
   const applications = useGetApplications(
     { status: statusFilter !== "all" ? statusFilter : undefined },

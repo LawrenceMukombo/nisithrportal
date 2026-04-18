@@ -27,15 +27,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/auth-context";
 import { Badge } from "@/components/ui/badge";
 
-const STATUS_OPTIONS = [
-  { value: "applied", label: "Applied" },
-  { value: "screening", label: "Screening" },
-  { value: "interview", label: "Interview" },
-  { value: "offer", label: "Offer" },
-  { value: "hired", label: "Hired" },
-  { value: "rejected", label: "Rejected" },
-  { value: "withdrawn", label: "Withdrawn" },
-];
+import { ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
+
+const STATUS_OPTIONS = ALL_STATUS_OPTIONS;
 
 function InterviewEvaluationPanel({
   applicationId,

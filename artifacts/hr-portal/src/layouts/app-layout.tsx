@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
-  ChevronRight, Menu, X, Moon, Sun, Shield, StarIcon,
+  ChevronRight, Menu, X, Moon, Sun, Shield, StarIcon, GitBranch,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,10 @@ function useNavItems() {
 
   if (canViewCandidates) {
     items.push({ label: "Candidates", href: "/candidates", icon: Users });
+  }
+
+  if (isAdmin || isHrOfficer) {
+    items.push({ label: "Recruitment Workflow", href: "/workflow", icon: GitBranch });
   }
 
   if (canManageEmployees) {

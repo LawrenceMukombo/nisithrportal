@@ -1,5 +1,6 @@
 import { useRoute, useLocation, Link } from "wouter";
 import { ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2 } from "lucide-react";
+import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
 import { useGetJob, useCreateApplication, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -231,9 +232,6 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
     return acc;
   }, {});
 
-  const statusOrder = ["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn"];
-  const activeStatuses = statusOrder.filter((s) => (byStatus[s]?.length ?? 0) > 0);
-
   return (
     <Card data-testid="card-pipeline">
       <CardHeader>
@@ -269,16 +267,33 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
           <p className="text-sm text-muted-foreground py-4 text-center">No applications yet for this position.</p>
         ) : (
           <div className="space-y-4">
-            {/* Status summary row */}
-            <div className="flex flex-wrap gap-2">
-              {activeStatuses.map((status) => (
-                <span
-                  key={status}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? "bg-gray-100 text-gray-600"}`}
-                >
-                  {status} ({byStatus[status]?.length})
-                </span>
-              ))}
+            {/* Workflow stage summary bar */}
+            <div className="overflow-x-auto pb-1">
+              <div className="flex gap-1 min-w-max">
+                {WORKFLOW_STAGES.map((stage) => {
+                  const count = byStatus[stage.status]?.length ?? 0;
+                  const colors = STAGE_COLOR_MAP[stage.color];
+                  const Icon = stage.icon;
+                  return (
+                    <Link key={stage.id} href={`/applications?status=${stage.status}`}>
+                      <div
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity ${
+                          count > 0 ? colors.bg : "bg-muted"
+                        }`}
+                        title={`${stage.label}: ${count} candidate${count !== 1 ? "s" : ""}`}
+                      >
+                        <Icon className={`h-3 w-3 ${count > 0 ? colors.text : "text-muted-foreground"}`} />
+                        <span className={`text-xs font-medium whitespace-nowrap ${count > 0 ? colors.text : "text-muted-foreground"}`}>
+                          {stage.label}
+                        </span>
+                        <span className={`text-xs font-bold tabular-nums ${count > 0 ? colors.text : "text-muted-foreground/60"}`}>
+                          {count}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
             <Separator />
             {/* Applications table */}

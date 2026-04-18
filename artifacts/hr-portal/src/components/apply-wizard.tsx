@@ -184,7 +184,8 @@ const STEPS: StepDef[] = [
   { id: "diversity", label: "Diversity & Inclusion (Optional)", shortLabel: "D&I", icon: Heart, fields: ["diOptIn", "disabilityStatus", "genderIdentity", "ethnicity"] },
 ];
 
-const DRAFT_KEY = (jobId: number) => `apply_draft_${jobId}`;
+export const DRAFT_KEY_PREFIX = "apply_draft_";
+const DRAFT_KEY = (jobId: number) => `${DRAFT_KEY_PREFIX}${jobId}`;
 
 // ─── Helper: Upload a file ─────────────────────────────────────────────────────
 

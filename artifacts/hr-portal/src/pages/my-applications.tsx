@@ -20,6 +20,7 @@ import {
 import { Link } from "wouter";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2 } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
+import { DRAFT_KEY_PREFIX } from "@/components/apply-wizard";
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -38,27 +39,30 @@ const STATUS_CONFIG: Record<string, {
 
 const TERMINAL_STATUSES = ["rejected", "withdrawn", "hired"];
 
-const DRAFT_KEY_PREFIX = "apply_draft_";
-
 type LocalDraft = { jobId: number; savedAt: string | null; step: number };
 
 function scanLocalDrafts(): LocalDraft[] {
-  try {
-    const drafts: LocalDraft[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key?.startsWith(DRAFT_KEY_PREFIX)) continue;
-      const jobId = parseInt(key.slice(DRAFT_KEY_PREFIX.length), 10);
-      if (isNaN(jobId)) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
+  const drafts: LocalDraft[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(DRAFT_KEY_PREFIX)) continue;
+    const jobId = parseInt(key.slice(DRAFT_KEY_PREFIX.length), 10);
+    if (isNaN(jobId)) continue;
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
       const parsed = JSON.parse(raw) as { step?: number; savedAt?: string };
       drafts.push({ jobId, savedAt: parsed.savedAt ?? null, step: parsed.step ?? 0 });
+    } catch {
+      // Malformed entry — skip and continue scanning
     }
-    return drafts;
-  } catch {
-    return [];
   }
+  return drafts.sort((a, b) => {
+    if (!a.savedAt && !b.savedAt) return 0;
+    if (!a.savedAt) return 1;
+    if (!b.savedAt) return -1;
+    return new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime();
+  });
 }
 
 export default function MyApplicationsPage() {

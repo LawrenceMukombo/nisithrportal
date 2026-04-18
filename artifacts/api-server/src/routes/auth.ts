@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, or, lt } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
 import { isStaffDomain } from "../lib/emailDomain";
 import { sendPasswordResetEmail } from "../lib/email";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -277,3 +278,29 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+/**
+ * Deletes stale password-reset tokens to keep the table lean:
+ * - Any token whose `expires_at` is in the past (expired, used or not).
+ * - Any token marked `used = true` that was created more than 24 hours ago.
+ *
+ * Run on startup and on a recurring interval (see index.ts).
+ */
+export async function cleanupExpiredResetTokens(): Promise<void> {
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  await db
+    .delete(passwordResetTokensTable)
+    .where(
+      or(
+        lt(passwordResetTokensTable.expiresAt, now),
+        and(
+          eq(passwordResetTokensTable.used, true),
+          lt(passwordResetTokensTable.createdAt, oneDayAgo),
+        ),
+      ),
+    );
+
+  logger.info("cleanupExpiredResetTokens: stale password-reset tokens purged");
+}

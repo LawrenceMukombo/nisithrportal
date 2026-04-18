@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedInitialData } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
+import { cleanupExpiredResetTokens } from "./routes/auth";
 
 const rawPort = process.env["PORT"];
 
@@ -18,6 +19,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const CONTRACT_EXPIRY_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
+const RESET_TOKEN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // every 24 hours
 
 app.listen(port, (err) => {
   if (err) {
@@ -40,4 +42,14 @@ app.listen(port, (err) => {
       logger.error(e, "Scheduled contract expiry check failed"),
     );
   }, CONTRACT_EXPIRY_INTERVAL_MS);
+
+  // Purge stale password-reset tokens on startup, then every 24 hours.
+  cleanupExpiredResetTokens().catch((e) =>
+    logger.error(e, "Initial reset-token cleanup failed"),
+  );
+  setInterval(() => {
+    cleanupExpiredResetTokens().catch((e) =>
+      logger.error(e, "Scheduled reset-token cleanup failed"),
+    );
+  }, RESET_TOKEN_CLEANUP_INTERVAL_MS);
 });

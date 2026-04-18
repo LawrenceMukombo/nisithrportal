@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award } from "lucide-react";
 import {
   useGetApplication,
   useGetAiScores,
@@ -346,11 +346,93 @@ export default function ApplicationDetailPage() {
           <InterviewQuestionsPanel jobId={app.jobId} candidateId={app.candidateId} />
         )}
 
+        {app.personalStatement && (
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary" />Personal Statement</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{app.personalStatement}</p>
+            </CardContent>
+          </Card>
+        )}
+
         {app.coverLetter && (
           <Card>
             <CardHeader><CardTitle className="text-base">Cover Letter</CardTitle></CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-cover-letter">{app.coverLetter}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {(app.preferredLocation || app.availability || app.workType || app.relocate != null) && (
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />Position Preferences</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {app.preferredLocation && <div className="flex justify-between"><span className="text-muted-foreground">Preferred Location</span><span>{app.preferredLocation}</span></div>}
+              {app.availability && <div className="flex justify-between"><span className="text-muted-foreground">Availability</span><span>{app.availability}</span></div>}
+              {app.workType && <div className="flex justify-between"><span className="text-muted-foreground">Work Type</span><span className="capitalize">{app.workType}</span></div>}
+              {app.relocate != null && <div className="flex justify-between"><span className="text-muted-foreground">Willing to Relocate</span><span>{app.relocate ? "Yes" : "No"}</span></div>}
+            </CardContent>
+          </Card>
+        )}
+
+        {(app.expectedSalary || app.currentSalary || app.noticePeriod) && (
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><DollarSign className="h-4 w-4 text-primary" />Compensation & Availability</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {app.expectedSalary && <div className="flex justify-between"><span className="text-muted-foreground">Expected Salary</span><span>{app.expectedSalary}</span></div>}
+              {app.currentSalary && <div className="flex justify-between"><span className="text-muted-foreground">Current Salary</span><span>{app.currentSalary}</span></div>}
+              {app.noticePeriod && <div className="flex justify-between"><span className="text-muted-foreground">Notice Period</span><span>{app.noticePeriod}</span></div>}
+            </CardContent>
+          </Card>
+        )}
+
+        {(app.technicalSkills || app.softSkills || app.computerLiteracy || app.certificationsLicenses) && (
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Award className="h-4 w-4 text-primary" />Skills & Competencies</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {Array.isArray(app.technicalSkills) && (app.technicalSkills as string[]).length > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Technical Skills</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(app.technicalSkills as string[]).map((s, i) => <Badge key={i} variant="secondary" className="text-xs">{s}</Badge>)}
+                  </div>
+                </div>
+              )}
+              {Array.isArray(app.softSkills) && (app.softSkills as string[]).length > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Soft Skills</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(app.softSkills as string[]).map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
+                  </div>
+                </div>
+              )}
+              {app.computerLiteracy && <div className="flex justify-between"><span className="text-muted-foreground">Computer Literacy</span><span>{app.computerLiteracy}</span></div>}
+              {app.certificationsLicenses && <div className="flex justify-between"><span className="text-muted-foreground">Certifications</span><span>{app.certificationsLicenses}</span></div>}
+            </CardContent>
+          </Card>
+        )}
+
+        {(app.declarationAgreed != null || app.backgroundCheckConsent != null || app.dataPrivacyConsent != null) && (
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" />Declarations & Consents</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {([
+                { label: "Declaration (true & correct)", value: app.declarationAgreed },
+                { label: "Background Check Consent", value: app.backgroundCheckConsent },
+                { label: "Data Privacy Consent", value: app.dataPrivacyConsent },
+                { label: "Conflict of Interest", value: app.conflictOfInterest },
+                { label: "Criminal Record Declared", value: app.criminalRecord },
+              ] as { label: string; value: boolean | null | undefined }[])
+                .filter(item => item.value != null)
+                .map(item => (
+                  <div key={item.label} className="flex items-center justify-between">
+                    <span className="text-muted-foreground">{item.label}</span>
+                    <Badge variant={item.value ? "default" : "destructive"} className="text-xs">
+                      {item.value ? "✓ Yes" : "✗ No"}
+                    </Badge>
+                  </div>
+                ))}
             </CardContent>
           </Card>
         )}

@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import { eq, and, inArray, asc } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
@@ -15,6 +15,7 @@ import {
   candidateDiversityTable,
   jobsTable,
 } from "@workspace/db";
+import { applicationScreeningAnswersTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
   CreateApplicationBody,
@@ -22,7 +23,7 @@ import {
   UpdateApplicationStatusParams,
   UpdateApplicationStatusBody,
 } from "@workspace/api-zod";
-import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
@@ -207,8 +208,19 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
   res.json(apps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
+// Helper: check if authenticated user may access a draft by email
+// Unauthenticated users may access their own draft (keyed by email+jobId — low-risk pre-submission data).
+// Authenticated non-admin/hr users may only access drafts matching their own email.
+const draftEmailAllowed = (req: express.Request, email: string): boolean => {
+  const u = req.user;
+  if (!u) return true; // unauthenticated applicant — allowed (no JWT issued yet)
+  if (u.role === "admin" || u.role === "hr_officer") return true; // HR staff may view any draft
+  // Authenticated regular user: their JWT email must match
+  return u.email?.toLowerCase() === email.toLowerCase();
+};
+
 // Draft save endpoint (POST /applications/draft)
-router.post("/applications/draft", async (req, res): Promise<void> => {
+router.post("/applications/draft", optionalAuth, async (req, res): Promise<void> => {
   const { candidateEmail, jobId, draftData, currentStep } = req.body as {
     candidateEmail?: string; jobId?: number; draftData?: unknown; currentStep?: number;
   };
@@ -216,7 +228,9 @@ router.post("/applications/draft", async (req, res): Promise<void> => {
     res.status(400).json({ error: "candidateEmail, jobId, and draftData required" });
     return;
   }
-  // Upsert draft
+  if (!draftEmailAllowed(req, candidateEmail)) {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
   const existing = await db.select({ id: applicationDraftTable.id })
     .from(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, candidateEmail), eq(applicationDraftTable.jobId, jobId)));
@@ -236,12 +250,15 @@ router.post("/applications/draft", async (req, res): Promise<void> => {
 });
 
 // Draft load endpoint (GET /applications/draft/:jobId?email=...)
-router.get("/applications/draft/:jobId", async (req, res): Promise<void> => {
+router.get("/applications/draft/:jobId", optionalAuth, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.jobId ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" });
     return;
+  }
+  if (!draftEmailAllowed(req, email)) {
+    res.status(403).json({ error: "Forbidden" }); return;
   }
   const [draft] = await db.select().from(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
@@ -249,11 +266,14 @@ router.get("/applications/draft/:jobId", async (req, res): Promise<void> => {
 });
 
 // Delete draft (used after successful submission)
-router.delete("/applications/draft/:jobId", async (req, res): Promise<void> => {
+router.delete("/applications/draft/:jobId", optionalAuth, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.jobId ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" }); return;
+  }
+  if (!draftEmailAllowed(req, email)) {
+    res.status(403).json({ error: "Forbidden" }); return;
   }
   await db.delete(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
@@ -448,7 +468,20 @@ router.post("/applications", async (req, res): Promise<void> => {
         ethnicity: ext.diversityInfo.ethnicity ?? null,
       }));
     }
-    await Promise.allSettled(promises);
+    // Persist screening answers — link questionId to the new application
+    if (ext.screeningAnswers?.length) {
+      promises.push(db.insert(applicationScreeningAnswersTable).values(
+        ext.screeningAnswers
+          .filter(a => a.questionId != null && a.answer != null && a.answer !== "")
+          .map(a => ({
+            applicationId: application.id,
+            questionId: a.questionId,
+            answer: String(a.answer),
+          }))
+      ));
+    }
+    // Use Promise.all so sub-record failures surface as errors (not silently swallowed)
+    await Promise.all(promises);
 
     // Clear draft after successful submission
     try {

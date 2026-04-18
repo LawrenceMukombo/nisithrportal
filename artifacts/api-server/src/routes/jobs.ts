@@ -221,11 +221,34 @@ router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole(
   const jobId = parseInt(req.params.id ?? "");
   const qid = parseInt(req.params.qid ?? "");
   if (isNaN(jobId) || isNaN(qid)) { res.status(400).json({ error: "Invalid id" }); return; }
+  // Verify the job belongs to the same agency before deleting
+  const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+  if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
   const [q] = await db.select({ id: jobScreeningQuestionsTable.id, jobId: jobScreeningQuestionsTable.jobId })
     .from(jobScreeningQuestionsTable).where(eq(jobScreeningQuestionsTable.id, qid));
   if (!q || q.jobId !== jobId) { res.status(404).json({ error: "Question not found" }); return; }
   await db.delete(jobScreeningQuestionsTable).where(eq(jobScreeningQuestionsTable.id, qid));
   res.json({ deleted: true });
+});
+
+// PATCH /jobs/:id/screening-questions/:qid/order — reorder a question (move up/down)
+router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.id ?? "");
+  const qid = parseInt(req.params.qid ?? "");
+  const { displayOrder } = req.body as { displayOrder?: number };
+  if (isNaN(jobId) || isNaN(qid) || typeof displayOrder !== "number") {
+    res.status(400).json({ error: "Invalid id or displayOrder" }); return;
+  }
+  const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+  if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
+  const [q] = await db.update(jobScreeningQuestionsTable)
+    .set({ displayOrder })
+    .where(and(eq(jobScreeningQuestionsTable.id, qid), eq(jobScreeningQuestionsTable.jobId, jobId)))
+    .returning();
+  if (!q) { res.status(404).json({ error: "Question not found" }); return; }
+  res.json(q);
 });
 
 export default router;

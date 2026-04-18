@@ -2185,10 +2185,6 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CandidateLanguageEntry"
-            diversity:
-              type: array
-              items:
-                $ref: "#/components/schemas/CandidateDiversityEntry"
             referees:
               type: array
               items:
@@ -2201,7 +2197,6 @@ components:
             - education
             - experience
             - languages
-            - diversity
             - referees
             - applications
 
@@ -2273,6 +2268,40 @@ components:
           type: ["string", "null"]
         coverLetter:
           type: ["string", "null"]
+        preferredLocation:
+          type: ["string", "null"]
+        availability:
+          type: ["string", "null"]
+        relocate:
+          type: ["boolean", "null"]
+        workType:
+          type: ["string", "null"]
+        expectedSalary:
+          type: ["string", "null"]
+        currentSalary:
+          type: ["string", "null"]
+        noticePeriod:
+          type: ["string", "null"]
+        personalStatement:
+          type: ["string", "null"]
+        technicalSkills:
+          nullable: true
+        softSkills:
+          nullable: true
+        computerLiteracy:
+          type: ["string", "null"]
+        certificationsLicenses:
+          type: ["string", "null"]
+        declarationAgreed:
+          type: ["boolean", "null"]
+        backgroundCheckConsent:
+          type: ["boolean", "null"]
+        conflictOfInterest:
+          type: ["boolean", "null"]
+        criminalRecord:
+          type: ["boolean", "null"]
+        dataPrivacyConsent:
+          type: ["boolean", "null"]
         createdAt:
           type: string
         updatedAt:

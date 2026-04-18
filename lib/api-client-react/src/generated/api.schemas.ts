@@ -241,7 +241,6 @@ export type CandidateProfile = Candidate & {
   education: CandidateEducationEntry[];
   experience: CandidateExperienceEntry[];
   languages: CandidateLanguageEntry[];
-  diversity: CandidateDiversityEntry[];
   referees: CandidateRefereeEntry[];
   applications: CandidateProfileApplication[];
 };
@@ -287,6 +286,38 @@ export interface Application {
   notes?: string | null;
   /** @nullable */
   coverLetter?: string | null;
+  /** @nullable */
+  preferredLocation?: string | null;
+  /** @nullable */
+  availability?: string | null;
+  /** @nullable */
+  relocate?: boolean | null;
+  /** @nullable */
+  workType?: string | null;
+  /** @nullable */
+  expectedSalary?: string | null;
+  /** @nullable */
+  currentSalary?: string | null;
+  /** @nullable */
+  noticePeriod?: string | null;
+  /** @nullable */
+  personalStatement?: string | null;
+  technicalSkills?: unknown | null;
+  softSkills?: unknown | null;
+  /** @nullable */
+  computerLiteracy?: string | null;
+  /** @nullable */
+  certificationsLicenses?: string | null;
+  /** @nullable */
+  declarationAgreed?: boolean | null;
+  /** @nullable */
+  backgroundCheckConsent?: boolean | null;
+  /** @nullable */
+  conflictOfInterest?: boolean | null;
+  /** @nullable */
+  criminalRecord?: boolean | null;
+  /** @nullable */
+  dataPrivacyConsent?: boolean | null;
   createdAt?: string;
   updatedAt?: string;
   statusHistory?: ApplicationStatusHistoryItem[];

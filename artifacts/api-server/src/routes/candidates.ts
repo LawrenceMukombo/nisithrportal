@@ -160,12 +160,11 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
     }
   }
 
-  // Fetch all sub-records in parallel
-  const [education, experience, languages, diversity, referees, applications] = await Promise.all([
+  // Fetch all sub-records in parallel (diversity excluded — aggregate-only per privacy policy)
+  const [education, experience, languages, referees, applications] = await Promise.all([
     db.select().from(candidateEducationTable).where(eq(candidateEducationTable.candidateId, candidateId)),
     db.select().from(candidateExperienceTable).where(eq(candidateExperienceTable.candidateId, candidateId)),
     db.select().from(candidateLanguagesTable).where(eq(candidateLanguagesTable.candidateId, candidateId)),
-    db.select().from(candidateDiversityTable).where(eq(candidateDiversityTable.candidateId, candidateId)),
     db
       .select({
         id: candidateRefereesTable.id,
@@ -185,7 +184,8 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
       .where(eq(applicationsTable.candidateId, candidateId)),
   ]);
 
-  res.json({ ...candidate, education, experience, languages, diversity, referees, applications });
+  // Diversity data is stored for aggregate analytics only — never returned per-candidate
+  res.json({ ...candidate, education, experience, languages, referees, applications });
 });
 
 export default router;

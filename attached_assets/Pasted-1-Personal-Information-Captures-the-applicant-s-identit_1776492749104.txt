@@ -1,0 +1,168 @@
+1. Personal Information
+
+Captures the applicant’s identity and basic details.
+
+Typical Fields:
+
+First Name
+Last Name
+Other Names
+Gender
+Date of Birth
+Nationality
+National ID / Passport Number
+Marital Status (optional, depending on policy)
+2. Contact Information
+
+Ensures the applicant can be reached.
+
+Typical Fields:
+
+Email Address
+Phone Number(s)
+Alternative Contact Number
+Physical Address
+City / Province / District
+Postal Address
+3. Position Applied For
+
+Links the application to a specific vacancy.
+
+Typical Fields:
+
+Job Title (auto-filled if applied from job listing)
+Job Reference Number
+Preferred Location (if multiple postings exist)
+Availability (immediate, notice period)
+4. Professional Summary / Cover Letter
+
+Allows the applicant to introduce themselves.
+
+Typical Fields:
+
+Personal Statement / Summary
+Cover Letter (text field or file upload)
+5. Educational Background
+
+Captures academic qualifications.
+
+Typical Fields:
+
+Highest Level of Education
+Institution Name(s)
+Qualification(s) অর্জained
+Field of Study
+Start and End Dates
+Certifications / Professional Training
+6. Work Experience
+
+Captures employment history.
+
+Typical Fields:
+
+Employer Name
+Job Title
+Responsibilities
+Start and End Dates
+Reason for Leaving
+Key Achievements
+7. Skills and Competencies
+
+Highlights capabilities relevant to the job.
+
+Typical Fields:
+
+Technical Skills
+Soft Skills
+Languages (with proficiency level)
+Computer Literacy
+Certifications / Licenses
+8. Document Uploads
+
+Supports verification and detailed review.
+
+Typical Fields:
+
+Curriculum Vitae (CV)
+Cover Letter (if not typed)
+Academic Certificates
+Professional Certificates
+Identification Document
+Reference Letters
+9. Screening Questions (Job-Specific)
+
+Used for shortlisting and filtering candidates.
+
+Typical Fields:
+
+Yes/No questions (e.g., “Do you have X years of experience?”)
+Multiple choice questions
+Short-answer responses
+Eligibility questions (e.g., work permit status)
+10. References
+
+Provides third-party validation.
+
+Typical Fields:
+
+Referee Name
+Relationship to Applicant
+Organisation
+Contact Details (email, phone)
+11. Compensation & Availability
+
+Aligns expectations early.
+
+Typical Fields:
+
+Expected Salary
+Current Salary (optional)
+Notice Period
+Willingness to Relocate
+Preferred Work Type (full-time, contract, etc.)
+12. Declarations & Compliance
+
+Ensures legal and policy compliance.
+
+Typical Fields:
+
+Declaration of truthfulness
+Consent to background checks
+Conflict of interest disclosure
+Criminal record declaration (if applicable)
+Data privacy consent (aligned with data protection laws)
+13. Diversity & Inclusion (Optional)
+
+Used for reporting and equity monitoring (must be compliant with local regulations).
+
+Typical Fields:
+
+Disability Status
+Gender Identity
+Ethnicity (where appropriate and lawful)
+14. System-Generated Fields (Backend)
+
+Not visible to applicants but critical for system design.
+
+Typical Fields:
+
+Application ID
+Submission Timestamp
+Application Status
+AI Score / Ranking
+Recruiter Notes
+Forward-Looking Enhancements (AI-Driven Forms)
+
+A modern system should go beyond static forms by incorporating:
+
+Dynamic Forms: Fields adapt based on the job role
+Auto-fill via CV Parsing: Reduces manual entry
+Smart Validation: Detects incomplete or inconsistent entries
+Skill Inference: AI extracts competencies from uploaded CVs
+Guided Application Assistant: Chatbot to assist applicants
+Design Best Practices (Critical for Implementation)
+Progressive Disclosure: Break the form into steps (multi-page wizard)
+Save & Resume Later: Essential for long applications
+Mobile Responsiveness: Many applicants use mobile devices
+Validation at Each Step: Prevent incomplete submissions
+Minimal Mandatory Fields: Reduce drop-off rates

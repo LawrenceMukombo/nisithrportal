@@ -608,6 +608,165 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /jobs/{id}/screening-questions:
+    get:
+      operationId: getJobScreeningQuestions
+      tags: [jobs]
+      summary: List screening questions for a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of screening questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScreeningQuestion"
+    post:
+      operationId: createJobScreeningQuestion
+      tags: [jobs]
+      summary: Add a screening question to a job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScreeningQuestionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreeningQuestion"
+
+  /jobs/{id}/screening-questions/{qid}:
+    delete:
+      operationId: deleteJobScreeningQuestion
+      tags: [jobs]
+      summary: Delete a screening question
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  /jobs/{id}/screening-questions/{qid}/order:
+    patch:
+      operationId: reorderJobScreeningQuestion
+      tags: [jobs]
+      summary: Move a screening question up or down
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction]
+              properties:
+                direction:
+                  type: string
+                  enum: [up, down]
+      responses:
+        "200":
+          description: Reordered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  movedId:
+                    type: integer
+                  direction:
+                    type: string
+
+  /jobs/{id}/di-report:
+    get:
+      operationId: getJobDiReport
+      tags: [jobs]
+      summary: Get aggregate Diversity & Inclusion statistics for a job (no individual data)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Aggregate D&I statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: Total number of applications
+                  optInCount:
+                    type: integer
+                    description: Number of applicants who opted into D&I data collection
+                  disabilityStatus:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  genderIdentity:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  ethnicity:
+                    type: object
+                    additionalProperties:
+                      type: integer
+
   # CANDIDATES
   /candidates:
     get:
@@ -895,6 +1054,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /applications/draft/{jobId}:
+    get:
+      operationId: getApplicationDraft
+      tags: [applications]
+      summary: Load a saved application draft for a job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Draft data or null
+          content:
+            application/json:
+              schema:
+                nullable: true
+                type: object
+    post:
+      operationId: saveApplicationDraft
+      tags: [applications]
+      summary: Save an application draft for a job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateEmail, draftData]
+              properties:
+                candidateEmail:
+                  type: string
+                draftData:
+                  type: object
+                currentStep:
+                  type: integer
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved:
+                    type: boolean
+    delete:
+      operationId: deleteApplicationDraft
+      tags: [applications]
+      summary: Delete a saved application draft
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+
+  /applications/{id}/screening-answers:
+    get:
+      operationId: getApplicationScreeningAnswers
+      tags: [applications]
+      summary: Get screening answers for an application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Screening answers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    questionId:
+                      type: integer
+                    question:
+                      type: string
+                    answer:
+                      type: string
+
+  /applications/{id}/documents:
+    get:
+      operationId: getApplicationDocuments
+      tags: [applications]
+      summary: Get uploaded documents for an application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Application documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    documentType:
+                      type: string
+                    url:
+                      type: string
+                    fileName:
+                      type: string
 
   # EMPLOYEES
   /employees:
@@ -1424,6 +1728,54 @@ paths:
                   $ref: "#/components/schemas/Role"
 
   # AI ENDPOINTS
+  /ai/cv-prefill:
+    post:
+      operationId: aiCvPrefill
+      tags: [aiScores]
+      summary: Public CV parser endpoint for applicants — extracts name, email, phone, skills from a CV URL
+      description: >
+        Public endpoint, no authentication required.
+        Accepts a public HTTPS URL or plain text of a CV and returns structured data
+        suitable for pre-filling the apply wizard form fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cvUrl:
+                  type: string
+                  format: uri
+                  description: Public HTTPS URL of the CV file (PDF or text)
+                cvText:
+                  type: string
+                  description: Plain text of the CV
+      responses:
+        "200":
+          description: Parsed CV data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    nullable: true
+                  email:
+                    type: string
+                    nullable: true
+                  phone:
+                    type: string
+                    nullable: true
+                  skills:
+                    type: array
+                    items:
+                      type: string
+                  summary:
+                    type: string
+                    nullable: true
+
   /ai/parse-cv:
     post:
       operationId: aiParseCv
@@ -1780,6 +2132,50 @@ components:
           type: string
       required:
         - error
+
+    ScreeningQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+        jobId:
+          type: integer
+        question:
+          type: string
+        questionType:
+          type: string
+          enum: [short_answer, yes_no, multiple_choice, numeric]
+        options:
+          type: array
+          items:
+            type: string
+          nullable: true
+        required:
+          type: boolean
+        displayOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateScreeningQuestionRequest:
+      type: object
+      required: [question, questionType]
+      properties:
+        question:
+          type: string
+        questionType:
+          type: string
+          enum: [short_answer, yes_no, multiple_choice, numeric]
+        options:
+          type: array
+          items:
+            type: string
+        required:
+          type: boolean
+          default: true
+        displayOrder:
+          type: integer
 
     # Auth Schemas
     RegisterRequest:

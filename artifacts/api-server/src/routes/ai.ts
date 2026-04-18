@@ -161,6 +161,50 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
   }
 });
 
+// Public endpoint — no auth required. Used by the apply wizard to pre-fill form fields from a CV.
+// Rate-limiting is strongly recommended at the reverse-proxy level for production.
+const CvPrefillBody = z.object({
+  cvUrl: z.string().url("Must be a valid HTTPS URL").optional(),
+  cvText: z.string().max(50_000).optional(),
+}).refine(d => d.cvUrl || d.cvText, { message: "One of cvUrl or cvText is required" });
+
+router.post("/ai/cv-prefill", async (req, res): Promise<void> => {
+  const parsed = CvPrefillBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { cvUrl, cvText } = parsed.data;
+
+  // Block internal storage paths from public endpoint (IDOR / SSRF prevention)
+  if (cvUrl && (cvUrl.startsWith(INTERNAL_STORAGE_PREFIX) || !cvUrl.startsWith("https://"))) {
+    res.status(400).json({ error: "cvUrl must be a public HTTPS URL" });
+    return;
+  }
+
+  try {
+    let text: string;
+    if (cvUrl) {
+      text = await extractTextFromUrl(cvUrl);
+    } else {
+      text = cvText as string;
+    }
+
+    const result = await callAI(
+      "You are an expert CV parser for a Papua New Guinea government HR system. Extract structured information from the CV. Return JSON only.",
+      `Parse this CV and return JSON with ONLY these fields: name (string|null), email (string|null), phone (string|null), skills (array of strings), summary (string|null).\n\nDo not include any other fields. CV text:\n${text.slice(0, 8000)}`,
+    );
+    const data = JSON.parse(result) as {
+      name?: string | null; email?: string | null; phone?: string | null;
+      skills?: string[]; summary?: string | null;
+    };
+    res.json(data);
+  } catch (err) {
+    logger.error(err, "cv-prefill failed");
+    res.status(500).json({ error: "CV parsing failed" });
+  }
+});
+
 router.post("/ai/rank-candidates", authMiddleware, aiRoles, async (req, res): Promise<void> => {
   const parsed = AiRankCandidatesBody.safeParse(req.body);
   if (!parsed.success) {

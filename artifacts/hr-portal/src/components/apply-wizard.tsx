@@ -733,52 +733,49 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
       form.setValue("cvUrl", url);
       toast({ title: "CV uploaded" });
 
-      // Try to auto-fill fields from parsed CV (requires auth token)
-      const token = getToken();
-      if (token) {
-        setParsing(true);
-        try {
-          const parseRes = await fetch("/api/ai/parse-cv", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ cvUrl: url }),
-          });
-          if (parseRes.ok) {
-            const parsed = await parseRes.json() as {
-              name?: string | null; email?: string | null; phone?: string | null;
-              skills?: string[]; summary?: string | null;
-            };
-            const filled: string[] = [];
-            // Map parsed name to firstName/lastName if current values are empty
-            if (parsed.name && !form.getValues("firstName")) {
-              const parts = parsed.name.trim().split(/\s+/);
-              if (parts.length >= 2) {
-                form.setValue("firstName", parts[0]);
-                form.setValue("lastName", parts.slice(1).join(" "));
-                filled.push("First Name", "Last Name");
-              }
+      // Try to auto-fill form fields from parsed CV (public endpoint — no auth required)
+      setParsing(true);
+      try {
+        const token = getToken();
+        const parseRes = await fetch("/api/ai/cv-prefill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ cvUrl: url }),
+        });
+        if (parseRes.ok) {
+          const parsed = await parseRes.json() as {
+            name?: string | null; email?: string | null; phone?: string | null;
+            skills?: string[]; summary?: string | null;
+          };
+          const filled: string[] = [];
+          if (parsed.name && !form.getValues("firstName")) {
+            const parts = parsed.name.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              form.setValue("firstName", parts[0]);
+              form.setValue("lastName", parts.slice(1).join(" "));
+              filled.push("First Name", "Last Name");
             }
-            if (parsed.email && !form.getValues("candidateEmail")) {
-              form.setValue("candidateEmail", parsed.email);
-              filled.push("Email");
-            }
-            if (parsed.phone && !form.getValues("candidatePhone")) {
-              form.setValue("candidatePhone", parsed.phone);
-              filled.push("Phone");
-            }
-            if (parsed.skills?.length && !form.getValues("technicalSkillsRaw")) {
-              form.setValue("technicalSkillsRaw", parsed.skills.slice(0, 10).join(", "));
-              filled.push("Technical Skills");
-            }
-            if (parsed.summary && !form.getValues("personalStatement")) {
-              form.setValue("personalStatement", parsed.summary);
-              filled.push("Personal Statement");
-            }
-            if (filled.length > 0) setAutoFillFields(filled);
           }
-        } catch { /* parse errors are non-blocking */ }
-        finally { setParsing(false); }
-      }
+          if (parsed.email && !form.getValues("candidateEmail")) {
+            form.setValue("candidateEmail", parsed.email);
+            filled.push("Email");
+          }
+          if (parsed.phone && !form.getValues("candidatePhone")) {
+            form.setValue("candidatePhone", parsed.phone);
+            filled.push("Phone");
+          }
+          if (parsed.skills?.length && !form.getValues("technicalSkillsRaw")) {
+            form.setValue("technicalSkillsRaw", parsed.skills.slice(0, 10).join(", "));
+            filled.push("Technical Skills");
+          }
+          if (parsed.summary && !form.getValues("personalStatement")) {
+            form.setValue("personalStatement", parsed.summary);
+            filled.push("Personal Statement");
+          }
+          if (filled.length > 0) setAutoFillFields(filled);
+        }
+      } catch { /* parse errors are non-blocking */ }
+      finally { setParsing(false); }
     } catch { toast({ title: "Upload failed", variant: "destructive" }); }
     finally { setUploading(p => ({ ...p, cv: false })); }
   };

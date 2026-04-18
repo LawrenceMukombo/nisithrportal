@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { DRAFT_KEY_PREFIX, DRAFT_KEY } from "@/lib/draftKeys";
+import { DRAFT_KEY_PREFIX, DRAFT_KEY, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1281,9 +1281,14 @@ export function ApplyWizard({
     let localStep = 0;
     if (local) {
       try {
-        const parsed = JSON.parse(local) as { values: Partial<WizardValues>; step: number };
-        localValues = parsed.values;
-        localStep = parsed.step ?? 0;
+        const parsed = JSON.parse(local) as { values: Partial<WizardValues>; step: number; savedAt?: string };
+        // Auto-discard expired draft before restoring
+        if (isDraftExpired(parsed.savedAt)) {
+          localStorage.removeItem(localKey);
+        } else {
+          localValues = parsed.values;
+          localStep = parsed.step ?? 0;
+        }
       } catch { /* ignore */ }
     }
 
@@ -1618,21 +1623,6 @@ export function ApplyWizard({
 
 // ─── Draft Banner ─────────────────────────────────────────────────────────────
 
-const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-
-function draftRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const weeks = Math.floor(days / 7);
-  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
-}
-
 export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () => void }) {
   const [hasDraft, setHasDraft] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -1646,8 +1636,7 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as { savedAt?: string };
-        const ts = parsed.savedAt ? new Date(parsed.savedAt).getTime() : null;
-        if (ts && Date.now() - ts > DRAFT_MAX_AGE_MS) {
+        if (isDraftExpired(parsed.savedAt)) {
           localStorage.removeItem(localKey);
         } else {
           localHasDraft = true;

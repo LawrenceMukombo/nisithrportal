@@ -20,22 +20,7 @@ import {
 import { Link } from "wouter";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2 } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
-import { DRAFT_KEY_PREFIX } from "@/lib/draftKeys";
-
-const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const weeks = Math.floor(days / 7);
-  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
-}
+import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -69,7 +54,7 @@ function scanLocalDrafts(): LocalDraft[] {
     try {
       const parsed = JSON.parse(raw) as { step?: number; savedAt?: string };
       // Auto-discard drafts older than 30 days
-      if (parsed.savedAt && Date.now() - new Date(parsed.savedAt).getTime() > DRAFT_MAX_AGE_MS) {
+      if (isDraftExpired(parsed.savedAt)) {
         keysToRemove.push(key);
         continue;
       }
@@ -234,7 +219,7 @@ export default function MyApplicationsPage() {
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {draft.savedAt
-                              ? `Saved ${relativeTime(draft.savedAt)}`
+                              ? `Saved ${draftRelativeTime(draft.savedAt)}`
                               : "Draft saved"}
                             {" · "}Step {draft.step + 1} of application
                           </p>

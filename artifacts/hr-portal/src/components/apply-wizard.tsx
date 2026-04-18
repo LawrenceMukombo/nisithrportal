@@ -875,7 +875,7 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
             {isAnyUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Upload className="h-3.5 w-3.5 mr-1" />Upload</>}
           </Button>
         </div>
-        <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="sr-only"
+        <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx" className="sr-only"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocUpload(f); e.target.value = ""; }} />
       </div>
     </div>

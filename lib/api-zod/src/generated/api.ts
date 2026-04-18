@@ -368,6 +368,101 @@ export const CloseJobResponse = zod.object({
 });
 
 /**
+ * @summary List screening questions for a job
+ */
+export const GetJobScreeningQuestionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetJobScreeningQuestionsResponseItem = zod.object({
+  id: zod.number().optional(),
+  jobId: zod.number().optional(),
+  question: zod.string().optional(),
+  questionType: zod
+    .enum(["short_answer", "yes_no", "multiple_choice", "numeric"])
+    .optional(),
+  options: zod.array(zod.string()).nullish(),
+  required: zod.boolean().optional(),
+  displayOrder: zod.number().optional(),
+  createdAt: zod.coerce.date().optional(),
+});
+export const GetJobScreeningQuestionsResponse = zod.array(
+  GetJobScreeningQuestionsResponseItem,
+);
+
+/**
+ * @summary Add a screening question to a job
+ */
+export const CreateJobScreeningQuestionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const createJobScreeningQuestionBodyRequiredDefault = true;
+
+export const CreateJobScreeningQuestionBody = zod.object({
+  question: zod.string(),
+  questionType: zod.enum([
+    "short_answer",
+    "yes_no",
+    "multiple_choice",
+    "numeric",
+  ]),
+  options: zod.array(zod.string()).optional(),
+  required: zod
+    .boolean()
+    .default(createJobScreeningQuestionBodyRequiredDefault),
+  displayOrder: zod.number().optional(),
+});
+
+/**
+ * @summary Delete a screening question
+ */
+export const DeleteJobScreeningQuestionParams = zod.object({
+  id: zod.coerce.number(),
+  qid: zod.coerce.number(),
+});
+
+export const DeleteJobScreeningQuestionResponse = zod.object({
+  deleted: zod.boolean().optional(),
+});
+
+/**
+ * @summary Move a screening question up or down
+ */
+export const ReorderJobScreeningQuestionParams = zod.object({
+  id: zod.coerce.number(),
+  qid: zod.coerce.number(),
+});
+
+export const ReorderJobScreeningQuestionBody = zod.object({
+  direction: zod.enum(["up", "down"]),
+});
+
+export const ReorderJobScreeningQuestionResponse = zod.object({
+  success: zod.boolean().optional(),
+  movedId: zod.number().optional(),
+  direction: zod.string().optional(),
+});
+
+/**
+ * @summary Get aggregate Diversity & Inclusion statistics for a job (no individual data)
+ */
+export const GetJobDiReportParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetJobDiReportResponse = zod.object({
+  total: zod.number().optional().describe("Total number of applications"),
+  optInCount: zod
+    .number()
+    .optional()
+    .describe("Number of applicants who opted into D&I data collection"),
+  disabilityStatus: zod.record(zod.string(), zod.number()).optional(),
+  genderIdentity: zod.record(zod.string(), zod.number()).optional(),
+  ethnicity: zod.record(zod.string(), zod.number()).optional(),
+});
+
+/**
  * @summary List candidates
  */
 export const GetCandidatesResponseItem = zod.object({
@@ -681,11 +776,105 @@ export const GetApplicationsResponse = zod.array(GetApplicationsResponseItem);
  */
 export const CreateApplicationBody = zod.object({
   jobId: zod.number(),
-  candidateName: zod.string(),
-  candidateEmail: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  otherNames: zod.string().nullish(),
+  candidateName: zod
+    .string()
+    .optional()
+    .describe(
+      "Full name — computed from firstName + lastName on the server if not provided",
+    ),
+  candidateEmail: zod.string().email(),
   candidatePhone: zod.string().nullish(),
+  gender: zod.string().nullish(),
+  dateOfBirth: zod.string().nullish(),
+  nationality: zod.string().nullish(),
+  nationalId: zod.string().nullish(),
+  maritalStatus: zod.string().nullish(),
+  address: zod.string().nullish(),
+  vacancyRefNumber: zod.string().nullish(),
   cvUrl: zod.string().nullish(),
   coverLetter: zod.string().nullish(),
+  technicalSkillsRaw: zod
+    .string()
+    .nullish()
+    .describe("Comma-separated list of technical skills"),
+  softSkillsRaw: zod
+    .string()
+    .nullish()
+    .describe("Comma-separated list of soft skills"),
+  languages: zod
+    .array(
+      zod.object({
+        language: zod.string().optional(),
+        proficiency: zod.string().optional(),
+      }),
+    )
+    .optional(),
+  education: zod
+    .array(
+      zod.object({
+        institution: zod.string().optional(),
+        level: zod.string().optional(),
+        qualification: zod.string().optional(),
+        fieldOfStudy: zod.string().optional(),
+        startDate: zod.string().optional(),
+        endDate: zod.string().nullish(),
+        current: zod.boolean().optional(),
+        certifications: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  experience: zod
+    .array(
+      zod.object({
+        employer: zod.string().optional(),
+        jobTitle: zod.string().optional(),
+        startDate: zod.string().optional(),
+        endDate: zod.string().nullish(),
+        current: zod.boolean().optional(),
+        responsibilities: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  screeningAnswers: zod
+    .array(
+      zod.object({
+        questionId: zod.number(),
+        answer: zod.string(),
+      }),
+    )
+    .optional(),
+  documents: zod
+    .array(
+      zod.object({
+        documentType: zod.string().optional(),
+        url: zod.string().optional(),
+        fileName: zod.string().optional(),
+      }),
+    )
+    .optional(),
+  referees: zod
+    .array(
+      zod.object({
+        name: zod.string().optional(),
+        title: zod.string().optional(),
+        organization: zod.string().optional(),
+        email: zod.string().nullish(),
+        phone: zod.string().nullish(),
+        relationship: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+  expectedSalary: zod.string().nullish(),
+  currentSalary: zod.string().nullish(),
+  noticePeriod: zod.string().nullish(),
+  declarationAgreed: zod.boolean(),
+  backgroundCheckConsent: zod.boolean().optional(),
+  conflictOfInterest: zod.boolean().optional(),
+  criminalRecord: zod.boolean().optional(),
+  dataPrivacyConsent: zod.boolean().optional(),
 });
 
 /**
@@ -789,6 +978,83 @@ export const UpdateApplicationStatusResponse = zod.object({
     )
     .optional(),
 });
+
+/**
+ * @summary Load a saved application draft for a job
+ */
+export const GetApplicationDraftParams = zod.object({
+  jobId: zod.coerce.number(),
+});
+
+export const GetApplicationDraftQueryParams = zod.object({
+  email: zod.coerce.string(),
+});
+
+export const GetApplicationDraftResponse = zod
+  .object({})
+  .passthrough()
+  .nullable();
+
+/**
+ * @summary Save an application draft for a job
+ */
+export const SaveApplicationDraftParams = zod.object({
+  jobId: zod.coerce.number(),
+});
+
+export const SaveApplicationDraftBody = zod.object({
+  candidateEmail: zod.string(),
+  draftData: zod.object({}).passthrough(),
+  currentStep: zod.number().optional(),
+});
+
+export const SaveApplicationDraftResponse = zod.object({
+  saved: zod.boolean().optional(),
+});
+
+/**
+ * @summary Delete a saved application draft
+ */
+export const DeleteApplicationDraftParams = zod.object({
+  jobId: zod.coerce.number(),
+});
+
+export const DeleteApplicationDraftQueryParams = zod.object({
+  email: zod.coerce.string(),
+});
+
+/**
+ * @summary Get screening answers for an application
+ */
+export const GetApplicationScreeningAnswersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetApplicationScreeningAnswersResponseItem = zod.object({
+  questionId: zod.number().optional(),
+  question: zod.string().optional(),
+  answer: zod.string().optional(),
+});
+export const GetApplicationScreeningAnswersResponse = zod.array(
+  GetApplicationScreeningAnswersResponseItem,
+);
+
+/**
+ * @summary Get uploaded documents for an application
+ */
+export const GetApplicationDocumentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetApplicationDocumentsResponseItem = zod.object({
+  id: zod.number().optional(),
+  documentType: zod.string().optional(),
+  url: zod.string().optional(),
+  fileName: zod.string().optional(),
+});
+export const GetApplicationDocumentsResponse = zod.array(
+  GetApplicationDocumentsResponseItem,
+);
 
 /**
  * @summary List employees
@@ -1162,6 +1428,28 @@ export const GetRolesResponseItem = zod.object({
   name: zod.string(),
 });
 export const GetRolesResponse = zod.array(GetRolesResponseItem);
+
+/**
+ * Public endpoint, no authentication required. Accepts a public HTTPS URL or plain text of a CV and returns structured data suitable for pre-filling the apply wizard form fields.
+
+ * @summary Public CV parser endpoint for applicants — extracts name, email, phone, skills from a CV URL
+ */
+export const AiCvPrefillBody = zod.object({
+  cvUrl: zod
+    .string()
+    .url()
+    .optional()
+    .describe("Public HTTPS URL of the CV file (PDF or text)"),
+  cvText: zod.string().optional().describe("Plain text of the CV"),
+});
+
+export const AiCvPrefillResponse = zod.object({
+  name: zod.string().nullish(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  skills: zod.array(zod.string()).optional(),
+  summary: zod.string().nullish(),
+});
 
 /**
  * @summary Parse a candidate CV and extract structured data

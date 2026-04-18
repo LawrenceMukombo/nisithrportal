@@ -2733,23 +2733,177 @@ components:
 
     CreateApplicationRequest:
       type: object
+      required:
+        - jobId
+        - firstName
+        - lastName
+        - candidateEmail
+        - declarationAgreed
       properties:
         jobId:
           type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        otherNames:
+          type: string
+          nullable: true
         candidateName:
           type: string
+          description: "Full name — computed from firstName + lastName on the server if not provided"
         candidateEmail:
           type: string
+          format: email
         candidatePhone:
-          type: ["string", "null"]
+          type: string
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        dateOfBirth:
+          type: string
+          nullable: true
+        nationality:
+          type: string
+          nullable: true
+        nationalId:
+          type: string
+          nullable: true
+        maritalStatus:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        vacancyRefNumber:
+          type: string
+          nullable: true
         cvUrl:
-          type: ["string", "null"]
+          type: string
+          nullable: true
         coverLetter:
-          type: ["string", "null"]
-      required:
-        - jobId
-        - candidateName
-        - candidateEmail
+          type: string
+          nullable: true
+        technicalSkillsRaw:
+          type: string
+          nullable: true
+          description: Comma-separated list of technical skills
+        softSkillsRaw:
+          type: string
+          nullable: true
+          description: Comma-separated list of soft skills
+        languages:
+          type: array
+          items:
+            type: object
+            properties:
+              language:
+                type: string
+              proficiency:
+                type: string
+        education:
+          type: array
+          items:
+            type: object
+            properties:
+              institution:
+                type: string
+              level:
+                type: string
+              qualification:
+                type: string
+              fieldOfStudy:
+                type: string
+              startDate:
+                type: string
+              endDate:
+                type: string
+                nullable: true
+              current:
+                type: boolean
+              certifications:
+                type: string
+                nullable: true
+        experience:
+          type: array
+          items:
+            type: object
+            properties:
+              employer:
+                type: string
+              jobTitle:
+                type: string
+              startDate:
+                type: string
+              endDate:
+                type: string
+                nullable: true
+              current:
+                type: boolean
+              responsibilities:
+                type: string
+                nullable: true
+        screeningAnswers:
+          type: array
+          items:
+            type: object
+            required: [questionId, answer]
+            properties:
+              questionId:
+                type: integer
+              answer:
+                type: string
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              documentType:
+                type: string
+              url:
+                type: string
+              fileName:
+                type: string
+        referees:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              title:
+                type: string
+              organization:
+                type: string
+              email:
+                type: string
+                nullable: true
+              phone:
+                type: string
+                nullable: true
+              relationship:
+                type: string
+                nullable: true
+        expectedSalary:
+          type: string
+          nullable: true
+        currentSalary:
+          type: string
+          nullable: true
+        noticePeriod:
+          type: string
+          nullable: true
+        declarationAgreed:
+          type: boolean
+        backgroundCheckConsent:
+          type: boolean
+        conflictOfInterest:
+          type: boolean
+        criminalRecord:
+          type: boolean
+        dataPrivacyConsent:
+          type: boolean
 
     UpdateApplicationStatusRequest:
       type: object

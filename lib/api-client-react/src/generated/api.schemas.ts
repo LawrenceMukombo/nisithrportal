@@ -13,6 +13,45 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type ScreeningQuestionQuestionType =
+  (typeof ScreeningQuestionQuestionType)[keyof typeof ScreeningQuestionQuestionType];
+
+export const ScreeningQuestionQuestionType = {
+  short_answer: "short_answer",
+  yes_no: "yes_no",
+  multiple_choice: "multiple_choice",
+  numeric: "numeric",
+} as const;
+
+export interface ScreeningQuestion {
+  id?: number;
+  jobId?: number;
+  question?: string;
+  questionType?: ScreeningQuestionQuestionType;
+  options?: string[] | null;
+  required?: boolean;
+  displayOrder?: number;
+  createdAt?: string;
+}
+
+export type CreateScreeningQuestionRequestQuestionType =
+  (typeof CreateScreeningQuestionRequestQuestionType)[keyof typeof CreateScreeningQuestionRequestQuestionType];
+
+export const CreateScreeningQuestionRequestQuestionType = {
+  short_answer: "short_answer",
+  yes_no: "yes_no",
+  multiple_choice: "multiple_choice",
+  numeric: "numeric",
+} as const;
+
+export interface CreateScreeningQuestionRequest {
+  question: string;
+  questionType: CreateScreeningQuestionRequestQuestionType;
+  options?: string[];
+  required?: boolean;
+  displayOrder?: number;
+}
+
 export interface RegisterRequest {
   name: string;
   email: string;
@@ -332,16 +371,87 @@ export interface ApplicationTrackResult {
   jobLocation?: string | null;
 }
 
+export type CreateApplicationRequestLanguagesItem = {
+  language?: string;
+  proficiency?: string;
+};
+
+export type CreateApplicationRequestEducationItem = {
+  institution?: string;
+  level?: string;
+  qualification?: string;
+  fieldOfStudy?: string;
+  startDate?: string;
+  endDate?: string | null;
+  current?: boolean;
+  certifications?: string | null;
+};
+
+export type CreateApplicationRequestExperienceItem = {
+  employer?: string;
+  jobTitle?: string;
+  startDate?: string;
+  endDate?: string | null;
+  current?: boolean;
+  responsibilities?: string | null;
+};
+
+export type CreateApplicationRequestScreeningAnswersItem = {
+  questionId: number;
+  answer: string;
+};
+
+export type CreateApplicationRequestDocumentsItem = {
+  documentType?: string;
+  url?: string;
+  fileName?: string;
+};
+
+export type CreateApplicationRequestRefereesItem = {
+  name?: string;
+  title?: string;
+  organization?: string;
+  email?: string | null;
+  phone?: string | null;
+  relationship?: string | null;
+};
+
 export interface CreateApplicationRequest {
   jobId: number;
-  candidateName: string;
+  firstName: string;
+  lastName: string;
+  otherNames?: string | null;
+  /** Full name — computed from firstName + lastName on the server if not provided */
+  candidateName?: string;
   candidateEmail: string;
-  /** @nullable */
   candidatePhone?: string | null;
-  /** @nullable */
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  nationality?: string | null;
+  nationalId?: string | null;
+  maritalStatus?: string | null;
+  address?: string | null;
+  vacancyRefNumber?: string | null;
   cvUrl?: string | null;
-  /** @nullable */
   coverLetter?: string | null;
+  /** Comma-separated list of technical skills */
+  technicalSkillsRaw?: string | null;
+  /** Comma-separated list of soft skills */
+  softSkillsRaw?: string | null;
+  languages?: CreateApplicationRequestLanguagesItem[];
+  education?: CreateApplicationRequestEducationItem[];
+  experience?: CreateApplicationRequestExperienceItem[];
+  screeningAnswers?: CreateApplicationRequestScreeningAnswersItem[];
+  documents?: CreateApplicationRequestDocumentsItem[];
+  referees?: CreateApplicationRequestRefereesItem[];
+  expectedSalary?: string | null;
+  currentSalary?: string | null;
+  noticePeriod?: string | null;
+  declarationAgreed: boolean;
+  backgroundCheckConsent?: boolean;
+  conflictOfInterest?: boolean;
+  criminalRecord?: boolean;
+  dataPrivacyConsent?: boolean;
 }
 
 export interface UpdateApplicationStatusRequest {
@@ -643,6 +753,44 @@ export type GetJobsParams = {
   status?: string;
 };
 
+export type DeleteJobScreeningQuestion200 = {
+  deleted?: boolean;
+};
+
+export type ReorderJobScreeningQuestionBodyDirection =
+  (typeof ReorderJobScreeningQuestionBodyDirection)[keyof typeof ReorderJobScreeningQuestionBodyDirection];
+
+export const ReorderJobScreeningQuestionBodyDirection = {
+  up: "up",
+  down: "down",
+} as const;
+
+export type ReorderJobScreeningQuestionBody = {
+  direction: ReorderJobScreeningQuestionBodyDirection;
+};
+
+export type ReorderJobScreeningQuestion200 = {
+  success?: boolean;
+  movedId?: number;
+  direction?: string;
+};
+
+export type GetJobDiReport200DisabilityStatus = { [key: string]: number };
+
+export type GetJobDiReport200GenderIdentity = { [key: string]: number };
+
+export type GetJobDiReport200Ethnicity = { [key: string]: number };
+
+export type GetJobDiReport200 = {
+  /** Total number of applications */
+  total?: number;
+  /** Number of applicants who opted into D&I data collection */
+  optInCount?: number;
+  disabilityStatus?: GetJobDiReport200DisabilityStatus;
+  genderIdentity?: GetJobDiReport200GenderIdentity;
+  ethnicity?: GetJobDiReport200Ethnicity;
+};
+
 export type TrackApplicationParams = {
   email: string;
   ref: string;
@@ -652,6 +800,41 @@ export type GetApplicationsParams = {
   job_id?: number;
   candidate_id?: number;
   status?: string;
+};
+
+export type GetApplicationDraftParams = {
+  email: string;
+};
+
+export type GetApplicationDraft200 = { [key: string]: unknown } | null;
+
+export type SaveApplicationDraftBodyDraftData = { [key: string]: unknown };
+
+export type SaveApplicationDraftBody = {
+  candidateEmail: string;
+  draftData: SaveApplicationDraftBodyDraftData;
+  currentStep?: number;
+};
+
+export type SaveApplicationDraft200 = {
+  saved?: boolean;
+};
+
+export type DeleteApplicationDraftParams = {
+  email: string;
+};
+
+export type GetApplicationScreeningAnswers200Item = {
+  questionId?: number;
+  question?: string;
+  answer?: string;
+};
+
+export type GetApplicationDocuments200Item = {
+  id?: number;
+  documentType?: string;
+  url?: string;
+  fileName?: string;
 };
 
 export type GetEmployeesParams = {
@@ -685,6 +868,21 @@ export type GetDashboardContractExpiriesParams = {
 
 export type GetDashboardRecruitmentPipelineParams = {
   agency_id?: number;
+};
+
+export type AiCvPrefillBody = {
+  /** Public HTTPS URL of the CV file (PDF or text) */
+  cvUrl?: string;
+  /** Plain text of the CV */
+  cvText?: string;
+};
+
+export type AiCvPrefill200 = {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  skills?: string[];
+  summary?: string | null;
 };
 
 export type AiPredictWorkforceParams = {

@@ -18,6 +18,8 @@ import type {
 
 import type {
   Agency,
+  AiCvPrefill200,
+  AiCvPrefillBody,
   AiPredictWorkforceParams,
   AiScore,
   Application,
@@ -38,12 +40,19 @@ import type {
   CreateEmployeeRequest,
   CreateJobRequest,
   CreatePositionRequest,
+  CreateScreeningQuestionRequest,
   CreateUserRequest,
   DashboardSummary,
+  DeleteApplicationDraftParams,
+  DeleteJobScreeningQuestion200,
   Department,
   Employee,
   ErrorResponse,
   GetAiScoresParams,
+  GetApplicationDocuments200Item,
+  GetApplicationDraft200,
+  GetApplicationDraftParams,
+  GetApplicationScreeningAnswers200Item,
   GetApplicationsParams,
   GetContractsParams,
   GetDashboardContractExpiriesParams,
@@ -52,6 +61,7 @@ import type {
   GetDashboardWorkforceGapsParams,
   GetDepartmentsParams,
   GetEmployeesParams,
+  GetJobDiReport200,
   GetJobsParams,
   GetNotificationsParams,
   GetPositionsParams,
@@ -69,7 +79,12 @@ import type {
   RankedCandidate,
   RecruitmentPipelineItem,
   RegisterRequest,
+  ReorderJobScreeningQuestion200,
+  ReorderJobScreeningQuestionBody,
   Role,
+  SaveApplicationDraft200,
+  SaveApplicationDraftBody,
+  ScreeningQuestion,
   TrackApplicationParams,
   UpdateAiScoreRequest,
   UpdateApplicationStatusRequest,
@@ -2114,6 +2129,458 @@ export const useCloseJob = <
 };
 
 /**
+ * @summary List screening questions for a job
+ */
+export const getGetJobScreeningQuestionsUrl = (id: number) => {
+  return `/api/jobs/${id}/screening-questions`;
+};
+
+export const getJobScreeningQuestions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ScreeningQuestion[]> => {
+  return customFetch<ScreeningQuestion[]>(getGetJobScreeningQuestionsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetJobScreeningQuestionsQueryKey = (id: number) => {
+  return [`/api/jobs/${id}/screening-questions`] as const;
+};
+
+export const getGetJobScreeningQuestionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getJobScreeningQuestions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getJobScreeningQuestions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetJobScreeningQuestionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getJobScreeningQuestions>>
+  > = ({ signal }) =>
+    getJobScreeningQuestions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getJobScreeningQuestions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetJobScreeningQuestionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getJobScreeningQuestions>>
+>;
+export type GetJobScreeningQuestionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List screening questions for a job
+ */
+
+export function useGetJobScreeningQuestions<
+  TData = Awaited<ReturnType<typeof getJobScreeningQuestions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getJobScreeningQuestions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetJobScreeningQuestionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a screening question to a job
+ */
+export const getCreateJobScreeningQuestionUrl = (id: number) => {
+  return `/api/jobs/${id}/screening-questions`;
+};
+
+export const createJobScreeningQuestion = async (
+  id: number,
+  createScreeningQuestionRequest: CreateScreeningQuestionRequest,
+  options?: RequestInit,
+): Promise<ScreeningQuestion> => {
+  return customFetch<ScreeningQuestion>(getCreateJobScreeningQuestionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createScreeningQuestionRequest),
+  });
+};
+
+export const getCreateJobScreeningQuestionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createJobScreeningQuestion>>,
+    TError,
+    { id: number; data: BodyType<CreateScreeningQuestionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createJobScreeningQuestion>>,
+  TError,
+  { id: number; data: BodyType<CreateScreeningQuestionRequest> },
+  TContext
+> => {
+  const mutationKey = ["createJobScreeningQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createJobScreeningQuestion>>,
+    { id: number; data: BodyType<CreateScreeningQuestionRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createJobScreeningQuestion(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateJobScreeningQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createJobScreeningQuestion>>
+>;
+export type CreateJobScreeningQuestionMutationBody =
+  BodyType<CreateScreeningQuestionRequest>;
+export type CreateJobScreeningQuestionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a screening question to a job
+ */
+export const useCreateJobScreeningQuestion = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createJobScreeningQuestion>>,
+    TError,
+    { id: number; data: BodyType<CreateScreeningQuestionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createJobScreeningQuestion>>,
+  TError,
+  { id: number; data: BodyType<CreateScreeningQuestionRequest> },
+  TContext
+> => {
+  return useMutation(getCreateJobScreeningQuestionMutationOptions(options));
+};
+
+/**
+ * @summary Delete a screening question
+ */
+export const getDeleteJobScreeningQuestionUrl = (id: number, qid: number) => {
+  return `/api/jobs/${id}/screening-questions/${qid}`;
+};
+
+export const deleteJobScreeningQuestion = async (
+  id: number,
+  qid: number,
+  options?: RequestInit,
+): Promise<DeleteJobScreeningQuestion200> => {
+  return customFetch<DeleteJobScreeningQuestion200>(
+    getDeleteJobScreeningQuestionUrl(id, qid),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteJobScreeningQuestionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteJobScreeningQuestion>>,
+    TError,
+    { id: number; qid: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteJobScreeningQuestion>>,
+  TError,
+  { id: number; qid: number },
+  TContext
+> => {
+  const mutationKey = ["deleteJobScreeningQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteJobScreeningQuestion>>,
+    { id: number; qid: number }
+  > = (props) => {
+    const { id, qid } = props ?? {};
+
+    return deleteJobScreeningQuestion(id, qid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteJobScreeningQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteJobScreeningQuestion>>
+>;
+
+export type DeleteJobScreeningQuestionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a screening question
+ */
+export const useDeleteJobScreeningQuestion = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteJobScreeningQuestion>>,
+    TError,
+    { id: number; qid: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteJobScreeningQuestion>>,
+  TError,
+  { id: number; qid: number },
+  TContext
+> => {
+  return useMutation(getDeleteJobScreeningQuestionMutationOptions(options));
+};
+
+/**
+ * @summary Move a screening question up or down
+ */
+export const getReorderJobScreeningQuestionUrl = (id: number, qid: number) => {
+  return `/api/jobs/${id}/screening-questions/${qid}/order`;
+};
+
+export const reorderJobScreeningQuestion = async (
+  id: number,
+  qid: number,
+  reorderJobScreeningQuestionBody: ReorderJobScreeningQuestionBody,
+  options?: RequestInit,
+): Promise<ReorderJobScreeningQuestion200> => {
+  return customFetch<ReorderJobScreeningQuestion200>(
+    getReorderJobScreeningQuestionUrl(id, qid),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(reorderJobScreeningQuestionBody),
+    },
+  );
+};
+
+export const getReorderJobScreeningQuestionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reorderJobScreeningQuestion>>,
+    TError,
+    {
+      id: number;
+      qid: number;
+      data: BodyType<ReorderJobScreeningQuestionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reorderJobScreeningQuestion>>,
+  TError,
+  { id: number; qid: number; data: BodyType<ReorderJobScreeningQuestionBody> },
+  TContext
+> => {
+  const mutationKey = ["reorderJobScreeningQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reorderJobScreeningQuestion>>,
+    { id: number; qid: number; data: BodyType<ReorderJobScreeningQuestionBody> }
+  > = (props) => {
+    const { id, qid, data } = props ?? {};
+
+    return reorderJobScreeningQuestion(id, qid, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReorderJobScreeningQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reorderJobScreeningQuestion>>
+>;
+export type ReorderJobScreeningQuestionMutationBody =
+  BodyType<ReorderJobScreeningQuestionBody>;
+export type ReorderJobScreeningQuestionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Move a screening question up or down
+ */
+export const useReorderJobScreeningQuestion = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reorderJobScreeningQuestion>>,
+    TError,
+    {
+      id: number;
+      qid: number;
+      data: BodyType<ReorderJobScreeningQuestionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reorderJobScreeningQuestion>>,
+  TError,
+  { id: number; qid: number; data: BodyType<ReorderJobScreeningQuestionBody> },
+  TContext
+> => {
+  return useMutation(getReorderJobScreeningQuestionMutationOptions(options));
+};
+
+/**
+ * @summary Get aggregate Diversity & Inclusion statistics for a job (no individual data)
+ */
+export const getGetJobDiReportUrl = (id: number) => {
+  return `/api/jobs/${id}/di-report`;
+};
+
+export const getJobDiReport = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GetJobDiReport200> => {
+  return customFetch<GetJobDiReport200>(getGetJobDiReportUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetJobDiReportQueryKey = (id: number) => {
+  return [`/api/jobs/${id}/di-report`] as const;
+};
+
+export const getGetJobDiReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getJobDiReport>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getJobDiReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetJobDiReportQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getJobDiReport>>> = ({
+    signal,
+  }) => getJobDiReport(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getJobDiReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetJobDiReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getJobDiReport>>
+>;
+export type GetJobDiReportQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get aggregate Diversity & Inclusion statistics for a job (no individual data)
+ */
+
+export function useGetJobDiReport<
+  TData = Awaited<ReturnType<typeof getJobDiReport>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getJobDiReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetJobDiReportQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary List candidates
  */
 export const getGetCandidatesUrl = () => {
@@ -3061,6 +3528,504 @@ export const useUpdateApplicationStatus = <
 > => {
   return useMutation(getUpdateApplicationStatusMutationOptions(options));
 };
+
+/**
+ * @summary Load a saved application draft for a job
+ */
+export const getGetApplicationDraftUrl = (
+  jobId: number,
+  params: GetApplicationDraftParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/applications/draft/${jobId}?${stringifiedParams}`
+    : `/api/applications/draft/${jobId}`;
+};
+
+export const getApplicationDraft = async (
+  jobId: number,
+  params: GetApplicationDraftParams,
+  options?: RequestInit,
+): Promise<GetApplicationDraft200> => {
+  return customFetch<GetApplicationDraft200>(
+    getGetApplicationDraftUrl(jobId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetApplicationDraftQueryKey = (
+  jobId: number,
+  params?: GetApplicationDraftParams,
+) => {
+  return [
+    `/api/applications/draft/${jobId}`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetApplicationDraftQueryOptions = <
+  TData = Awaited<ReturnType<typeof getApplicationDraft>>,
+  TError = ErrorType<unknown>,
+>(
+  jobId: number,
+  params: GetApplicationDraftParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationDraft>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetApplicationDraftQueryKey(jobId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getApplicationDraft>>
+  > = ({ signal }) =>
+    getApplicationDraft(jobId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getApplicationDraft>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetApplicationDraftQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getApplicationDraft>>
+>;
+export type GetApplicationDraftQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Load a saved application draft for a job
+ */
+
+export function useGetApplicationDraft<
+  TData = Awaited<ReturnType<typeof getApplicationDraft>>,
+  TError = ErrorType<unknown>,
+>(
+  jobId: number,
+  params: GetApplicationDraftParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationDraft>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetApplicationDraftQueryOptions(
+    jobId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save an application draft for a job
+ */
+export const getSaveApplicationDraftUrl = (jobId: number) => {
+  return `/api/applications/draft/${jobId}`;
+};
+
+export const saveApplicationDraft = async (
+  jobId: number,
+  saveApplicationDraftBody: SaveApplicationDraftBody,
+  options?: RequestInit,
+): Promise<SaveApplicationDraft200> => {
+  return customFetch<SaveApplicationDraft200>(
+    getSaveApplicationDraftUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(saveApplicationDraftBody),
+    },
+  );
+};
+
+export const getSaveApplicationDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveApplicationDraft>>,
+    TError,
+    { jobId: number; data: BodyType<SaveApplicationDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof saveApplicationDraft>>,
+  TError,
+  { jobId: number; data: BodyType<SaveApplicationDraftBody> },
+  TContext
+> => {
+  const mutationKey = ["saveApplicationDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof saveApplicationDraft>>,
+    { jobId: number; data: BodyType<SaveApplicationDraftBody> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return saveApplicationDraft(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SaveApplicationDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof saveApplicationDraft>>
+>;
+export type SaveApplicationDraftMutationBody =
+  BodyType<SaveApplicationDraftBody>;
+export type SaveApplicationDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save an application draft for a job
+ */
+export const useSaveApplicationDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof saveApplicationDraft>>,
+    TError,
+    { jobId: number; data: BodyType<SaveApplicationDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof saveApplicationDraft>>,
+  TError,
+  { jobId: number; data: BodyType<SaveApplicationDraftBody> },
+  TContext
+> => {
+  return useMutation(getSaveApplicationDraftMutationOptions(options));
+};
+
+/**
+ * @summary Delete a saved application draft
+ */
+export const getDeleteApplicationDraftUrl = (
+  jobId: number,
+  params: DeleteApplicationDraftParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/applications/draft/${jobId}?${stringifiedParams}`
+    : `/api/applications/draft/${jobId}`;
+};
+
+export const deleteApplicationDraft = async (
+  jobId: number,
+  params: DeleteApplicationDraftParams,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteApplicationDraftUrl(jobId, params), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteApplicationDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteApplicationDraft>>,
+    TError,
+    { jobId: number; params: DeleteApplicationDraftParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteApplicationDraft>>,
+  TError,
+  { jobId: number; params: DeleteApplicationDraftParams },
+  TContext
+> => {
+  const mutationKey = ["deleteApplicationDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteApplicationDraft>>,
+    { jobId: number; params: DeleteApplicationDraftParams }
+  > = (props) => {
+    const { jobId, params } = props ?? {};
+
+    return deleteApplicationDraft(jobId, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteApplicationDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteApplicationDraft>>
+>;
+
+export type DeleteApplicationDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a saved application draft
+ */
+export const useDeleteApplicationDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteApplicationDraft>>,
+    TError,
+    { jobId: number; params: DeleteApplicationDraftParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteApplicationDraft>>,
+  TError,
+  { jobId: number; params: DeleteApplicationDraftParams },
+  TContext
+> => {
+  return useMutation(getDeleteApplicationDraftMutationOptions(options));
+};
+
+/**
+ * @summary Get screening answers for an application
+ */
+export const getGetApplicationScreeningAnswersUrl = (id: number) => {
+  return `/api/applications/${id}/screening-answers`;
+};
+
+export const getApplicationScreeningAnswers = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GetApplicationScreeningAnswers200Item[]> => {
+  return customFetch<GetApplicationScreeningAnswers200Item[]>(
+    getGetApplicationScreeningAnswersUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetApplicationScreeningAnswersQueryKey = (id: number) => {
+  return [`/api/applications/${id}/screening-answers`] as const;
+};
+
+export const getGetApplicationScreeningAnswersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getApplicationScreeningAnswers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationScreeningAnswers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetApplicationScreeningAnswersQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getApplicationScreeningAnswers>>
+  > = ({ signal }) =>
+    getApplicationScreeningAnswers(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getApplicationScreeningAnswers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetApplicationScreeningAnswersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getApplicationScreeningAnswers>>
+>;
+export type GetApplicationScreeningAnswersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get screening answers for an application
+ */
+
+export function useGetApplicationScreeningAnswers<
+  TData = Awaited<ReturnType<typeof getApplicationScreeningAnswers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationScreeningAnswers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetApplicationScreeningAnswersQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get uploaded documents for an application
+ */
+export const getGetApplicationDocumentsUrl = (id: number) => {
+  return `/api/applications/${id}/documents`;
+};
+
+export const getApplicationDocuments = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GetApplicationDocuments200Item[]> => {
+  return customFetch<GetApplicationDocuments200Item[]>(
+    getGetApplicationDocumentsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetApplicationDocumentsQueryKey = (id: number) => {
+  return [`/api/applications/${id}/documents`] as const;
+};
+
+export const getGetApplicationDocumentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getApplicationDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetApplicationDocumentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getApplicationDocuments>>
+  > = ({ signal }) =>
+    getApplicationDocuments(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getApplicationDocuments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetApplicationDocumentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getApplicationDocuments>>
+>;
+export type GetApplicationDocumentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get uploaded documents for an application
+ */
+
+export function useGetApplicationDocuments<
+  TData = Awaited<ReturnType<typeof getApplicationDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getApplicationDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetApplicationDocumentsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List employees
@@ -4937,6 +5902,94 @@ export function useGetRoles<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Public endpoint, no authentication required. Accepts a public HTTPS URL or plain text of a CV and returns structured data suitable for pre-filling the apply wizard form fields.
+
+ * @summary Public CV parser endpoint for applicants — extracts name, email, phone, skills from a CV URL
+ */
+export const getAiCvPrefillUrl = () => {
+  return `/api/ai/cv-prefill`;
+};
+
+export const aiCvPrefill = async (
+  aiCvPrefillBody: AiCvPrefillBody,
+  options?: RequestInit,
+): Promise<AiCvPrefill200> => {
+  return customFetch<AiCvPrefill200>(getAiCvPrefillUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(aiCvPrefillBody),
+  });
+};
+
+export const getAiCvPrefillMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiCvPrefill>>,
+    TError,
+    { data: BodyType<AiCvPrefillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof aiCvPrefill>>,
+  TError,
+  { data: BodyType<AiCvPrefillBody> },
+  TContext
+> => {
+  const mutationKey = ["aiCvPrefill"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof aiCvPrefill>>,
+    { data: BodyType<AiCvPrefillBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return aiCvPrefill(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AiCvPrefillMutationResult = NonNullable<
+  Awaited<ReturnType<typeof aiCvPrefill>>
+>;
+export type AiCvPrefillMutationBody = BodyType<AiCvPrefillBody>;
+export type AiCvPrefillMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Public CV parser endpoint for applicants — extracts name, email, phone, skills from a CV URL
+ */
+export const useAiCvPrefill = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof aiCvPrefill>>,
+    TError,
+    { data: BodyType<AiCvPrefillBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof aiCvPrefill>>,
+  TError,
+  { data: BodyType<AiCvPrefillBody> },
+  TContext
+> => {
+  return useMutation(getAiCvPrefillMutationOptions(options));
+};
 
 /**
  * @summary Parse a candidate CV and extract structured data

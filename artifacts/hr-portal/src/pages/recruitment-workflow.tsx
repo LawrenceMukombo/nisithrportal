@@ -143,9 +143,7 @@ export default function RecruitmentWorkflowPage() {
   const { data: candidates = [], isLoading: candidatesLoading } = useGetCandidates({
     query: { queryKey: getGetCandidatesQueryKey() },
   });
-  const { data: jobs = [], isLoading: jobsLoading } = useGetJobs({
-    query: { queryKey: getGetJobsQueryKey() },
-  });
+  const { data: jobs = [], isLoading: jobsLoading } = useGetJobs({});
 
   const isLoading = appsLoading || candidatesLoading || jobsLoading;
 

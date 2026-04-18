@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useGetMyApplications, useGetJobs } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { ApplicationTimeline } from "@/components/application-timeline";
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -24,6 +25,7 @@ const STATUS_CONFIG: Record<string, {
 
 export default function MyApplicationsPage() {
   const [filter, setFilter] = useState<string>("all");
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const { data: allApplications = [], isLoading } = useGetMyApplications();
   const { data: jobs = [] } = useGetJobs({});
@@ -41,6 +43,18 @@ export default function MyApplicationsPage() {
   );
 
   const activeCount = allApplications.filter((a) => !["rejected", "withdrawn"].includes(a.status)).length;
+
+  const toggleTimeline = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   return (
     <AppLayout>
@@ -116,6 +130,7 @@ export default function MyApplicationsPage() {
               const job = jobMap[app.jobId];
               const config = STATUS_CONFIG[app.status] ?? { label: app.status, variant: "outline" as const, icon: Clock, color: "" };
               const Icon = config.icon;
+              const isExpanded = expandedIds.has(app.id);
 
               return (
                 <Card key={app.id} className="hover:shadow-md transition-shadow" data-testid="card-application">
@@ -148,9 +163,30 @@ export default function MyApplicationsPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3 pt-3 border-t">
-                      <ApplicationProgressBar status={app.status} />
+                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {isExpanded ? "Hide recruitment journey" : "Show recruitment journey"}
+                      </span>
+                      <button
+                        onClick={() => toggleTimeline(app.id)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? "Hide timeline" : "Show timeline"}
+                        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                        data-testid={`btn-toggle-timeline-${app.id}`}
+                      >
+                        {isExpanded ? (
+                          <>Hide <ChevronUp className="h-3.5 w-3.5" /></>
+                        ) : (
+                          <>View all stages <ChevronDown className="h-3.5 w-3.5" /></>
+                        )}
+                      </button>
                     </div>
+
+                    {isExpanded && (
+                      <div className="mt-4 pt-1" data-testid={`timeline-${app.id}`}>
+                        <ApplicationTimeline status={app.status} />
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -159,40 +195,5 @@ export default function MyApplicationsPage() {
         )}
       </div>
     </AppLayout>
-  );
-}
-
-const PIPELINE_STEPS = ["applied", "screening", "interview", "offer", "hired"];
-
-function ApplicationProgressBar({ status }: { status: string }) {
-  if (status === "rejected" || status === "withdrawn") {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <XCircle className="h-3.5 w-3.5 text-destructive" />
-        <span className="capitalize text-destructive font-medium">{status === "rejected" ? "Not selected for this position" : "Application withdrawn"}</span>
-      </div>
-    );
-  }
-
-  const currentIdx = PIPELINE_STEPS.indexOf(status);
-
-  return (
-    <div className="flex items-center gap-1">
-      {PIPELINE_STEPS.map((step, idx) => {
-        const done = idx < currentIdx;
-        const current = idx === currentIdx;
-        const config = STATUS_CONFIG[step];
-        return (
-          <div key={step} className="flex items-center gap-1 flex-1">
-            <div className="flex flex-col items-center gap-0.5 flex-1">
-              <div className={`h-1.5 w-full rounded-full ${done || current ? "bg-primary" : "bg-muted"}`} />
-              {current && (
-                <span className="text-xs font-medium text-primary whitespace-nowrap hidden sm:block">{config?.label}</span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }

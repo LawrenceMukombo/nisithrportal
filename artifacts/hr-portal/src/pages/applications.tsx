@@ -1,7 +1,15 @@
 import { useState, useEffect } from "react";
 import { Link, useSearch } from "wouter";
 import { Search } from "lucide-react";
-import { useGetApplications, useUpdateApplicationStatus, getGetApplicationsQueryKey } from "@workspace/api-client-react";
+import {
+  useGetApplications,
+  useGetCandidates,
+  useGetJobs,
+  useUpdateApplicationStatus,
+  getGetApplicationsQueryKey,
+  getGetCandidatesQueryKey,
+  getGetJobsQueryKey,
+} from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/layouts/app-layout";
@@ -66,9 +74,24 @@ export default function ApplicationsPage() {
     { query: { queryKey: getGetApplicationsQueryKey({ status: statusFilter !== "all" ? statusFilter : undefined }) } }
   );
 
-  const filtered = applications.data?.filter((a) =>
-    search ? String(a.jobId).includes(search) || String(a.candidateId).includes(search) : true
-  ) ?? [];
+  const { data: candidates = [] } = useGetCandidates({ query: { queryKey: getGetCandidatesQueryKey() } });
+  const { data: jobs = [] } = useGetJobs(undefined, { query: { queryKey: getGetJobsQueryKey() } });
+  const candidateMap = new Map(candidates.map((c) => [c.id, c]));
+  const jobMap = new Map(jobs.map((j) => [j.id, j]));
+
+  const filtered = applications.data?.filter((a) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    const candidateName = candidateMap.get(a.candidateId)?.name?.toLowerCase() ?? "";
+    const jobTitle = jobMap.get(a.jobId)?.title?.toLowerCase() ?? "";
+    return (
+      candidateName.includes(q) ||
+      jobTitle.includes(q) ||
+      String(a.id).includes(q) ||
+      String(a.jobId).includes(q) ||
+      String(a.candidateId).includes(q)
+    );
+  }) ?? [];
 
   return (
     <AppLayout>
@@ -84,7 +107,7 @@ export default function ApplicationsPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by job or candidate ID..."
+                  placeholder="Search by candidate name, job title, or ID..."
                   className="pl-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -138,12 +161,16 @@ export default function ApplicationsPage() {
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
                           <Link href={`/jobs/${app.jobId}`}>
-                            <span className="hover:underline cursor-pointer">Job #{app.jobId}</span>
+                            <span className="hover:underline cursor-pointer">
+                              {jobMap.get(app.jobId)?.title ?? `Job #${app.jobId}`}
+                            </span>
                           </Link>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
                           <Link href={`/candidates/${app.candidateId}`}>
-                            <span className="hover:underline cursor-pointer">Candidate #{app.candidateId}</span>
+                            <span className="hover:underline cursor-pointer">
+                              {candidateMap.get(app.candidateId)?.name ?? `Candidate #${app.candidateId}`}
+                            </span>
                           </Link>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">

@@ -133,10 +133,9 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
   const isPublished = job.status === "published" || job.status === "open";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
-  const isGlobalAdmin = req.user?.roleName === "admin";
-  const canViewInternal = isGlobalAdmin || (isInternalStaff(req.user) && isOwnAgency);
+  const canViewInternal = isInternalStaff(req.user) && isOwnAgency;
 
-  if (!isPublished && !isOwnAgency && !isGlobalAdmin) {
+  if (!isPublished && !isOwnAgency) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
@@ -247,17 +246,15 @@ router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Prom
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   const isPublishedStatus = job.status === "open" || job.status === "published";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
-  const isGlobalAdminSQ = req.user?.roleName === "admin";
-  const isSameAgencyStaffSQ = isInternalStaff(req.user) && req.user?.agencyId != null && req.user.agencyId === job.agencyId;
-  const canViewInternalSQ = isGlobalAdminSQ || isSameAgencyStaffSQ;
+  const isSameAgencyStaff = isInternalStaff(req.user) && req.user?.agencyId != null && req.user.agencyId === job.agencyId;
 
   if (!isPublishedStatus) {
     if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
     const userAgencyId = getTenantAgencyId(req);
-    if (!isGlobalAdminSQ && userAgencyId !== job.agencyId) {
+    if (userAgencyId !== job.agencyId) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-  } else if (!isPublicTarget && !canViewInternalSQ) {
+  } else if (!isPublicTarget && !isSameAgencyStaff) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" }); return;
   }
   const questions = await db.select().from(jobScreeningQuestionsTable)

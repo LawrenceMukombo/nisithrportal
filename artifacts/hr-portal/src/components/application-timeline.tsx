@@ -37,12 +37,14 @@ export function ApplicationTimeline({ status, statusHistory }: ApplicationTimeli
   const isTerminal = TERMINAL_STATUSES.includes(status);
   const activeIndex = getActiveStageIndex(status);
 
-  const historyByStatus: Record<string, string> = {};
+  const firstEnteredAt: Record<string, string> = {};
+  const lastEnteredAt: Record<string, string> = {};
   if (statusHistory) {
     for (const h of statusHistory) {
-      if (!(h.status in historyByStatus)) {
-        historyByStatus[h.status] = h.changedAt;
+      if (!(h.status in firstEnteredAt)) {
+        firstEnteredAt[h.status] = h.changedAt;
       }
+      lastEnteredAt[h.status] = h.changedAt;
     }
   }
 
@@ -87,8 +89,9 @@ export function ApplicationTimeline({ status, statusHistory }: ApplicationTimeli
           const colors = STAGE_COLOR_MAP[stage.color];
           const Icon = stage.icon;
 
-          const stageDate = historyByStatus[stage.status];
-          const days = current && stageDate ? elapsedDays(stageDate) : null;
+          const stageDate = firstEnteredAt[stage.status];
+          const currentEnteredAt = lastEnteredAt[stage.status];
+          const days = current && currentEnteredAt ? elapsedDays(currentEnteredAt) : null;
 
           return (
             <div key={stage.id} className="flex gap-3 relative">
@@ -140,7 +143,7 @@ export function ApplicationTimeline({ status, statusHistory }: ApplicationTimeli
                     {stage.description}
                   </p>
                 )}
-                {current && stageDate && (
+                {current && currentEnteredAt && (
                   <p className={`text-xs mt-1 flex items-center gap-1 ${colors.text}`}>
                     <Clock className="h-3 w-3" />
                     {days === 0
@@ -150,7 +153,7 @@ export function ApplicationTimeline({ status, statusHistory }: ApplicationTimeli
                       : `${days} days in this stage`}
                   </p>
                 )}
-                {current && !stageDate && (
+                {current && !currentEnteredAt && (
                   <p className={`text-xs mt-1 font-medium ${colors.text}`}>Expected: {stage.timeframe}</p>
                 )}
               </div>

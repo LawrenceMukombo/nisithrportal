@@ -34,7 +34,7 @@ export type Candidate = typeof candidatesTable.$inferSelect;
 // Education entries
 export const candidateEducationTable = pgTable("candidate_education", {
   id: serial("id").primaryKey(),
-  candidateId: serial("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
+  candidateId: integer("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
   institution: text("institution").notNull(),
   level: text("level"),
   qualification: text("qualification"),
@@ -50,7 +50,7 @@ export type CandidateEducation = typeof candidateEducationTable.$inferSelect;
 // Work experience entries
 export const candidateExperienceTable = pgTable("candidate_experience", {
   id: serial("id").primaryKey(),
-  candidateId: serial("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
+  candidateId: integer("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
   employer: text("employer").notNull(),
   jobTitle: text("job_title"),
   responsibilities: text("responsibilities"),
@@ -66,7 +66,7 @@ export type CandidateExperience = typeof candidateExperienceTable.$inferSelect;
 // Languages spoken
 export const candidateLanguagesTable = pgTable("candidate_languages", {
   id: serial("id").primaryKey(),
-  candidateId: serial("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
+  candidateId: integer("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
   language: text("language").notNull(),
   proficiency: text("proficiency"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -76,7 +76,7 @@ export type CandidateLanguage = typeof candidateLanguagesTable.$inferSelect;
 // Diversity & Inclusion (voluntary, aggregate-only reporting)
 export const candidateDiversityTable = pgTable("candidate_diversity", {
   id: serial("id").primaryKey(),
-  candidateId: serial("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
+  candidateId: integer("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
   disabilityStatus: text("disability_status"),
   genderIdentity: text("gender_identity"),
   ethnicity: text("ethnicity"),

@@ -327,11 +327,23 @@ router.post("/applications", async (req, res): Promise<void> => {
   if (extended.success) {
     const ext = extended.data;
     if (!ext.declarationAgreed) {
-      res.status(422).json({ error: "You must agree to the declaration before submitting" });
+      res.status(422).json({ error: "You must agree to the statutory declaration before submitting" });
+      return;
+    }
+    if (!ext.backgroundCheckConsent) {
+      res.status(422).json({ error: "You must consent to a background check before submitting" });
       return;
     }
     if (!ext.dataPrivacyConsent) {
       res.status(422).json({ error: "You must consent to data privacy terms before submitting" });
+      return;
+    }
+    if (ext.conflictOfInterest === undefined || ext.conflictOfInterest === null) {
+      res.status(422).json({ error: "You must disclose whether you have a conflict of interest" });
+      return;
+    }
+    if (ext.criminalRecord === undefined || ext.criminalRecord === null) {
+      res.status(422).json({ error: "You must disclose your criminal record status" });
       return;
     }
     // Enforce required screening question answers

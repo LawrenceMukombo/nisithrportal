@@ -579,7 +579,7 @@ export default function JobFormPage() {
 
   const buildPayload = (values: FormValues) => ({
     title: values.title,
-    description: values.description || " ",
+    description: values.description ?? "",
     departmentId: values.departmentId ?? null,
     closingDate: values.closingDate || null,
     referenceNumber: values.referenceNumber || null,

@@ -575,6 +575,11 @@ function EditIntegrationDialog({
 
   const connector = catalog.find(c => c.type === config.integrationType);
 
+  const jsonFieldsValid =
+    (form.headersJson.trim() === "" || safeJsonParse(form.headersJson) !== null) &&
+    (form.fieldMappingsJson.trim() === "" || safeJsonParse(form.fieldMappingsJson) !== null) &&
+    (form.responseMappingJson.trim() === "" || safeJsonParse(form.responseMappingJson) !== null);
+
   const updateMutation = useMutation({
     mutationFn: () => {
       const body: Record<string, unknown> = {
@@ -582,11 +587,11 @@ function EditIntegrationDialog({
         method: form.method,
         authType: form.authType,
         enabled: form.enabled,
+        description: form.description,
+        endpointUrl: form.endpointUrl,
+        apiKeyRef: form.apiKeyRef,
+        authHeaderName: form.authHeaderName,
       };
-      if (form.description) body.description = form.description;
-      if (form.endpointUrl) body.endpointUrl = form.endpointUrl;
-      if (form.apiKeyRef) body.apiKeyRef = form.apiKeyRef;
-      if (form.authHeaderName) body.authHeaderName = form.authHeaderName;
       const headers = safeJsonParse(form.headersJson);
       if (headers) body.headers = headers;
       const fieldMappings = safeJsonParse(form.fieldMappingsJson);
@@ -660,7 +665,13 @@ function EditIntegrationDialog({
         <div className="flex gap-3 justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => updateMutation.mutate()}
+            onClick={() => {
+              if (!jsonFieldsValid) {
+                toast({ title: "Fix invalid JSON fields before saving", variant: "destructive" });
+                return;
+              }
+              updateMutation.mutate();
+            }}
             disabled={!form.name || updateMutation.isPending}
             data-testid="button-update-integration"
           >
@@ -907,6 +918,11 @@ function NewIntegrationDialog({
 
   const selectedConnector = catalog.find(c => c.type === selectedType);
 
+  const createJsonFieldsValid =
+    (form.headersJson.trim() === "" || safeJsonParse(form.headersJson) !== null) &&
+    (form.fieldMappingsJson.trim() === "" || safeJsonParse(form.fieldMappingsJson) !== null) &&
+    (form.responseMappingJson.trim() === "" || safeJsonParse(form.responseMappingJson) !== null);
+
   const createMutation = useMutation({
     mutationFn: () => {
       const body: Record<string, unknown> = {
@@ -915,11 +931,11 @@ function NewIntegrationDialog({
         method: form.method,
         authType: form.authType,
         enabled: form.enabled,
+        description: form.description,
+        endpointUrl: form.endpointUrl,
+        apiKeyRef: form.apiKeyRef,
+        authHeaderName: form.authHeaderName,
       };
-      if (form.description) body.description = form.description;
-      if (form.endpointUrl) body.endpointUrl = form.endpointUrl;
-      if (form.apiKeyRef) body.apiKeyRef = form.apiKeyRef;
-      if (form.authHeaderName) body.authHeaderName = form.authHeaderName;
       const headers = safeJsonParse(form.headersJson);
       if (headers) body.headers = headers;
       const fieldMappings = safeJsonParse(form.fieldMappingsJson);
@@ -1032,7 +1048,13 @@ function NewIntegrationDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => createMutation.mutate()}
+            onClick={() => {
+              if (!createJsonFieldsValid) {
+                toast({ title: "Fix invalid JSON fields before saving", variant: "destructive" });
+                return;
+              }
+              createMutation.mutate();
+            }}
             disabled={!selectedType || createMutation.isPending}
             data-testid="button-save-integration"
           >
@@ -1062,7 +1084,7 @@ export default function IntegrationBuilderPage() {
   const configs = configsQuery.data ?? [];
 
   const grouped = catalog.reduce<Record<string, IntegrationConfig[]>>((acc, c) => {
-    acc[c.category] = configs.filter(cfg => cfg.integrationType === c.type);
+    acc[c.type] = configs.filter(cfg => cfg.integrationType === c.type);
     return acc;
   }, {});
 
@@ -1120,7 +1142,7 @@ export default function IntegrationBuilderPage() {
                     ))}
                   </div>
                   <div className="mt-3 text-xs text-muted-foreground">
-                    {(grouped[c.category]?.length ?? 0)} configured · Active: {(grouped[c.category]?.filter(i => i.enabled).length ?? 0)}
+                    {(grouped[c.type]?.length ?? 0)} configured · Active: {(grouped[c.type]?.filter(i => i.enabled).length ?? 0)}
                   </div>
                 </CardContent>
               </Card>

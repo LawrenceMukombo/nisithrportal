@@ -547,7 +547,17 @@ export default function RecruitmentWorkflowPage() {
     };
   });
 
-  const totalStalled = stageAvgDays.reduce((sum, s) => sum + s.staleCount, 0);
+  // De-duplicate: build a status → threshold map (first stage per status wins)
+  // so shared-status stages (screening/assessment, interview/evaluation) don't double-count.
+  const thresholdByStatus: Record<string, number> = {};
+  for (const stage of WORKFLOW_STAGES) {
+    if (!(stage.status in thresholdByStatus)) thresholdByStatus[stage.status] = stage.staleDaysThreshold;
+  }
+  const totalStalled = activeApps.filter((app) => {
+    const threshold = thresholdByStatus[app.status ?? ""];
+    if (threshold === undefined) return false;
+    return daysInStage(app, app.status ?? "") >= threshold;
+  }).length;
 
   useEffect(() => {
     if (isLoading || applications.length === 0) return;

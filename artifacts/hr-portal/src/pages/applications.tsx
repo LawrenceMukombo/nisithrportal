@@ -44,16 +44,22 @@ function StatusSelect({ app }: { app: Application }) {
 
 export default function ApplicationsPage() {
   const searchString = useSearch();
-  const urlStatus = new URLSearchParams(searchString).get("status");
+  const urlParams = new URLSearchParams(searchString);
+  const urlStatus = urlParams.get("status");
+  const urlSearch = urlParams.get("search") ?? "";
   const initialStatus = urlStatus && STATUS_OPTIONS.includes(urlStatus) ? urlStatus : "all";
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(urlSearch);
 
   useEffect(() => {
     if (urlStatus && STATUS_OPTIONS.includes(urlStatus)) {
       setStatusFilter(urlStatus);
     }
   }, [urlStatus]);
+
+  useEffect(() => {
+    setSearch(urlSearch);
+  }, [urlSearch]);
 
   const applications = useGetApplications(
     { status: statusFilter !== "all" ? statusFilter : undefined },

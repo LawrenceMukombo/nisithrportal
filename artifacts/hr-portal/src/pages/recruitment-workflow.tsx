@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   GitBranch,
@@ -8,6 +9,8 @@ import {
   AlertTriangle,
   BarChart2,
   Download,
+  Search,
+  X,
 } from "lucide-react";
 import {
   useGetApplications,
@@ -22,6 +25,7 @@ import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
@@ -264,26 +268,31 @@ function PipelineTrendChart({ applications, isLoading }: { applications: Applica
 function StageCard({
   stage,
   apps,
+  totalCount,
   totalActive,
   candidateMap,
   jobMap,
   avgDaysInStage,
   isSlowest,
+  searchQuery,
 }: {
   stage: typeof WORKFLOW_STAGES[number];
   apps: Application[];
+  totalCount: number;
   totalActive: number;
   candidateMap: Map<number, Candidate>;
   jobMap: Map<number, Job>;
   avgDaysInStage: number;
   isSlowest: boolean;
+  searchQuery: string;
 }) {
   const [, setLocation] = useLocation();
   const colors = STAGE_COLOR_MAP[stage.color];
   const Icon = stage.icon;
 
   const top5 = apps.slice(0, 5);
-  const pct = totalActive > 0 ? Math.round((apps.length / totalActive) * 100) : 0;
+  const pct = totalActive > 0 ? Math.round((totalCount / totalActive) * 100) : 0;
+  const moreHref = `/applications?status=${stage.status}`;
 
   return (
     <Card
@@ -301,10 +310,10 @@ function StageCard({
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <Badge variant="secondary" className="tabular-nums">
-              {apps.length}
+              {searchQuery ? `${apps.length}/${totalCount}` : apps.length}
             </Badge>
             <span
-              className={`text-xs font-semibold tabular-nums ${isSlowest && apps.length > 0 ? "text-orange-500" : "text-muted-foreground"}`}
+              className={`text-xs font-semibold tabular-nums ${isSlowest && totalCount > 0 ? "text-orange-500" : "text-muted-foreground"}`}
               data-testid={`avg-days-${stage.id}`}
               title="Average days applications have been in this stage"
             >
@@ -312,7 +321,7 @@ function StageCard({
             </span>
           </div>
         </div>
-        {isSlowest && apps.length > 0 && (
+        {isSlowest && totalCount > 0 && (
           <div className="flex items-center gap-1.5 mt-1 rounded-md bg-orange-50 dark:bg-orange-950/20 px-2 py-1 border border-orange-200 dark:border-orange-900/40">
             <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
             <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Slowest stage — possible bottleneck</p>
@@ -333,7 +342,9 @@ function StageCard({
       </CardHeader>
       <CardContent className="pt-0 flex-1">
         {apps.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">No candidates at this stage</p>
+          <p className="text-xs text-muted-foreground text-center py-4">
+            {searchQuery && totalCount > 0 ? `No matches in "${searchQuery}"` : "No candidates at this stage"}
+          </p>
         ) : (
           <div className="space-y-1">
             {top5.map((app) => {
@@ -375,7 +386,7 @@ function StageCard({
               );
             })}
             {apps.length > 5 && (
-              <Link href={`/applications?status=${stage.status}`}>
+              <Link href={moreHref}>
                 <p className="text-xs text-primary hover:underline text-center pt-1 cursor-pointer">
                   +{apps.length - 5} more
                 </p>
@@ -385,7 +396,7 @@ function StageCard({
         )}
       </CardContent>
       <div className="px-4 pb-4 pt-0">
-        <Link href={`/applications?status=${stage.status}`}>
+        <Link href={moreHref}>
           <span className={`text-xs font-medium cursor-pointer hover:underline ${colors.text}`}>
             View all in {stage.label} →
           </span>
@@ -396,6 +407,8 @@ function StageCard({
 }
 
 export default function RecruitmentWorkflowPage() {
+  const [search, setSearch] = useState("");
+
   const { data: applications = [], isLoading: appsLoading } = useGetApplications(
     {},
     { query: { queryKey: getGetApplicationsQueryKey({}) } }
@@ -413,6 +426,14 @@ export default function RecruitmentWorkflowPage() {
   const candidateMap = new Map<number, Candidate>(candidates.map((c) => [c.id, c]));
   const jobMap = new Map<number, Job>(jobs.map((j) => [j.id, j]));
 
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (app: Application): boolean => {
+    if (!q) return true;
+    const name = (candidateMap.get(app.candidateId ?? 0)?.name ?? "").toLowerCase();
+    const title = (jobMap.get(app.jobId)?.title ?? "").toLowerCase();
+    return name.includes(q) || title.includes(q);
+  };
+
   const activeApps = applications.filter((a) => !TERMINAL_STATUSES.includes(a.status ?? ""));
   const totalActive = activeApps.length;
   const avgTimeDays = avgDays(activeApps);
@@ -429,13 +450,18 @@ export default function RecruitmentWorkflowPage() {
 
   const activeStageCount = WORKFLOW_STAGES.filter((s) => (byStatus[s.status]?.length ?? 0) > 0).length;
 
-  const stageAvgDays = WORKFLOW_STAGES.map((stage) => ({
-    stage,
-    apps: stageApps(stage),
-    avg: avgDays(stageApps(stage)),
-  }));
+  const stageAvgDays = WORKFLOW_STAGES.map((stage) => {
+    const allApps = stageApps(stage);
+    const filtered = allApps.filter(matchesSearch);
+    return {
+      stage,
+      apps: filtered,
+      totalCount: allApps.length,
+      avg: avgDays(allApps),
+    };
+  });
 
-  const populatedStages = stageAvgDays.filter((s) => s.apps.length > 0);
+  const populatedStages = stageAvgDays.filter((s) => s.totalCount > 0);
   const slowestEntry = populatedStages.length > 0
     ? populatedStages.reduce((a, b) => (a.avg >= b.avg ? a : b))
     : null;
@@ -516,7 +542,7 @@ export default function RecruitmentWorkflowPage() {
                       {slowestEntry.stage.label}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      avg <span className="font-semibold text-orange-500">{slowestEntry.avg}d</span> · {slowestEntry.apps.length} candidate{slowestEntry.apps.length !== 1 ? "s" : ""}
+                      avg <span className="font-semibold text-orange-500">{slowestEntry.avg}d</span> · {slowestEntry.totalCount} candidate{slowestEntry.totalCount !== 1 ? "s" : ""}
                     </p>
                   </>
                 ) : (
@@ -533,28 +559,57 @@ export default function RecruitmentWorkflowPage() {
         <PipelineTrendChart applications={applications} isLoading={isLoading} />
 
         <div>
-          <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
-            Pipeline Stages
-            <span className="text-xs text-muted-foreground font-normal">— {WORKFLOW_STAGES.length} stages</span>
-          </h2>
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              Pipeline Stages
+              <span className="text-xs text-muted-foreground font-normal">— {WORKFLOW_STAGES.length} stages</span>
+            </h2>
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search by candidate or job title..."
+                className="pl-9 pr-8 h-8 text-sm"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                data-testid="input-pipeline-search"
+              />
+              {search && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+          {search && !isLoading && (
+            <p className="text-xs text-muted-foreground mb-3">
+              Showing results for <span className="font-medium text-foreground">"{search}"</span>
+              {" "}— {stageAvgDays.reduce((sum, s) => sum + s.apps.length, 0)} match{stageAvgDays.reduce((sum, s) => sum + s.apps.length, 0) !== 1 ? "es" : ""} across all stages
+            </p>
+          )}
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-64 w-full" />)}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {stageAvgDays.map(({ stage, apps, avg }) => {
-                const isSlowest = slowestEntry?.stage.id === stage.id && apps.length > 0;
+              {stageAvgDays.map(({ stage, apps, totalCount, avg }) => {
+                const isSlowest = slowestEntry?.stage.id === stage.id && totalCount > 0;
                 return (
                   <StageCard
                     key={stage.id}
                     stage={stage}
                     apps={apps}
+                    totalCount={totalCount}
                     totalActive={totalActive}
                     candidateMap={candidateMap}
                     jobMap={jobMap}
                     avgDaysInStage={avg}
                     isSlowest={isSlowest}
+                    searchQuery={search}
                   />
                 );
               })}

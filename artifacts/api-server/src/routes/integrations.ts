@@ -6,7 +6,14 @@ import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { CONNECTOR_CATALOG, getConnector, executeIntegration } from "../lib/connectors";
+import {
+  CONNECTOR_CATALOG,
+  getConnector,
+  executeIntegration,
+  executeIntegrationLegacy,
+  loadIntegrationConfig,
+  STATIC_INTEGRATION_CONFIGS,
+} from "../lib/connectors";
 
 const router: IRouter = Router();
 
@@ -15,8 +22,13 @@ const CreateIntegrationConfigSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   endpointUrl: z.string().url().optional().or(z.literal("")),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional().default("POST"),
   apiKeyRef: z.string().optional(),
+  authType: z.enum(["bearer", "api_key", "header"]).optional().default("bearer"),
+  authHeaderName: z.string().optional(),
+  headers: z.record(z.string()).optional(),
   fieldMappings: z.record(z.string()).optional(),
+  responseMapping: z.record(z.string()).optional(),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -24,13 +36,29 @@ const UpdateIntegrationConfigSchema = CreateIntegrationConfigSchema.partial();
 
 // ─── Helper: check ownership ───────────────────────────────────────────────────
 function canAccessConfig(userAgencyId: number | null, configAgencyId: number | null): boolean {
-  if (userAgencyId === null) return false; // super-admin not implemented
+  if (userAgencyId === null) return false;
   return configAgencyId === null || configAgencyId === userAgencyId;
 }
 
 // ─── List connector catalog ────────────────────────────────────────────────────
 router.get("/integration-catalog", authMiddleware, requireRole("admin", "hr_officer"), async (_req, res) => {
   res.json(CONNECTOR_CATALOG);
+});
+
+// ─── List static integration configs ──────────────────────────────────────────
+router.get("/integration-static-configs", authMiddleware, requireRole("admin"), async (_req, res) => {
+  const safeConfigs = STATIC_INTEGRATION_CONFIGS.map(c => ({
+    type: c.type,
+    name: c.name,
+    description: c.description,
+    method: c.method,
+    authType: c.authType,
+    authHeaderName: c.authHeaderName,
+    headers: c.headers,
+    mapping: c.mapping,
+    responseMapping: c.responseMapping,
+  }));
+  res.json(safeConfigs);
 });
 
 // ─── CRUD for integration configs ─────────────────────────────────────────────
@@ -69,8 +97,13 @@ router.post("/integration-config", authMiddleware, requireRole("admin"), async (
       name: parse.data.name,
       description: parse.data.description,
       endpointUrl: parse.data.endpointUrl || null,
+      method: parse.data.method ?? "POST",
       apiKeyRef: parse.data.apiKeyRef || null,
+      authType: parse.data.authType ?? "bearer",
+      authHeaderName: parse.data.authHeaderName || null,
+      headers: parse.data.headers ?? {},
       fieldMappings: parse.data.fieldMappings ?? {},
+      responseMapping: parse.data.responseMapping ?? {},
       enabled: parse.data.enabled ?? true,
     }).returning();
     res.status(201).json(created);
@@ -132,7 +165,42 @@ router.delete("/integration-config/:id", authMiddleware, requireRole("admin"), a
   }
 });
 
-// ─── Execute integration ───────────────────────────────────────────────────────
+// ─── Dynamic integration executor: POST /integration/:type ────────────────────
+// Loads config from DB (prefers agency-scoped config) then falls back to static.
+// Supports all three auth patterns: bearer, api_key, header.
+
+router.post("/integration/:type", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const type = req.params["type"] as string;
+  const agencyId = getTenantAgencyId(req);
+
+  const config = await loadIntegrationConfig(type, agencyId);
+  if (!config) {
+    res.status(404).json({ success: false, error: `Unknown integration type: ${type}` });
+    return;
+  }
+
+  const inputData = (req.body ?? {}) as Record<string, unknown>;
+  const result = await executeIntegration(config, inputData);
+
+  // Persist execution log
+  try {
+    await db.insert(integrationLogsTable).values({
+      integrationConfigId: null,
+      status: result.success ? "success" : "error",
+      requestPayload: inputData,
+      responsePayload: result.data ?? null,
+      errorMessage: result.error ?? null,
+      durationMs: result.durationMs,
+      triggeredBy: String(req.user?.userId ?? "system"),
+    });
+  } catch (logErr) {
+    logger.warn(logErr, "Failed to persist integration log");
+  }
+
+  res.json(result);
+});
+
+// ─── Execute integration (legacy path, uses DB config by ID) ──────────────────
 
 router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "hr_officer"), async (req, res) => {
   const connectorType = req.params["type"] as string;
@@ -159,7 +227,7 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
 
   const payload = { ...(cfg.fieldMappings as Record<string, unknown> ?? {}), ...(req.body.payload ?? {}) };
 
-  const result = await executeIntegration({
+  const result = await executeIntegrationLegacy({
     connectorType,
     endpointUrl: cfg.endpointUrl,
     apiKey: cfg.apiKeyRef ?? undefined,

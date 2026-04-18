@@ -10,10 +10,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useAuth } from "@/contexts/auth-context";
 import { useRegister } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { isStaffDomain } from "@/lib/emailDomain";
 
 const schema = z.object({
   name: z.string().min(2, "Full name required"),
-  email: z.string().email("Enter a valid email"),
+  email: z.string().email("Enter a valid email").refine(
+    (email) => isStaffDomain(email),
+    {
+      message:
+        "Administrator accounts require a government email address (e.g. @dept.gov.pg). If you are a job applicant, apply directly through the job listings — no account needed.",
+    },
+  ),
   password: z.string().min(8, "Password must be at least 8 characters"),
   agencyName: z.string().min(2, "Agency name required"),
 });

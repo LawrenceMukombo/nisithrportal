@@ -625,7 +625,7 @@ router.get("/applications/track", async (req, res): Promise<void> => {
   });
 });
 
-router.patch("/applications/:id", authMiddleware, async (req, res): Promise<void> => {
+router.patch("/applications/:id", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
   const id = parseIntParam(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid application id" });

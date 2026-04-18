@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useGetUsers, useGetRoles, useUpdateUser, useCreateUser } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Users, Search, Edit, UserPlus } from "lucide-react";
+import { Users, Search, Edit, UserPlus, AlertTriangle } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
+import { isStaffDomain, STAFF_ROLES } from "@/lib/emailDomain";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "System Admin",
@@ -38,9 +39,28 @@ function CreateUserDialog({
 
   const createUser = useCreateUser();
 
+  const selectedRole = useMemo(() => roles.find((r) => r.id.toString() === roleId), [roles, roleId]);
+  const isStaffRole = selectedRole ? STAFF_ROLES.has(selectedRole.name) : false;
+  const emailIsStaff = email.trim() ? isStaffDomain(email.trim()) : null;
+
+  const domainError = useMemo(() => {
+    if (!email.trim() || !selectedRole) return null;
+    if (isStaffRole && emailIsStaff === false) {
+      return `Staff roles require a government domain email (e.g. @dept.gov.pg).`;
+    }
+    if (!isStaffRole && emailIsStaff === true) {
+      return "Government domain emails cannot be assigned non-staff roles.";
+    }
+    return null;
+  }, [email, selectedRole, isStaffRole, emailIsStaff]);
+
   const handleCreate = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !roleId) {
       toast({ title: "All fields required", variant: "destructive" });
+      return;
+    }
+    if (domainError) {
+      toast({ title: "Invalid email domain", description: domainError, variant: "destructive" });
       return;
     }
     try {
@@ -87,7 +107,19 @@ function CreateUserDialog({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               data-testid="input-create-user-email"
+              className={domainError ? "border-destructive" : ""}
             />
+            {domainError && (
+              <div className="flex items-start gap-1.5 text-destructive text-xs mt-1">
+                <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                <span>{domainError}</span>
+              </div>
+            )}
+            {isStaffRole && email.trim() && !domainError && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Government domain email confirmed for staff role.
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">Temporary Password</p>
@@ -113,12 +145,17 @@ function CreateUserDialog({
                 ))}
               </SelectContent>
             </Select>
+            {isStaffRole && (
+              <p className="text-xs text-muted-foreground">
+                Staff roles require a government domain email (e.g. @dept.gov.pg).
+              </p>
+            )}
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               onClick={handleCreate}
-              disabled={createUser.isPending}
+              disabled={createUser.isPending || !!domainError}
               data-testid="button-confirm-create-user"
             >
               {createUser.isPending ? "Creating..." : "Create User"}
@@ -148,7 +185,23 @@ function EditUserDialog({
 
   const updateUser = useUpdateUser();
 
+  const selectedRole = useMemo(() => roles.find((r) => r.id.toString() === roleId), [roles, roleId]);
+  const editDomainError = useMemo(() => {
+    if (!selectedRole) return null;
+    if (STAFF_ROLES.has(selectedRole.name) && !isStaffDomain(user.email)) {
+      return `Role "${selectedRole.name}" requires a government domain email. This user's email (${user.email}) does not qualify.`;
+    }
+    if (selectedRole.name === "applicant" && isStaffDomain(user.email)) {
+      return "Government domain emails cannot be assigned the applicant role.";
+    }
+    return null;
+  }, [selectedRole, user.email]);
+
   const handleSave = async () => {
+    if (editDomainError) {
+      toast({ title: "Invalid role assignment", description: editDomainError, variant: "destructive" });
+      return;
+    }
     try {
       await updateUser.mutateAsync({
         id: user.id,
@@ -159,8 +212,9 @@ function EditUserDialog({
       });
       toast({ title: "User updated", description: `${user.name} has been updated.` });
       onClose();
-    } catch {
-      toast({ title: "Update failed", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast({ title: "Update failed", description: msg ?? "Please try again.", variant: "destructive" });
     }
   };
 
@@ -192,6 +246,12 @@ function EditUserDialog({
               </SelectContent>
             </Select>
             {isSelf && <p className="text-xs text-muted-foreground">You cannot change your own role.</p>}
+            {editDomainError && !isSelf && (
+              <div className="flex items-start gap-1.5 text-destructive text-xs mt-1">
+                <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                <span>{editDomainError}</span>
+              </div>
+            )}
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">Status</p>
@@ -208,7 +268,7 @@ function EditUserDialog({
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSave} disabled={updateUser.isPending || isSelf}>
+            <Button onClick={handleSave} disabled={updateUser.isPending || isSelf || !!editDomainError}>
               {updateUser.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>

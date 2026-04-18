@@ -5,6 +5,7 @@ import { db, usersTable, rolesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { isStaffDomain, STAFF_ROLES } from "../lib/emailDomain";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,22 @@ router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Pr
   const body = CreateUserBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
+  const roleName = roles[0]?.name ?? null;
+
+  if (roleName && STAFF_ROLES.has(roleName) && !isStaffDomain(body.data.email)) {
+    res.status(400).json({
+      error: `Staff role "${roleName}" requires a government email domain (e.g. @dept.gov.pg). Please use a valid government email address.`,
+    });
+    return;
+  }
+  if (roleName === "applicant" && isStaffDomain(body.data.email)) {
+    res.status(400).json({
+      error: "Government domain emails cannot be assigned the applicant role. Use a personal email address.",
+    });
     return;
   }
 
@@ -53,9 +70,6 @@ router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Pr
     status: usersTable.status,
     createdAt: usersTable.createdAt,
   });
-
-  const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
-  const roleName = roles[0]?.name ?? null;
 
   res.status(201).json({ ...user, roleName });
 });
@@ -123,6 +137,23 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
     return;
+  }
+
+  if (body.data.roleId != null) {
+    const newRoles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
+    const newRoleName = newRoles[0]?.name ?? null;
+    if (newRoleName && STAFF_ROLES.has(newRoleName) && !isStaffDomain(existing.email)) {
+      res.status(400).json({
+        error: `Staff role "${newRoleName}" requires a government email domain. The user's email (${existing.email}) does not qualify. Update their email or choose a different role.`,
+      });
+      return;
+    }
+    if (newRoleName === "applicant" && isStaffDomain(existing.email)) {
+      res.status(400).json({
+        error: "Government domain emails cannot be assigned the applicant role.",
+      });
+      return;
+    }
   }
 
   const updates: Record<string, unknown> = {};

@@ -161,14 +161,14 @@ router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<v
   }
 });
 
-// Public endpoint — no auth required. Used by the apply wizard to pre-fill form fields from a CV.
-// Rate-limiting is strongly recommended at the reverse-proxy level for production.
+// Authenticated endpoint — any logged-in user may call this. Used by the apply wizard to pre-fill
+// form fields from a CV. Authentication prevents anonymous abuse of the AI endpoint.
 const CvPrefillBody = z.object({
   cvUrl: z.string().url("Must be a valid HTTPS URL").optional(),
   cvText: z.string().max(50_000).optional(),
 }).refine(d => d.cvUrl || d.cvText, { message: "One of cvUrl or cvText is required" });
 
-router.post("/ai/cv-prefill", async (req, res): Promise<void> => {
+router.post("/ai/cv-prefill", authMiddleware, async (req, res): Promise<void> => {
   const parsed = CvPrefillBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

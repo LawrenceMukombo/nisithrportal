@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
+import { isStaffDomain } from "../lib/emailDomain";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   }
 
   const { name, email, password, agencyName, agencyType } = parsed.data;
+
+  if (!isStaffDomain(email)) {
+    res.status(400).json({
+      error:
+        "An Administrator account requires a government email address (e.g. @dept.gov.pg). If you are a job applicant, you do not need to register — apply directly through the job listings.",
+    });
+    return;
+  }
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email));
   if (existing.length > 0) {

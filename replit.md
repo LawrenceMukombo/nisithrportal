@@ -50,6 +50,8 @@ Core tables (all in `lib/db/src/schema/`):
 - `contracts` — employment contracts with expiry tracking
 - `ai_scores` — AI candidate scoring results
 - `notifications` — in-app notifications (userId, type, message, read, createdAt)
+- `integration_configs` — saved integration connector configs per agency (type, name, endpoint, apiKeyRef, fieldMappings, enabled)
+- `integration_logs` — execution history for each integration config (status, durationMs, error, request/response payloads)
 
 ## API Modules
 
@@ -78,6 +80,12 @@ All routes under `/api/`:
 - `POST /ai/rank-candidates` — AI candidate ranking
 - `POST /ai/interview-questions` — AI interview question generation
 - `GET /ai/predictions/workforce` — AI workforce predictions
+- `GET /integration-catalog` — list all available connector types (admin/hr_officer)
+- `GET/POST /integration-config` — manage integration configs per agency (admin only)
+- `GET/PUT/DELETE /integration-config/:id` — CRUD for individual integration configs
+- `GET /integration-config/:id/logs` — execution history for a config
+- `POST /integration/:type/execute` — run an integration connector call and log result
+- `POST /integration/ai/suggest-mapping` — AI-powered field mapping suggestion (OpenAI)
 
 ## Auth & RBAC
 
@@ -138,7 +146,7 @@ In-app notification system for status updates and contract expiry alerts.
 ## Frontend HR Portal
 
 The React + Vite frontend (`artifacts/hr-portal/`) includes:
-- **Landing page** — public job listings with search and apply flow
+- **Landing page** — public job listings with search, Department filter, Employment Type filter, PNG flag-colored hero (black/red diagonal gradient), NISIT "N" logo badge, redesigned job cards with department color accents and closing-date indicators
 - **Auth pages** — login and register with JWT stored in `localStorage` as `hr_portal_token`
 - **Dashboard** — KPI cards (open vacancies, applications, employees, expiring contracts), recruitment pipeline bar chart, workforce gaps, contract expiry table
 - **Jobs** — list with search + department filter + status filter; publish/close/delete actions; create/edit form
@@ -149,7 +157,8 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 - **Contracts** — list with status filter; detail page
 - **Agencies & Departments** — admin-only CRUD management pages
 - **My Applications** — applicant-only view of own submitted applications (scoped by authenticated user's email, uses `GET /applications/my`)
-- **Apply Wizard** — 9-step wizard capturing personal info, education, work history, languages, skills, documents, position preferences, screening answers, declarations. CV upload with AI auto-fill (name/email/phone/skills/statement from parsed CV, shown in blue banner). Draft save/resume: localStorage-primary, server-sync if authenticated (`POST /api/applications/draft` requires auth). Screening answers persisted on submit. Declarations validated only at final submission.
+- **Apply Wizard** — 9-step wizard capturing personal info, education, work history, languages, skills, documents, position preferences, screening answers, declarations. CV upload with AI auto-fill (name/email/phone/skills/statement from parsed CV, shown in blue banner). Draft save/resume: localStorage key `apply_draft_{jobId}` (no email suffix, fixed bug). Nationality and Province fields are now Select dropdowns (PNG-specific options). Screening answers persisted on submit. Declarations validated only at final submission.
+- **Integration Builder** — admin-only page (`/integrations`) for configuring connections to PNG government systems. Shows connector catalog (IFMIS, Exam Verification, Identity Verification, LMS), create/edit integration configs with endpoint URL/API key, AI-powered field mapping assistant (uses OpenAI to map external schema to internal HR fields), execution with logging, enable/disable toggle. Connector engine: `artifacts/api-server/src/lib/connectors.ts`.
 - **Apply Dialog** — includes CV/Résumé file upload using presigned GCS URL (max 10 MB, PDF/DOC/DOCX); file uploads directly to GCS, objectPath saved as cvUrl
 - **Notification Bell** — in top header bar; polls for notifications every 30s; unread count badge; dropdown with mark-as-read per item and mark-all-read; type icons (📋 application status, ⚠️ contract expiry)
 

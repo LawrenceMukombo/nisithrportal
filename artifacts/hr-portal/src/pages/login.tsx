@@ -2,7 +2,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { Shield } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -51,8 +50,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-xl mb-4">
-            <Shield className="h-6 w-6 text-primary-foreground" />
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 font-bold text-xl text-white"
+            style={{ background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)" }}>
+            N
           </div>
           <h1 className="text-2xl font-bold text-foreground">PNG NISIT</h1>
           <p className="text-muted-foreground text-sm mt-1">HR Portal — Staff Login</p>

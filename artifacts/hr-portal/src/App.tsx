@@ -28,6 +28,7 @@ import MyApplicationsPage from "@/pages/my-applications";
 import TrackApplicationPage from "@/pages/track-application";
 import ShortlistedPage from "@/pages/shortlisted";
 import RecruitmentWorkflowPage from "@/pages/recruitment-workflow";
+import IntegrationBuilderPage from "@/pages/integration-builder";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -138,6 +139,9 @@ function Router() {
       <Route path="/track-application" component={TrackApplicationPage} />
       <Route path="/workflow">
         {() => <ProtectedRoute component={RecruitmentWorkflowPage} roles={["admin", "hr_officer"]} />}
+      </Route>
+      <Route path="/integrations">
+        {() => <ProtectedRoute component={IntegrationBuilderPage} roles={["admin"]} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

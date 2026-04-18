@@ -15,6 +15,7 @@ import aiRouter from "./ai";
 import usersRouter from "./users";
 import storageRouter from "./storage";
 import notificationsRouter from "./notifications";
+import integrationsRouter from "./integrations";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(dashboardRouter);
 router.use(aiRouter);
 router.use(storageRouter);
 router.use(notificationsRouter);
+router.use(integrationsRouter);
 
 export default router;

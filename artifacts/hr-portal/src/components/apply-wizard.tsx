@@ -177,7 +177,7 @@ const STEPS: StepDef[] = [
   { id: "diversity", label: "Diversity & Inclusion (Optional)", shortLabel: "D&I", icon: Heart, fields: ["diOptIn", "disabilityStatus", "genderIdentity", "ethnicity"] },
 ];
 
-const DRAFT_KEY = (jobId: number, email: string) => `apply_draft_${jobId}_${email}`;
+const DRAFT_KEY = (jobId: number) => `apply_draft_${jobId}`;
 
 // ─── Helper: Upload a file ─────────────────────────────────────────────────────
 
@@ -246,7 +246,23 @@ function Step1Personal({ form }: { form: ReturnType<typeof useForm<WizardValues>
         <FormField control={form.control} name="nationality" render={({ field }) => (
           <FormItem>
             <FormLabel>Nationality</FormLabel>
-            <FormControl><Input placeholder="e.g. Papua New Guinean" {...field} /></FormControl>
+            <Select onValueChange={field.onChange} value={field.value ?? ""}>
+              <FormControl><SelectTrigger><SelectValue placeholder="Select nationality" /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value="Papua New Guinean">Papua New Guinean</SelectItem>
+                <SelectItem value="Australian">Australian</SelectItem>
+                <SelectItem value="New Zealander">New Zealander</SelectItem>
+                <SelectItem value="Fijian">Fijian</SelectItem>
+                <SelectItem value="Solomon Islander">Solomon Islander</SelectItem>
+                <SelectItem value="Vanuatuan">Vanuatuan</SelectItem>
+                <SelectItem value="Filipino">Filipino</SelectItem>
+                <SelectItem value="Chinese">Chinese</SelectItem>
+                <SelectItem value="Indian">Indian</SelectItem>
+                <SelectItem value="British">British</SelectItem>
+                <SelectItem value="American">American</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
           </FormItem>
         )} />
         <FormField control={form.control} name="nationalId" render={({ field }) => (
@@ -315,7 +331,14 @@ function Step2Contact({ form }: { form: ReturnType<typeof useForm<WizardValues>>
         <FormField control={form.control} name="province" render={({ field }) => (
           <FormItem>
             <FormLabel>Province</FormLabel>
-            <FormControl><Input placeholder="e.g. NCD" {...field} /></FormControl>
+            <Select onValueChange={field.onChange} value={field.value ?? ""}>
+              <FormControl><SelectTrigger><SelectValue placeholder="Select province" /></SelectTrigger></FormControl>
+              <SelectContent>
+                {["NCD (Port Moresby)","Central","Gulf","Western","Oro (Northern)","Milne Bay","Morobe","Madang","Eastern Highlands","Western Highlands","Jiwaka","Chimbu (Simbu)","Southern Highlands","Hela","Enga","Sandaun (West Sepik)","East Sepik","Manus","New Ireland","East New Britain","West New Britain","Bougainville (AROB)"].map(p => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </FormItem>
         )} />
       </div>
@@ -1176,27 +1199,23 @@ export function ApplyWizard({
 
   const draftEmail = form.watch("candidateEmail");
 
-  // Load draft from localStorage
+  // Load draft from localStorage on open
   useEffect(() => {
     if (!open) return;
-    const email = form.getValues("candidateEmail") || "";
-    if (!email) {
-      const saved = localStorage.getItem(DRAFT_KEY(jobId, "__no_email__"));
-      if (saved) {
-        try {
-          const { values, step } = JSON.parse(saved) as { values: Partial<WizardValues>; step: number };
-          Object.entries(values).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
-          setCurrentStep(step ?? 0);
-        } catch { /* ignore */ }
-      }
+    const saved = localStorage.getItem(DRAFT_KEY(jobId));
+    if (saved) {
+      try {
+        const { values, step } = JSON.parse(saved) as { values: Partial<WizardValues>; step: number };
+        Object.entries(values).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
+        setCurrentStep(step ?? 0);
+      } catch { /* ignore */ }
     }
   }, [open, jobId, form]);
 
   // Save draft to localStorage whenever form values change
   const saveDraftLocally = useCallback(() => {
     const values = form.getValues();
-    const email = values.candidateEmail || "__no_email__";
-    localStorage.setItem(DRAFT_KEY(jobId, email), JSON.stringify({ values, step: currentStep }));
+    localStorage.setItem(DRAFT_KEY(jobId), JSON.stringify({ values, step: currentStep }));
   }, [form, jobId, currentStep]);
 
   // Auto-save on step change
@@ -1322,8 +1341,7 @@ export function ApplyWizard({
     const result = await res.json() as { id: number };
 
     // Clear local draft
-    localStorage.removeItem(DRAFT_KEY(jobId, values.candidateEmail));
-    localStorage.removeItem(DRAFT_KEY(jobId, "__no_email__"));
+    localStorage.removeItem(DRAFT_KEY(jobId));
 
     setSubmitted({ id: result.id, email: values.candidateEmail });
   };
@@ -1490,16 +1508,7 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
   const [hasDraft, setHasDraft] = useState(false);
 
   useEffect(() => {
-    const key = DRAFT_KEY(jobId, "__no_email__");
-    const found = !!localStorage.getItem(key);
-    if (!found) {
-      // Look for any email-keyed draft
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k?.startsWith(`apply_draft_${jobId}_`)) { setHasDraft(true); return; }
-      }
-    }
-    setHasDraft(found);
+    setHasDraft(!!localStorage.getItem(DRAFT_KEY(jobId)));
   }, [jobId]);
 
   if (!hasDraft) return null;

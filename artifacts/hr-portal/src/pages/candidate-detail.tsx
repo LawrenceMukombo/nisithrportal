@@ -2,6 +2,7 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, Mail, Phone, Star, FileText, GraduationCap, Briefcase,
   Globe, User, MapPin, Calendar, Award, Users, ChevronRight,
+  DollarSign, ShieldCheck, HelpCircle, Paperclip,
 } from "lucide-react";
 import {
   useGetCandidateProfile,
@@ -262,36 +263,103 @@ export default function CandidateDetailPage() {
                 <div className="divide-y">
                   {profile.applications.map((app) => {
                     const score = candidateScores?.find((s) => s.jobId === app.jobId);
+                    const appDocuments = (app as unknown as Record<string, unknown>).documents as Array<{id: number; documentType: string; url: string; fileName?: string}> | undefined;
+                    const appAnswers = (app as unknown as Record<string, unknown>).screeningAnswers as Array<{id: number; questionId: number; question?: string; answer: string}> | undefined;
                     return (
-                      <div key={app.id} className="flex items-center justify-between py-2.5" data-testid={`row-application-${app.id}`}>
-                        <div>
-                          <Link href={`/applications/${app.id}`}>
-                            <span className="text-sm font-medium text-primary hover:underline cursor-pointer flex items-center gap-1">
-                              Application #{app.id} <ChevronRight className="h-3 w-3" />
+                      <div key={app.id} className="py-2.5 space-y-2" data-testid={`row-application-${app.id}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Link href={`/applications/${app.id}`}>
+                              <span className="text-sm font-medium text-primary hover:underline cursor-pointer flex items-center gap-1">
+                                Application #{app.id} <ChevronRight className="h-3 w-3" />
+                              </span>
+                            </Link>
+                            <p className="text-xs text-muted-foreground">
+                              Job #{app.jobId}{app.createdAt ? ` · ${new Date(app.createdAt).toLocaleDateString()}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {score && (
+                              <div className="flex items-center gap-1.5 text-sm">
+                                <Star className="h-3.5 w-3.5 text-yellow-500" />
+                                <span className="font-medium text-xs">{score.score}</span>
+                                <Progress value={score.score ? parseFloat(score.score) : 0} className="w-16 h-1.5" />
+                              </div>
+                            )}
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[app.status] ?? "bg-gray-100 text-gray-700"}`}>
+                              {app.status}
                             </span>
-                          </Link>
-                          <p className="text-xs text-muted-foreground">
-                            Job #{app.jobId}{app.createdAt ? ` · ${new Date(app.createdAt).toLocaleDateString()}` : ""}
-                          </p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          {score && (
-                            <div className="flex items-center gap-1.5 text-sm">
-                              <Star className="h-3.5 w-3.5 text-yellow-500" />
-                              <span className="font-medium text-xs">{score.score}</span>
-                              <Progress value={score.score ? parseFloat(score.score) : 0} className="w-16 h-1.5" />
-                            </div>
-                          )}
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[app.status] ?? "bg-gray-100 text-gray-700"}`}>
-                            {app.status}
-                          </span>
-                        </div>
+                        {appDocuments && appDocuments.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pl-2">
+                            {appDocuments.map((doc) => (
+                              <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer">
+                                <Badge variant="outline" className="text-xs flex items-center gap-1 cursor-pointer hover:bg-muted">
+                                  <Paperclip className="h-2.5 w-2.5" />{doc.documentType}: {doc.fileName ?? "file"}
+                                </Badge>
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {appAnswers && appAnswers.length > 0 && (
+                          <div className="pl-2 space-y-1">
+                            {appAnswers.map((ans) => (
+                              <div key={ans.id} className="text-xs">
+                                <span className="text-muted-foreground">{ans.question ?? `Q${ans.questionId}`}: </span>
+                                <span className="font-medium">{ans.answer}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </SectionCard>
             )}
+
+            {/* Compensation & declarations from most recent application */}
+            {(() => {
+              const sortedApps = [...(profile.applications ?? [])].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+              const latest = sortedApps[0] as (typeof sortedApps[0] & { expectedSalary?: string | null; currentSalary?: string | null; noticePeriod?: string | null; declarationAgreed?: boolean | null; backgroundCheckConsent?: boolean | null; conflictOfInterest?: boolean | null; criminalRecord?: boolean | null; dataPrivacyConsent?: boolean | null; }) | undefined;
+              if (!latest) return null;
+              const hasCompensation = latest.expectedSalary || latest.currentSalary || latest.noticePeriod;
+              const hasDeclarations = latest.declarationAgreed != null || latest.backgroundCheckConsent != null;
+              return (
+                <>
+                  {hasCompensation && (
+                    <SectionCard icon={DollarSign} title="Compensation">
+                      <div className="space-y-2">
+                        <InfoRow label="Expected Salary" value={latest.expectedSalary} />
+                        <InfoRow label="Current Salary" value={latest.currentSalary} />
+                        <InfoRow label="Notice Period" value={latest.noticePeriod} />
+                      </div>
+                    </SectionCard>
+                  )}
+                  {hasDeclarations && (
+                    <SectionCard icon={ShieldCheck} title="Declaration Status">
+                      <div className="space-y-1.5">
+                        {[
+                          { label: "Declaration Agreed", value: latest.declarationAgreed },
+                          { label: "Background Check Consent", value: latest.backgroundCheckConsent },
+                          { label: "Conflict of Interest Declared", value: latest.conflictOfInterest },
+                          { label: "Criminal Record Declared", value: latest.criminalRecord },
+                          { label: "Data Privacy Consent", value: latest.dataPrivacyConsent },
+                        ].filter(({ value }) => value != null).map(({ label, value }) => (
+                          <div key={label} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{label}</span>
+                            <Badge variant={value ? "default" : "destructive"} className="text-xs">
+                              {value ? "Yes" : "No"}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </SectionCard>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

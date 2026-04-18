@@ -4,6 +4,7 @@ import {
   db,
   candidatesTable,
   applicationsTable,
+  applicationDocumentsTable,
   jobsTable,
   candidateEducationTable,
   candidateExperienceTable,
@@ -11,6 +12,7 @@ import {
   candidateDiversityTable,
   candidateRefereesTable,
 } from "@workspace/db";
+import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
   CreateCandidateBody,
   GetCandidateParams,
@@ -179,13 +181,71 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
       .innerJoin(applicationsTable, eq(candidateRefereesTable.applicationId, applicationsTable.id))
       .where(eq(applicationsTable.candidateId, candidateId)),
     db
-      .select({ id: applicationsTable.id, jobId: applicationsTable.jobId, status: applicationsTable.status, createdAt: applicationsTable.createdAt })
+      .select({
+        id: applicationsTable.id,
+        jobId: applicationsTable.jobId,
+        status: applicationsTable.status,
+        createdAt: applicationsTable.createdAt,
+        expectedSalary: applicationsTable.expectedSalary,
+        currentSalary: applicationsTable.currentSalary,
+        noticePeriod: applicationsTable.noticePeriod,
+        declarationAgreed: applicationsTable.declarationAgreed,
+        backgroundCheckConsent: applicationsTable.backgroundCheckConsent,
+        conflictOfInterest: applicationsTable.conflictOfInterest,
+        criminalRecord: applicationsTable.criminalRecord,
+        dataPrivacyConsent: applicationsTable.dataPrivacyConsent,
+      })
       .from(applicationsTable)
       .where(eq(applicationsTable.candidateId, candidateId)),
   ]);
 
+  // Fetch documents and screening answers for all applications
+  const appIds = applications.map((a) => a.id);
+  const [documents, screeningAnswers] = appIds.length > 0 ? await Promise.all([
+    db
+      .select({
+        id: applicationDocumentsTable.id,
+        applicationId: applicationDocumentsTable.applicationId,
+        documentType: applicationDocumentsTable.documentType,
+        url: applicationDocumentsTable.url,
+        fileName: applicationDocumentsTable.fileName,
+      })
+      .from(applicationDocumentsTable)
+      .where(inArray(applicationDocumentsTable.applicationId, appIds)),
+    db
+      .select({
+        id: applicationScreeningAnswersTable.id,
+        applicationId: applicationScreeningAnswersTable.applicationId,
+        questionId: applicationScreeningAnswersTable.questionId,
+        answer: applicationScreeningAnswersTable.answer,
+        question: jobScreeningQuestionsTable.question,
+        questionType: jobScreeningQuestionsTable.questionType,
+      })
+      .from(applicationScreeningAnswersTable)
+      .innerJoin(jobScreeningQuestionsTable, eq(applicationScreeningAnswersTable.questionId, jobScreeningQuestionsTable.id))
+      .where(inArray(applicationScreeningAnswersTable.applicationId, appIds)),
+  ]) : [[], []];
+
+  // Group documents and answers by applicationId for easier frontend consumption
+  const documentsByApp: Record<number, typeof documents> = {};
+  for (const doc of documents) {
+    if (!documentsByApp[doc.applicationId]) documentsByApp[doc.applicationId] = [];
+    documentsByApp[doc.applicationId].push(doc);
+  }
+  const answersByApp: Record<number, typeof screeningAnswers> = {};
+  for (const ans of screeningAnswers) {
+    if (!answersByApp[ans.applicationId]) answersByApp[ans.applicationId] = [];
+    answersByApp[ans.applicationId].push(ans);
+  }
+
+  const applicationsEnriched = applications.map((app) => ({
+    ...app,
+    documents: documentsByApp[app.id] ?? [],
+    screeningAnswers: answersByApp[app.id] ?? [],
+  }));
+
   // Diversity data is stored for aggregate analytics only — never returned per-candidate
-  res.json({ ...candidate, education, experience, languages, referees, applications });
+  res.json({ ...candidate, education, experience, languages, referees, applications: applicationsEnriched });
 });
 
 export default router;

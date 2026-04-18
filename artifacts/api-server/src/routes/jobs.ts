@@ -191,6 +191,18 @@ const ScreeningQuestionBody = z.object({
 router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.id as string);
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
+  // Fetch job visibility status and agency to enforce access control
+  const [job] = await db.select({ status: jobsTable.status, agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+  const isPublic = job.status === "open" || job.status === "published";
+  if (!isPublic) {
+    // Non-public jobs: require authenticated HR/admin user in the same agency
+    if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const userAgencyId = getTenantAgencyId(req);
+    if (req.user.roleName !== "admin" && userAgencyId !== job.agencyId) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+  }
   const questions = await db.select().from(jobScreeningQuestionsTable)
     .where(eq(jobScreeningQuestionsTable.jobId, jobId))
     .orderBy(asc(jobScreeningQuestionsTable.displayOrder));

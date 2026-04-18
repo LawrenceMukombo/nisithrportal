@@ -208,6 +208,30 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
   res.json(apps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
+// Helper: Verify a user can access a draft for a given jobId
+// - Candidates can only access their own email's draft
+// - HR officers must belong to the same agency as the job
+// - Admins can access any draft
+async function assertDraftAccess(
+  res: import("express").Response,
+  user: { roleName: string | null; email?: string | null; agencyId?: number | null },
+  jobId: number,
+  email: string,
+): Promise<boolean> {
+  if (user.roleName === "admin") return true;
+  if (user.roleName === "hr_officer") {
+    const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+    if (!job) { res.status(404).json({ error: "Job not found" }); return false; }
+    if (!user.agencyId || user.agencyId !== job.agencyId) { res.status(403).json({ error: "Forbidden: cross-tenant access denied" }); return false; }
+    return true;
+  }
+  // Candidate/public: email must match their own
+  if (user.email?.toLowerCase() !== email.toLowerCase()) {
+    res.status(403).json({ error: "Forbidden: email mismatch" }); return false;
+  }
+  return true;
+}
+
 // Draft save endpoint (POST /applications/draft) — requires auth to protect PII
 router.post("/applications/draft", authMiddleware, async (req, res): Promise<void> => {
   const { candidateEmail, jobId, draftData, currentStep } = req.body as {
@@ -218,12 +242,7 @@ router.post("/applications/draft", authMiddleware, async (req, res): Promise<voi
     return;
   }
   const user = req.user!;
-  // Non-admin/hr users may only save drafts for their own email
-  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
-    if (user.email?.toLowerCase() !== candidateEmail.toLowerCase()) {
-      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
-    }
-  }
+  if (!await assertDraftAccess(res, user, jobId, candidateEmail)) return;
   const existing = await db.select({ id: applicationDraftTable.id })
     .from(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, candidateEmail), eq(applicationDraftTable.jobId, jobId)));
@@ -251,11 +270,7 @@ router.get("/applications/draft/:jobId", authMiddleware, async (req, res): Promi
     return;
   }
   const user = req.user!;
-  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
-    if (user.email?.toLowerCase() !== email.toLowerCase()) {
-      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
-    }
-  }
+  if (!await assertDraftAccess(res, user, jobId, email)) return;
   const [draft] = await db.select().from(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
   res.json(draft ?? null);
@@ -269,11 +284,7 @@ router.delete("/applications/draft/:jobId", authMiddleware, async (req, res): Pr
     res.status(400).json({ error: "email and jobId required" }); return;
   }
   const user = req.user!;
-  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
-    if (user.email?.toLowerCase() !== email.toLowerCase()) {
-      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
-    }
-  }
+  if (!await assertDraftAccess(res, user, jobId, email)) return;
   await db.delete(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
   res.json({ deleted: true });
@@ -308,6 +319,19 @@ router.post("/applications", async (req, res): Promise<void> => {
   if (jobExists.closingDate != null && new Date(jobExists.closingDate) < new Date()) {
     res.status(422).json({ error: "Job closing date has passed" });
     return;
+  }
+
+  // Enforce required declaration agreements on full wizard submissions
+  if (extended.success) {
+    const ext = extended.data;
+    if (!ext.declarationAgreed) {
+      res.status(422).json({ error: "You must agree to the declaration before submitting" });
+      return;
+    }
+    if (!ext.dataPrivacyConsent) {
+      res.status(422).json({ error: "You must consent to data privacy terms before submitting" });
+      return;
+    }
   }
 
   // Validate caller-provided cvUrl to prevent IDOR via forged internal storage paths.

@@ -138,7 +138,7 @@ export default function MyApplicationsPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {["all", "applied", "screening", "interview", "offer", "hired", "rejected"].map((s) => (
+          {["all", "applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn"].map((s) => (
             <button
               key={s}
               onClick={() => setFilter(s)}

@@ -139,16 +139,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         collapsed && !mobile ? "justify-center" : "justify-between"
       )}>
         {(!collapsed || mobile) && (
-          <div className="flex items-center gap-2 min-w-0">
-            <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded shrink-0" />
-            <div className="min-w-0">
-              <span className="text-sidebar-foreground font-bold text-sm tracking-tight">PNG NISIT</span>
-              <span className="block text-sidebar-primary text-xs font-medium">HR Portal</span>
+          <Link href="/">
+            <div className="flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity cursor-pointer">
+              <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded shrink-0" />
+              <div className="min-w-0">
+                <span className="text-sidebar-foreground font-bold text-sm tracking-tight">PNG NISIT</span>
+                <span className="block text-sidebar-primary text-xs font-medium">HR Portal</span>
+              </div>
             </div>
-          </div>
+          </Link>
         )}
         {collapsed && !mobile && (
-          <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded" />
+          <Link href="/">
+            <img src="/nisit-logo.png" alt="PNG NISIT" className="w-7 h-7 object-contain rounded hover:opacity-80 transition-opacity" />
+          </Link>
         )}
         {!mobile && (
           <button
@@ -231,7 +235,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="font-bold text-sm flex-1">PNG NISIT HR Portal</span>
+          <Link href="/" className="font-bold text-sm flex-1">PNG NISIT HR Portal</Link>
           <NotificationBell />
         </header>
 

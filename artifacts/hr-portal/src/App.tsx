@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import LoginPage from "@/pages/login";
-import RegisterPage from "@/pages/register";
+import ApplicantRegisterPage from "@/pages/applicant-register";
 import DashboardPage from "@/pages/dashboard";
 import JobsPage from "@/pages/jobs";
 import JobDetailPage from "@/pages/job-detail";
@@ -49,6 +49,12 @@ function ThemeInit() {
   return null;
 }
 
+function RedirectToLogin() {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation("/login"); }, [setLocation]);
+  return null;
+}
+
 function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const [, setLocation] = useLocation();
@@ -82,7 +88,8 @@ function Router() {
     <Switch>
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
+      <Route path="/register" component={RedirectToLogin} />
+      <Route path="/applicant-register" component={ApplicantRegisterPage} />
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
         {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}

@@ -156,9 +156,9 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
   );
 }
 
-function NisitLogo({ size = "default" }: { size?: "default" | "large" }) {
+function NisitLogo({ size = "default", asLink = false }: { size?: "default" | "large"; asLink?: boolean }) {
   const imgSize = size === "large" ? "w-12 h-12" : "w-8 h-8";
-  return (
+  const inner = (
     <div className="flex items-center gap-2.5">
       <img
         src="/nisit-logo.png"
@@ -171,6 +171,10 @@ function NisitLogo({ size = "default" }: { size?: "default" | "large" }) {
       </div>
     </div>
   );
+  if (asLink) {
+    return <Link href="/" className="hover:opacity-80 transition-opacity">{inner}</Link>;
+  }
+  return inner;
 }
 
 const SALARY_BANDS = [
@@ -239,7 +243,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <NisitLogo />
+          <NisitLogo asLink />
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
               <Button onClick={() => setLocation("/dashboard")} data-testid="button-go-to-dashboard">
@@ -250,7 +254,7 @@ export default function LandingPage() {
                 <Link href="/login">
                   <Button variant="ghost" size="sm" data-testid="link-login">Sign in</Button>
                 </Link>
-                <Link href="/register">
+                <Link href="/applicant-register">
                   <Button size="sm" data-testid="link-register">Register</Button>
                 </Link>
               </>

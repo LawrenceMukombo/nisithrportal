@@ -1,5 +1,6 @@
 import { eq, count } from "drizzle-orm";
-import { db, rolesTable, agenciesTable, departmentsTable, jobsTable } from "@workspace/db";
+import bcrypt from "bcryptjs";
+import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger";
 import { seedCompleteData } from "./seed-data";
 
@@ -654,9 +655,51 @@ export async function seedInitialData(): Promise<void> {
       logger.info({ agency: agency.name }, "Seeded default agency and departments");
     }
 
+    await seedAdminUser();
     await seedJobVacancies();
     await seedCompleteData();
   } catch (err) {
     logger.error(err, "Seed failed (non-fatal)");
   }
+}
+
+async function seedAdminUser(): Promise<void> {
+  const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.name, NISIT_AGENCY_NAME));
+  if (!agency) {
+    logger.warn("seedAdminUser: NISIT agency not found, skipping");
+    return;
+  }
+
+  const ADMIN_EMAIL = "admin@nisit.gov.pg";
+  const existing = await db.select({ id: usersTable.id, agencyId: usersTable.agencyId })
+    .from(usersTable)
+    .where(eq(usersTable.email, ADMIN_EMAIL));
+
+  if (existing.length > 0) {
+    const adminUser = existing[0];
+    if (adminUser.agencyId !== agency.id) {
+      await db.update(usersTable).set({ agencyId: agency.id }).where(eq(usersTable.id, adminUser.id));
+      logger.info({ adminId: adminUser.id, agencyId: agency.id }, "seedAdminUser: corrected admin agencyId to NISIT agency");
+    } else {
+      logger.info("seedAdminUser: admin user already exists with correct agencyId, skipping");
+    }
+    return;
+  }
+
+  const adminRoles = await db.select().from(rolesTable).where(eq(rolesTable.name, "admin"));
+  if (adminRoles.length === 0) {
+    logger.warn("seedAdminUser: admin role not found, skipping");
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash("Admin123!", 10);
+  await db.insert(usersTable).values({
+    name: "NISIT Administrator",
+    email: ADMIN_EMAIL,
+    passwordHash,
+    agencyId: agency.id,
+    roleId: adminRoles[0].id,
+    status: "active",
+  });
+  logger.info({ email: ADMIN_EMAIL }, "seedAdminUser: seeded default NISIT admin user");
 }

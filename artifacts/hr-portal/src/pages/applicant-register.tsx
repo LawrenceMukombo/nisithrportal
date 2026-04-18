@@ -1,0 +1,140 @@
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Link, useLocation } from "wouter";
+import { UserPlus } from "lucide-react";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+
+const schema = z.object({
+  name: z.string().min(2, "Full name is required"),
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+export default function ApplicantRegisterPage() {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [isPending, setIsPending] = useState(false);
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: "", email: "", password: "" },
+  });
+
+  const onSubmit = async (values: FormValues) => {
+    setIsPending(true);
+    try {
+      const res = await fetch("/api/auth/applicant-register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "Registration failed",
+          description: data.error ?? "Something went wrong. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Account created!", description: "You can now sign in with your email and password." });
+      setLocation("/login");
+    } catch {
+      toast({ title: "Registration failed", description: "Unable to reach the server. Please try again.", variant: "destructive" });
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-xl mb-4">
+            <UserPlus className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">PNG NISIT</h1>
+          <p className="text-muted-foreground text-sm mt-1">HR Portal — Applicant Registration</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Create Your Applicant Account</CardTitle>
+            <CardDescription>
+              Register to track your applications and receive updates on your job submissions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Full Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Jane Doe" data-testid="input-full-name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email Address</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="you@example.com" data-testid="input-email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Min. 8 characters" data-testid="input-password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isPending}
+                  data-testid="button-submit"
+                >
+                  {isPending ? "Creating account..." : "Create Account"}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+          <CardFooter className="justify-center">
+            <p className="text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login">
+                <span className="text-primary font-medium hover:underline cursor-pointer">Sign in</span>
+              </Link>
+            </p>
+          </CardFooter>
+        </Card>
+      </div>
+    </div>
+  );
+}

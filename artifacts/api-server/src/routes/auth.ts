@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
@@ -8,19 +8,23 @@ import { isStaffDomain } from "../lib/emailDomain";
 
 const router: IRouter = Router();
 
-router.post("/auth/register", async (req, res): Promise<void> => {
-  const parsed = RegisterBody.safeParse(req.body);
+router.post("/auth/register", (_req, res): void => {
+  res.status(404).json({ error: "Not found" });
+});
+
+router.post("/auth/applicant-register", async (req, res): Promise<void> => {
+  const schema = RegisterBody.pick({ name: true, email: true, password: true });
+  const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const { name, email, password, agencyName, agencyType } = parsed.data;
+  const { name, email, password } = parsed.data;
 
-  if (!isStaffDomain(email)) {
+  if (isStaffDomain(email)) {
     res.status(400).json({
-      error:
-        "An Administrator account requires a government email address (e.g. @dept.gov.pg). If you are a job applicant, you do not need to register — apply directly through the job listings.",
+      error: "Government email addresses cannot be used for applicant self-registration. Please use a personal email address.",
     });
     return;
   }
@@ -31,54 +35,40 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
+  const [agency] = await db.select().from(agenciesTable).orderBy(asc(agenciesTable.id)).limit(1);
+  if (!agency) {
+    res.status(500).json({ error: "System not initialised — no agency found" });
+    return;
+  }
+
+  const applicantRoles = await db.select().from(rolesTable).where(eq(rolesTable.name, "applicant"));
+  if (applicantRoles.length === 0) {
+    res.status(500).json({ error: "System not initialised — applicant role not found" });
+    return;
+  }
+  const roleId = applicantRoles[0].id;
+
   const passwordHash = await bcrypt.hash(password, 10);
 
-  const result = await db.transaction(async (tx) => {
-    const [agency] = await tx.insert(agenciesTable).values({
-      name: agencyName,
-      type: agencyType ?? "government",
-    }).returning();
-
-    const initialRole = "admin";
-    const existingRoles = await tx.select().from(rolesTable).where(eq(rolesTable.name, initialRole));
-    let roleId: number;
-    if (existingRoles.length > 0) {
-      roleId = existingRoles[0].id;
-    } else {
-      const [role] = await tx.insert(rolesTable).values({ name: initialRole }).returning();
-      roleId = role.id;
-    }
-
-    const [user] = await tx.insert(usersTable).values({
-      name,
-      email,
-      passwordHash,
-      agencyId: agency.id,
-      roleId,
-      status: "active",
-    }).returning();
-
-    return { user, roleName: initialRole };
-  });
-
-  const token = generateToken({
-    userId: result.user.id,
-    email: result.user.email,
-    roleId: result.user.roleId ?? null,
-    agencyId: result.user.agencyId ?? null,
-    roleName: result.roleName,
-  });
+  const [user] = await db.insert(usersTable).values({
+    name,
+    email,
+    passwordHash,
+    agencyId: agency.id,
+    roleId,
+    status: "active",
+  }).returning();
 
   res.status(201).json({
-    token,
+    message: "Account created. Please sign in.",
     user: {
-      id: result.user.id,
-      name: result.user.name,
-      email: result.user.email,
-      roleId: result.user.roleId,
-      agencyId: result.user.agencyId,
-      status: result.user.status,
-      createdAt: result.user.createdAt.toISOString(),
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roleId: user.roleId,
+      agencyId: user.agencyId,
+      status: user.status,
+      createdAt: user.createdAt.toISOString(),
     },
   });
 });

@@ -15,6 +15,13 @@
       "when": 1776518503000,
       "tag": "0001_password_reset_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1745020800000,
+      "tag": "0002_candidates_user_id",
+      "breakpoints": true
     }
   ]
 }

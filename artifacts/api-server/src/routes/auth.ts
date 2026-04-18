@@ -2,12 +2,12 @@ import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { eq, and, gt, or, lt } from "drizzle-orm";
-import { db, usersTable, agenciesTable, rolesTable, passwordResetTokensTable } from "@workspace/db";
+import { db, usersTable, agenciesTable, rolesTable, candidatesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
 import { isStaffDomain } from "../lib/emailDomain";
-import { sendPasswordResetEmail } from "../lib/email";
 import { logger } from "../lib/logger";
+import { sendPasswordResetEmail } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -63,6 +63,17 @@ router.post("/auth/applicant-register", async (req, res): Promise<void> => {
     roleId,
     status: "active",
   }).returning();
+
+  // Link any previously submitted (anonymous) candidate records with the same email
+  const linked = await db
+    .update(candidatesTable)
+    .set({ userId: user.id })
+    .where(eq(candidatesTable.email, email))
+    .returning({ id: candidatesTable.id });
+
+  if (linked.length > 0) {
+    logger.info({ userId: user.id, candidateIds: linked.map((c) => c.id) }, "Linked existing candidate records to new user account");
+  }
 
   res.status(201).json({
     message: "Account created. Please sign in.",

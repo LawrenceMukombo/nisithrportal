@@ -289,6 +289,7 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
   if (body.data.status !== existing.status) {
     await db.insert(applicationStatusHistoryTable).values({
       applicationId: application.id,
+      fromStatus: existing.status,
       status: body.data.status,
       note: body.data.notes ?? null,
     });

@@ -2027,6 +2027,8 @@ components:
           type: integer
         applicationId:
           type: integer
+        fromStatus:
+          type: ["string", "null"]
         status:
           type: string
         changedAt:

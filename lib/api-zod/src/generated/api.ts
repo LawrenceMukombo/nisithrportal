@@ -470,6 +470,7 @@ export const GetMyApplicationsResponseItem = zod.object({
       zod.object({
         id: zod.number(),
         applicationId: zod.number(),
+        fromStatus: zod.string().nullish(),
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
@@ -505,6 +506,7 @@ export const GetApplicationsResponseItem = zod.object({
       zod.object({
         id: zod.number(),
         applicationId: zod.number(),
+        fromStatus: zod.string().nullish(),
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
@@ -548,6 +550,7 @@ export const GetApplicationResponse = zod.object({
       zod.object({
         id: zod.number(),
         applicationId: zod.number(),
+        fromStatus: zod.string().nullish(),
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
@@ -584,6 +587,7 @@ export const UpdateApplicationStatusResponse = zod.object({
       zod.object({
         id: zod.number(),
         applicationId: zod.number(),
+        fromStatus: zod.string().nullish(),
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),

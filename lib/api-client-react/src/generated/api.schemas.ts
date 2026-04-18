@@ -155,6 +155,8 @@ export interface UpdateCandidateRequest {
 export interface ApplicationStatusHistoryItem {
   id: number;
   applicationId: number;
+  /** @nullable */
+  fromStatus?: string | null;
   status: string;
   changedAt: string;
   /** @nullable */

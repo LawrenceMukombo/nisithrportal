@@ -19,6 +19,7 @@ export const applicationsTable = pgTable("applications", {
 export const applicationStatusHistoryTable = pgTable("application_status_history", {
   id: serial("id").primaryKey(),
   applicationId: integer("application_id").notNull().references(() => applicationsTable.id, { onDelete: "cascade" }),
+  fromStatus: text("from_status"),
   status: text("status").notNull(),
   changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
   note: text("note"),

@@ -710,13 +710,16 @@ const EMPLOYEES_DEF = [
 // ─── Main Seed Function ───────────────────────────────────────────────────────
 
 export async function seedCompleteData(): Promise<void> {
-  // Fast-path idempotency guard — skip entirely if seed marker candidate is present
-  const [seeded] = await db
-    .select()
-    .from(candidatesTable)
-    .where(eq(candidatesTable.email, "james.morea@gmail.com"));
-  if (seeded) {
-    logger.info("seedCompleteData: seed data already present, skipping");
+  // Gate: only seed into an empty environment (candidates table must be empty).
+  // This prevents seeding over existing production or test data.
+  const [{ totalCandidates }] = await db
+    .select({ totalCandidates: countFn() })
+    .from(candidatesTable);
+  if (Number(totalCandidates) > 0) {
+    logger.info(
+      { totalCandidates: Number(totalCandidates) },
+      "seedCompleteData: candidates table already has data, skipping complete seed"
+    );
     return;
   }
 
@@ -814,6 +817,10 @@ export async function seedCompleteData(): Promise<void> {
     .from(jobsTable)
     .where(and(eq(jobsTable.agencyId, agency.id), eq(jobsTable.status, "open")));
 
+  if (openJobs.length === 0) {
+    logger.warn("seedCompleteData: no open jobs found for NISIT agency — skipping screening question and application seeding");
+    // Step 4/5 skipped; continue to employees below
+  } else {
   if (openJobs.length < 4) {
     logger.warn("seedCompleteData: fewer than 4 open jobs found — screening questions will be partial");
   }
@@ -974,6 +981,7 @@ export async function seedCompleteData(): Promise<void> {
   }
 
   logger.info({ count: applicationIds.length }, "seedCompleteData: applications inserted");
+  } // end else (openJobs.length > 0)
 
   // ── Step 6: Employees & Contracts (per-table guard) ───────────────────────
   const [empCountRow] = await db.select({ c: countFn() }).from(employeesTable).where(eq(employeesTable.agencyId, agency.id));

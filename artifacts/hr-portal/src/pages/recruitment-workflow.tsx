@@ -598,7 +598,38 @@ export default function RecruitmentWorkflowPage() {
               Pipeline Stages
               <span className="text-xs text-muted-foreground font-normal">— {WORKFLOW_STAGES.length} stages</span>
             </h2>
-            <div className="relative w-full sm:w-72">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
+                data-testid="btn-export-snapshot"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const header = "Stage Name,Candidate Count,Avg Days in Stage,Slowest";
+                  const rows = stageAvgDays.map(({ stage, totalCount, avg }) => {
+                    const isSlowest = slowestEntry?.stage.id === stage.id && totalCount > 0;
+                    return [
+                      `"${stage.label}"`,
+                      totalCount,
+                      avg,
+                      isSlowest ? "Yes" : "No",
+                    ].join(",");
+                  });
+                  const csv = [header, ...rows].join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `pipeline-snapshot-${today}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Snapshot
+              </Button>
+              <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search by candidate or job title..."
@@ -616,6 +647,7 @@ export default function RecruitmentWorkflowPage() {
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
+              </div>
             </div>
           </div>
           {search && !isLoading && (() => {

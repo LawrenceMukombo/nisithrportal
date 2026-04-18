@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger } from "./logger";
 
 function createTransport() {
   const host = process.env.SMTP_HOST;
@@ -40,16 +41,21 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
   const transport = createTransport();
 
   if (transport) {
-    await transport.sendMail({
-      from: process.env.SMTP_FROM ?? `"PNG NISIT HR Portal" <no-reply@nisit.gov.pg>`,
-      to,
-      subject,
-      text,
-      html,
-    });
+    try {
+      await transport.sendMail({
+        from: process.env.SMTP_FROM ?? `"PNG NISIT HR Portal" <no-reply@nisit.gov.pg>`,
+        to,
+        subject,
+        text,
+        html,
+      });
+      logger.info({ to }, "sendPasswordResetEmail: reset email sent");
+    } catch (err) {
+      logger.error({ err, to }, "sendPasswordResetEmail: failed to send reset email via SMTP");
+      throw err;
+    }
   } else {
-    console.log(`[Email] Password reset requested for ${to}`);
-    console.log(`[Email] Reset URL: ${resetUrl}`);
-    console.log(`[Email] (Configure SMTP_HOST, SMTP_USER, SMTP_PASS to send real emails)`);
+    logger.warn({ to }, "sendPasswordResetEmail: SMTP not configured — reset link logged to console only");
+    logger.info(`[Email] Reset URL for ${to}: ${resetUrl}`);
   }
 }

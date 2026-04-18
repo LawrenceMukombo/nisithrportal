@@ -509,7 +509,7 @@ export default function JobFormPage() {
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      title: "", referenceNumber: "", departmentId: undefined,
+      title: "", referenceNumber: !isEdit ? `NISIT-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` : "", departmentId: undefined,
       country: "Papua New Guinea", province: "", officeSite: "",
       employmentType: "", workArrangement: "", location: "",
       gradeBand: "", openingDate: "", closingDate: "",

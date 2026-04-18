@@ -80,8 +80,8 @@ export default function ApplicationsPage() {
   const jobMap = new Map(jobs.map((j) => [j.id, j]));
 
   const filtered = applications.data?.filter((a) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
     const candidateName = candidateMap.get(a.candidateId)?.name?.toLowerCase() ?? "";
     const jobTitle = jobMap.get(a.jobId)?.title?.toLowerCase() ?? "";
     return (

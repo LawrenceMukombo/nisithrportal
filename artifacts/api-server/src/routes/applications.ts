@@ -771,4 +771,49 @@ router.get("/applications/:id/documents", authMiddleware, requireRole("admin", "
   res.json(docs);
 });
 
+// GET /jobs/:id/di-report — aggregate D&I statistics for a job (no individual data exposed)
+router.get("/jobs/:id/di-report", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const jobId = parseIntParam(req.params.id);
+  if (!jobId) { res.status(400).json({ error: "Invalid job id" }); return; }
+
+  const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+  if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
+
+  // Get all applications for this job
+  const apps = await db.select({ id: applicationsTable.id, candidateId: applicationsTable.candidateId })
+    .from(applicationsTable)
+    .where(eq(applicationsTable.jobId, jobId));
+
+  if (apps.length === 0) {
+    res.json({ total: 0, optInCount: 0, disabilityStatus: {}, genderIdentity: {}, ethnicity: {} });
+    return;
+  }
+
+  const candidateIds = apps.map(a => a.candidateId).filter((id): id is number => id !== null);
+
+  const divRows = candidateIds.length > 0
+    ? await db.select().from(candidateDiversityTable).where(inArray(candidateDiversityTable.candidateId, candidateIds))
+    : [];
+
+  // Aggregate counts
+  const disabilityStatus: Record<string, number> = {};
+  const genderIdentity: Record<string, number> = {};
+  const ethnicity: Record<string, number> = {};
+
+  for (const row of divRows) {
+    if (row.disabilityStatus) disabilityStatus[row.disabilityStatus] = (disabilityStatus[row.disabilityStatus] ?? 0) + 1;
+    if (row.genderIdentity) genderIdentity[row.genderIdentity] = (genderIdentity[row.genderIdentity] ?? 0) + 1;
+    if (row.ethnicity) ethnicity[row.ethnicity] = (ethnicity[row.ethnicity] ?? 0) + 1;
+  }
+
+  res.json({
+    total: apps.length,
+    optInCount: divRows.length,
+    disabilityStatus,
+    genderIdentity,
+    ethnicity,
+  });
+});
+
 export default router;

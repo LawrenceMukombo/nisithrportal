@@ -233,22 +233,43 @@ router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole(
 });
 
 // PATCH /jobs/:id/screening-questions/:qid/order — reorder a question (move up/down)
+// Body: { direction: "up" | "down" }
 router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.id ?? "");
   const qid = parseInt(req.params.qid ?? "");
-  const { displayOrder } = req.body as { displayOrder?: number };
-  if (isNaN(jobId) || isNaN(qid) || typeof displayOrder !== "number") {
-    res.status(400).json({ error: "Invalid id or displayOrder" }); return;
+  const { direction } = req.body as { direction?: string };
+  if (isNaN(jobId) || isNaN(qid) || (direction !== "up" && direction !== "down")) {
+    res.status(400).json({ error: "Invalid id or direction (must be 'up' or 'down')" }); return;
   }
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
-  const [q] = await db.update(jobScreeningQuestionsTable)
-    .set({ displayOrder })
-    .where(and(eq(jobScreeningQuestionsTable.id, qid), eq(jobScreeningQuestionsTable.jobId, jobId)))
-    .returning();
-  if (!q) { res.status(404).json({ error: "Question not found" }); return; }
-  res.json(q);
+
+  // Fetch all questions ordered by displayOrder
+  const allQuestions = await db.select().from(jobScreeningQuestionsTable)
+    .where(eq(jobScreeningQuestionsTable.jobId, jobId))
+    .orderBy(asc(jobScreeningQuestionsTable.displayOrder));
+
+  const idx = allQuestions.findIndex(q => q.id === qid);
+  if (idx === -1) { res.status(404).json({ error: "Question not found" }); return; }
+
+  const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= allQuestions.length) {
+    res.status(400).json({ error: "Cannot move question in that direction" }); return;
+  }
+
+  // Swap displayOrder values
+  const current = allQuestions[idx];
+  const target = allQuestions[targetIdx];
+  if (!current || !target) { res.status(500).json({ error: "Question lookup failed" }); return; }
+
+  const currentOrder = current.displayOrder;
+  const targetOrder = target.displayOrder;
+
+  await db.update(jobScreeningQuestionsTable).set({ displayOrder: targetOrder }).where(eq(jobScreeningQuestionsTable.id, current.id));
+  await db.update(jobScreeningQuestionsTable).set({ displayOrder: currentOrder }).where(eq(jobScreeningQuestionsTable.id, target.id));
+
+  res.json({ success: true, movedId: qid, direction });
 });
 
 export default router;

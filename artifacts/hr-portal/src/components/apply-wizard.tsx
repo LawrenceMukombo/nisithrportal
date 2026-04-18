@@ -118,6 +118,8 @@ const wizardSchema = z.object({
   certificationsLicenses: z.string().optional(),
   personalStatement: z.string().optional(),
   coverLetter: z.string().optional(),
+  // Step 3 - Position info
+  vacancyRefNumber: z.string().optional(),
   // Step 6 - Documents (uploaded; urls filled after upload)
   cvUrl: z.string().optional(),
   documents: z.array(z.object({
@@ -368,6 +370,15 @@ function Step3Position({ form, jobTitle }: { form: ReturnType<typeof useForm<Wiz
           <span className="font-medium">Applying for:</span> {jobTitle}
         </div>
       )}
+      <FormField control={form.control} name="vacancyRefNumber" render={({ field }) => (
+        <FormItem>
+          <FormLabel>Vacancy / Job Reference Number</FormLabel>
+          <FormControl>
+            <Input {...field} readOnly className="bg-muted/50 cursor-default select-all font-mono" />
+          </FormControl>
+          <p className="text-xs text-muted-foreground">Auto-filled from the job posting. Quote this number in correspondence.</p>
+        </FormItem>
+      )} />
       <FormField control={form.control} name="preferredLocation" render={({ field }) => (
         <FormItem>
           <FormLabel>Preferred Work Location</FormLabel>
@@ -697,6 +708,7 @@ function Step5Skills({ form }: { form: ReturnType<typeof useForm<WizardValues>> 
 }
 
 const DOC_TYPES = [
+  { value: "cover_letter", label: "Cover Letter" },
   { value: "academic_cert", label: "Academic Certificate" },
   { value: "professional_cert", label: "Professional Certificate / Licence" },
   { value: "id_document", label: "ID Document (Passport / National ID)" },
@@ -1187,6 +1199,7 @@ export function ApplyWizard({
       firstName: "", lastName: "", otherNames: "", gender: "", dateOfBirth: "", nationality: "",
       nationalId: "", maritalStatus: "", candidateEmail: "", candidatePhone: "", alternativePhone: "",
       physicalAddress: "", city: "", province: "", district: "", postalAddress: "",
+      vacancyRefNumber: `NISIT-VAC-${jobId}`,
       preferredLocation: "", availability: "", relocate: false, workType: "",
       education: [], experience: [], technicalSkillsRaw: "", softSkillsRaw: "", languages: [],
       computerLiteracy: "", certificationsLicenses: "", personalStatement: "", coverLetter: "",

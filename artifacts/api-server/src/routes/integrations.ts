@@ -22,6 +22,12 @@ const CreateIntegrationConfigSchema = z.object({
 
 const UpdateIntegrationConfigSchema = CreateIntegrationConfigSchema.partial();
 
+// ─── Helper: check ownership ───────────────────────────────────────────────────
+function canAccessConfig(userAgencyId: number | null, configAgencyId: number | null): boolean {
+  if (userAgencyId === null) return false; // super-admin not implemented
+  return configAgencyId === null || configAgencyId === userAgencyId;
+}
+
 // ─── List connector catalog ────────────────────────────────────────────────────
 router.get("/integration-catalog", authMiddleware, requireRole("admin", "hr_officer"), async (_req, res) => {
   res.json(CONNECTOR_CATALOG);
@@ -31,7 +37,7 @@ router.get("/integration-catalog", authMiddleware, requireRole("admin", "hr_offi
 
 router.get("/integration-config", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    const agencyId = getTenantAgencyId(res);
+    const agencyId = getTenantAgencyId(req);
     const filters = agencyId
       ? [eq(integrationConfigsTable.agencyId, agencyId)]
       : [];
@@ -56,7 +62,7 @@ router.post("/integration-config", authMiddleware, requireRole("admin"), async (
     return;
   }
   try {
-    const agencyId = getTenantAgencyId(res);
+    const agencyId = getTenantAgencyId(req);
     const [created] = await db.insert(integrationConfigsTable).values({
       agencyId: agencyId ?? null,
       integrationType: parse.data.integrationType,
@@ -79,6 +85,9 @@ router.get("/integration-config/:id", authMiddleware, requireRole("admin"), asyn
     const id = parseInt(req.params["id"]);
     const [cfg] = await db.select().from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
     res.json(cfg);
   } catch (err) {
     logger.error(err, "Failed to get integration config");
@@ -91,11 +100,15 @@ router.put("/integration-config/:id", authMiddleware, requireRole("admin"), asyn
   if (!parse.success) { res.status(400).json({ error: parse.error.flatten() }); return; }
   try {
     const id = parseInt(req.params["id"]);
+    const [existing] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), existing.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
     const [updated] = await db.update(integrationConfigsTable)
       .set({ ...parse.data, updatedAt: new Date() })
       .where(eq(integrationConfigsTable.id, id))
       .returning();
-    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
     res.json(updated);
   } catch (err) {
     logger.error(err, "Failed to update integration config");
@@ -106,6 +119,11 @@ router.put("/integration-config/:id", authMiddleware, requireRole("admin"), asyn
 router.delete("/integration-config/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     const id = parseInt(req.params["id"]);
+    const [existing] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), existing.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
     await db.delete(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     res.json({ success: true });
   } catch (err) {
@@ -131,9 +149,12 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
   }
 
   const [cfg] = await db.select().from(integrationConfigsTable).where(eq(integrationConfigsTable.id, configId));
-  if (!cfg || !cfg.endpointUrl) {
-    res.status(400).json({ error: "Integration config not found or endpoint URL not set" });
-    return;
+  if (!cfg) { res.status(404).json({ error: "Integration config not found" }); return; }
+  if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
+  if (!cfg.endpointUrl) {
+    res.status(400).json({ error: "Endpoint URL not set on this config" }); return;
   }
 
   const payload = { ...(cfg.fieldMappings as Record<string, unknown> ?? {}), ...(req.body.payload ?? {}) };
@@ -152,7 +173,7 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
     responsePayload: result.data ?? null,
     errorMessage: result.error ?? null,
     durationMs: result.durationMs,
-    triggeredBy: (res.locals["userId"] as string | undefined) ?? "system",
+    triggeredBy: String(req.user?.userId ?? "system"),
   });
 
   res.json(result);
@@ -163,6 +184,11 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
 router.get("/integration-config/:id/logs", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     const id = parseInt(req.params["id"]);
+    const [cfg] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
     const logs = await db.select().from(integrationLogsTable)
       .where(eq(integrationLogsTable.integrationConfigId, id))
       .orderBy(desc(integrationLogsTable.createdAt))

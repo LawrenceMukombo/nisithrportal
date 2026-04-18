@@ -6,6 +6,7 @@ import {
   ArrowRight,
   TrendingUp,
   AlertTriangle,
+  BarChart2,
 } from "lucide-react";
 import {
   useGetApplications,
@@ -21,6 +22,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 const SHARED_STATUS_STAGES = new Set(
   WORKFLOW_STAGES.filter((s) =>
@@ -38,6 +49,183 @@ function avgDays(apps: Application[]): number {
   if (apps.length === 0) return 0;
   const total = apps.reduce((sum, a) => sum + daysSince(a.createdAt), 0);
   return Math.round(total / apps.length);
+}
+
+/** Returns the Monday of the week that is `weeksAgo` weeks before the current week. */
+function getWeekMonday(weeksAgo: number): Date {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - daysToMonday - weeksAgo * 7);
+  return monday;
+}
+
+/** Format a date as "Apr 7" */
+function formatWeekLabel(date: Date): string {
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/**
+ * Hex colours keyed by the Tailwind colour name used in STAGE_COLOR_MAP.
+ * One entry per unique colour so the chart lines are visually distinct.
+ */
+const STAGE_COLOR_HEX: Record<string, string> = {
+  blue:    "#3b82f6",
+  yellow:  "#eab308",
+  orange:  "#f97316",
+  purple:  "#a855f7",
+  indigo:  "#6366f1",
+  green:   "#22c55e",
+  teal:    "#14b8a6",
+  emerald: "#10b981",
+};
+
+/**
+ * Unique pipeline statuses derived from WORKFLOW_STAGES (first stage per status wins).
+ * Keeps this list in sync with workflowStages.ts automatically.
+ */
+const TREND_STATUSES: Array<{ status: string; label: string; color: string }> = (() => {
+  const seen = new Set<string>();
+  return WORKFLOW_STAGES
+    .filter((s) => { if (seen.has(s.status)) return false; seen.add(s.status); return true; })
+    .map((s) => ({ status: s.status, label: s.label, color: STAGE_COLOR_HEX[s.color] ?? "#94a3b8" }));
+})();
+
+type TrendPoint = {
+  week: string;
+  weekStart: number;
+} & Partial<Record<string, number>>;
+
+/**
+ * Builds 8-week trend data from applications.
+ *
+ * For each calendar week (Mon–Sun), we look at applications whose `updatedAt`
+ * falls in that week and compute the average time in pipeline (updatedAt - createdAt)
+ * per status. This proxies "how quickly were applications moving through each
+ * stage in a given week?" — letting managers see if bottlenecks improve or worsen.
+ */
+function buildTrendData(applications: Application[]): TrendPoint[] {
+  const NUM_WEEKS = 8;
+  const weeks: TrendPoint[] = [];
+
+  for (let w = NUM_WEEKS - 1; w >= 0; w--) {
+    const weekStart = getWeekMonday(w);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const point: TrendPoint = {
+      week: formatWeekLabel(weekStart),
+      weekStart: weekStart.getTime(),
+    };
+
+    for (const { status } of TREND_STATUSES) {
+      const appsInWeek = applications.filter((app) => {
+        if ((app.status ?? "applied") !== status) return false;
+        const updated = app.updatedAt ? new Date(app.updatedAt).getTime() : null;
+        const created = app.createdAt ? new Date(app.createdAt).getTime() : null;
+        if (!updated || !created) return false;
+        return updated >= weekStart.getTime() && updated < weekEnd.getTime();
+      });
+
+      if (appsInWeek.length > 0) {
+        const totalDays = appsInWeek.reduce((sum, app) => {
+          const ms = new Date(app.updatedAt!).getTime() - new Date(app.createdAt!).getTime();
+          return sum + Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+        }, 0);
+        point[status] = Math.round(totalDays / appsInWeek.length);
+      }
+    }
+
+    weeks.push(point);
+  }
+
+  return weeks;
+}
+
+function PipelineTrendChart({ applications, isLoading }: { applications: Application[]; isLoading: boolean }) {
+  const trendData = buildTrendData(applications);
+
+  const hasAnyData = trendData.some((point) =>
+    TREND_STATUSES.some(({ status }) => point[status] !== undefined)
+  );
+
+  return (
+    <Card data-testid="pipeline-trend-chart">
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <BarChart2 className="h-4 w-4 text-primary" />
+          <CardTitle className="text-base font-semibold">Pipeline Bottleneck Trends</CardTitle>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Avg. days each application had been in the pipeline when last updated, grouped by stage and week — lower is faster, rising lines signal a worsening bottleneck
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {isLoading ? (
+          <Skeleton className="h-56 w-full" />
+        ) : !hasAnyData ? (
+          <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+            Not enough historical data to show trends yet
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={224}>
+            <LineChart data={trendData} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis
+                dataKey="week"
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+                unit="d"
+                width={32}
+              />
+              <Tooltip
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: "8px",
+                  border: "1px solid hsl(var(--border))",
+                  background: "hsl(var(--card))",
+                  color: "hsl(var(--card-foreground))",
+                }}
+                formatter={(value: number, name: string) => {
+                  const entry = TREND_STATUSES.find((s) => s.status === name);
+                  return [`${value}d pipeline age (avg)`, entry?.label ?? name];
+                }}
+              />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                formatter={(value: string) => {
+                  const entry = TREND_STATUSES.find((s) => s.status === value);
+                  return entry?.label ?? value;
+                }}
+              />
+              {TREND_STATUSES.map(({ status, color }) => (
+                <Line
+                  key={status}
+                  type="monotone"
+                  dataKey={status}
+                  stroke={color}
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: color }}
+                  activeDot={{ r: 5 }}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function StageCard({
@@ -292,6 +480,8 @@ export default function RecruitmentWorkflowPage() {
             </Card>
           </div>
         )}
+
+        <PipelineTrendChart applications={applications} isLoading={isLoading} />
 
         <div>
           <h2 className="text-base font-semibold mb-4 flex items-center gap-2">

@@ -1333,6 +1333,25 @@ export function ApplyWizard({
     localStorage.setItem(DRAFT_KEY(jobId), JSON.stringify({ values, step: currentStep, savedAt: new Date().toISOString() }));
   }, [open, form, jobId, currentStep]);
 
+  // Save draft to server for authenticated users.
+  // Uses the form email if filled; falls back to the JWT email so the draft is
+  // accessible cross-device even if the applicant hasn't typed their email yet.
+  const saveDraftToServer = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    const values = form.getValues();
+    const jwtEmail = decodeToken(token)?.email ?? null;
+    const email = values.candidateEmail || jwtEmail;
+    if (!email) return;
+    try {
+      await fetch(`/api/applications/draft/${jobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ candidateEmail: email, draftData: values, currentStep }),
+      });
+    } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
+  }, [form, jobId, currentStep]);
+
   // Auto-save when navigating steps (only while the dialog is open)
   const prevOpenRef = useRef(false);
   useEffect(() => {
@@ -1345,18 +1364,7 @@ export function ApplyWizard({
   const handleSaveDraft = async () => {
     setSaving(true);
     saveDraftLocally();
-    // Save to server only if user is authenticated (draft endpoints require auth to protect PII)
-    const values = form.getValues();
-    const token = getToken();
-    if (values.candidateEmail && token) {
-      try {
-        await fetch(`/api/applications/draft/${jobId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ candidateEmail: values.candidateEmail, draftData: values, currentStep }),
-        });
-      } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
-    }
+    await saveDraftToServer();
     setSaving(false);
     toast({ title: "Draft saved", description: "You can resume your application later." });
   };
@@ -1490,6 +1498,8 @@ export function ApplyWizard({
   const handleClose = (v: boolean) => {
     if (!v) {
       saveDraftLocally();
+      // Fire-and-forget server sync so the draft is available cross-device after login
+      void saveDraftToServer();
       setSubmitted(null);
     }
     onOpenChange(v);

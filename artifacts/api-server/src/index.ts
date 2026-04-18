@@ -29,6 +29,16 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
+  // Warn if SMTP is configured but APP_BASE_URL is missing (reset links will be broken in prod)
+  const smtpConfigured = !!(process.env["SMTP_HOST"] && process.env["SMTP_USER"] && process.env["SMTP_PASS"]);
+  const appBaseUrlSet = !!(process.env["APP_BASE_URL"] || process.env["REPLIT_DEV_DOMAIN"]);
+  if (smtpConfigured && !appBaseUrlSet) {
+    logger.warn("SMTP is configured but APP_BASE_URL and REPLIT_DEV_DOMAIN are both unset — password-reset links will be broken. Set APP_BASE_URL to the production frontend origin.");
+  }
+  if (!smtpConfigured) {
+    logger.warn("SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) not fully configured — password-reset emails will fall back to console logging.");
+  }
+
   if (process.env["SEED_ON_STARTUP"] !== "false") {
     seedInitialData().catch((e) => logger.error(e, "Seed error"));
   }

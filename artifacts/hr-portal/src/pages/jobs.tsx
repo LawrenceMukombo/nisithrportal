@@ -134,12 +134,21 @@ const PNG_PROVINCES_JOBS = [
   "East New Britain", "West New Britain", "Bougainville (AROB)",
 ];
 
+const SALARY_BANDS_JOBS = [
+  { value: "lt_20k", label: "< K20,000", max: 20000 },
+  { value: "20k_40k", label: "K20,000 – K40,000", min: 20000, max: 40000 },
+  { value: "40k_70k", label: "K40,000 – K70,000", min: 40000, max: 70000 },
+  { value: "70k_100k", label: "K70,000 – K100,000", min: 70000, max: 100000 },
+  { value: "gt_100k", label: "K100,000+", min: 100000 },
+];
+
 export default function JobsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [workTypeFilter, setWorkTypeFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [salaryFilter, setSalaryFilter] = useState<string>("all");
   const { canManageJobs } = useRole();
   const { agencyId } = useAuth();
 
@@ -172,11 +181,22 @@ export default function JobsPage() {
     const jobLocation = (j as Job & { location?: string }).location ?? "";
     const matchLocation = locationFilter === "all" ||
       jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
-    return matchSearch && matchWorkType && matchLocation;
+    let matchSalary = true;
+    if (salaryFilter !== "all") {
+      const band = SALARY_BANDS_JOBS.find(b => b.value === salaryFilter);
+      const jobSalaryMin = (j as Job & { salaryMin?: number }).salaryMin;
+      const jobSalaryMax = (j as Job & { salaryMax?: number }).salaryMax;
+      if (band && (jobSalaryMin !== undefined || jobSalaryMax !== undefined)) {
+        const mid = jobSalaryMin ?? jobSalaryMax ?? 0;
+        matchSalary = (band.min === undefined || mid >= band.min) &&
+                      (band.max === undefined || mid <= band.max);
+      }
+    }
+    return matchSearch && matchWorkType && matchLocation && matchSalary;
   }) ?? [];
 
-  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || statusFilter !== "all";
-  const clearFilters = () => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setStatusFilter("all"); };
+  const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || statusFilter !== "all" || salaryFilter !== "all";
+  const clearFilters = () => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setStatusFilter("all"); setSalaryFilter("all"); };
 
   return (
     <AppLayout>
@@ -241,6 +261,17 @@ export default function JobsPage() {
                   <SelectItem value="all">All Locations</SelectItem>
                   {PNG_PROVINCES_JOBS.map(p => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={salaryFilter} onValueChange={setSalaryFilter}>
+                <SelectTrigger className="w-48" data-testid="select-salary-filter">
+                  <SelectValue placeholder="Salary Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Salary Ranges</SelectItem>
+                  {SALARY_BANDS_JOBS.map(b => (
+                    <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

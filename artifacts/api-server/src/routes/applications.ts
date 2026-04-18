@@ -277,23 +277,29 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     res.status(400).json({ error: body.error.message });
     return;
   }
-  const [application] = await db.update(applicationsTable)
-    .set({
-      status: body.data.status,
-      notes: body.data.notes ?? undefined,
-      score: body.data.score ?? undefined,
-    })
-    .where(eq(applicationsTable.id, params.data.id))
-    .returning();
+  // Wrap update + history insert in a transaction so they are atomic.
+  // `status` in the history table represents the destination (to-status).
+  const application = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(applicationsTable)
+      .set({
+        status: body.data.status,
+        notes: body.data.notes ?? undefined,
+        score: body.data.score ?? undefined,
+      })
+      .where(eq(applicationsTable.id, params.data.id))
+      .returning();
 
-  if (body.data.status !== existing.status) {
-    await db.insert(applicationStatusHistoryTable).values({
-      applicationId: application.id,
-      fromStatus: existing.status,
-      status: body.data.status,
-      note: body.data.notes ?? null,
-    });
-  }
+    if (body.data.status !== existing.status) {
+      await tx.insert(applicationStatusHistoryTable).values({
+        applicationId: updated.id,
+        fromStatus: existing.status,
+        status: body.data.status,
+        note: body.data.notes ?? null,
+      });
+    }
+
+    return updated;
+  });
 
   // Trigger notification to applicant on status change
   if (body.data.status && body.data.status !== existing.status) {

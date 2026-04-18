@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { getToken } from "@/lib/api-config";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, ArrowRight, Send, Save, Plus, Trash2, Upload,
   User, Phone, MapPin, BookOpen, Briefcase, Wrench, FileText, HelpCircle, Users, CheckSquare, Heart,
-  Loader2, Check
+  Loader2, Check, Sparkles, X
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -686,6 +687,8 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
   const cvInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const [pendingDocType, setPendingDocType] = useState("academic_cert");
+  const [parsing, setParsing] = useState(false);
+  const [autoFillFields, setAutoFillFields] = useState<string[]>([]);
 
   const handleCvUpload = async (file: File) => {
     setUploading(p => ({ ...p, cv: true }));
@@ -693,7 +696,54 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
       if (file.size > 10 * 1024 * 1024) { toast({ title: "File too large", description: "Max 10 MB", variant: "destructive" }); return; }
       const url = await uploadFile(file, jobId);
       form.setValue("cvUrl", url);
-      toast({ title: "CV uploaded successfully" });
+      toast({ title: "CV uploaded" });
+
+      // Try to auto-fill fields from parsed CV (requires auth token)
+      const token = getToken();
+      if (token) {
+        setParsing(true);
+        try {
+          const parseRes = await fetch("/api/ai/parse-cv", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ cvUrl: url }),
+          });
+          if (parseRes.ok) {
+            const parsed = await parseRes.json() as {
+              name?: string | null; email?: string | null; phone?: string | null;
+              skills?: string[]; summary?: string | null;
+            };
+            const filled: string[] = [];
+            // Map parsed name to firstName/lastName if current values are empty
+            if (parsed.name && !form.getValues("firstName")) {
+              const parts = parsed.name.trim().split(/\s+/);
+              if (parts.length >= 2) {
+                form.setValue("firstName", parts[0]);
+                form.setValue("lastName", parts.slice(1).join(" "));
+                filled.push("First Name", "Last Name");
+              }
+            }
+            if (parsed.email && !form.getValues("candidateEmail")) {
+              form.setValue("candidateEmail", parsed.email);
+              filled.push("Email");
+            }
+            if (parsed.phone && !form.getValues("candidatePhone")) {
+              form.setValue("candidatePhone", parsed.phone);
+              filled.push("Phone");
+            }
+            if (parsed.skills?.length && !form.getValues("technicalSkills")?.length) {
+              form.setValue("technicalSkills", parsed.skills.slice(0, 10));
+              filled.push("Technical Skills");
+            }
+            if (parsed.summary && !form.getValues("personalStatement")) {
+              form.setValue("personalStatement", parsed.summary);
+              filled.push("Personal Statement");
+            }
+            if (filled.length > 0) setAutoFillFields(filled);
+          }
+        } catch { /* parse errors are non-blocking */ }
+        finally { setParsing(false); }
+      }
     } catch { toast({ title: "Upload failed", variant: "destructive" }); }
     finally { setUploading(p => ({ ...p, cv: false })); }
   };
@@ -719,12 +769,29 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
       <div className="space-y-2">
         <Label className="font-semibold">CV / Résumé <span className="text-muted-foreground font-normal">(PDF, DOC, DOCX — max 10 MB)</span></Label>
         {cvUrl ? (
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
-            <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
-            <span className="text-sm text-green-700 flex-1 truncate">CV uploaded</span>
-            <Button type="button" size="sm" variant="ghost" className="text-destructive h-7" onClick={() => form.setValue("cvUrl", "")}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+              <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <span className="text-sm text-green-700 flex-1 truncate">CV uploaded</span>
+              {parsing && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              <Button type="button" size="sm" variant="ghost" className="text-destructive h-7" onClick={() => { form.setValue("cvUrl", ""); setAutoFillFields([]); }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {autoFillFields.length > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm">
+                <Sparkles className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-blue-800">AI auto-filled from your CV</p>
+                  <p className="text-blue-700 text-xs mt-0.5">
+                    Pre-populated: {autoFillFields.join(", ")}. Please review and edit as needed.
+                  </p>
+                </div>
+                <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 text-blue-600" onClick={() => setAutoFillFields([])}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div
@@ -1140,16 +1207,17 @@ export function ApplyWizard({
   const handleSaveDraft = async () => {
     setSaving(true);
     saveDraftLocally();
-    // Also save to server if email is provided
+    // Save to server only if user is authenticated (draft endpoints require auth to protect PII)
     const values = form.getValues();
-    if (values.candidateEmail) {
+    const token = getToken();
+    if (values.candidateEmail && token) {
       try {
         await fetch("/api/applications/draft", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({ candidateEmail: values.candidateEmail, jobId, draftData: values, currentStep }),
         });
-      } catch { /* ignore server errors for draft */ }
+      } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
     }
     setSaving(false);
     toast({ title: "Draft saved", description: "You can resume your application later." });

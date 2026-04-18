@@ -11,11 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, HelpCircle, Plus, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, HelpCircle, Plus, Trash2, Loader2, ArrowUp, ArrowDown } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 import type { ScreeningQuestion } from "@/components/apply-wizard";
+import { getToken } from "@/lib/api-config";
 
 const schema = z.object({
   title: z.string().min(2, "Title required"),
@@ -42,9 +43,14 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newQ, setNewQ] = useState<NewQuestion>({ question: "", questionType: "short_answer", options: "", required: true });
 
+  const authHeaders = () => {
+    const token = getToken();
+    return token ? { "Authorization": `Bearer ${token}` } : {};
+  };
+
   const fetchQuestions = useCallback(async () => {
     try {
-      const res = await fetch(`/api/jobs/${jobId}/screening-questions`);
+      const res = await fetch(`/api/jobs/${jobId}/screening-questions`, { headers: authHeaders() });
       if (res.ok) setQuestions(await res.json() as ScreeningQuestion[]);
     } catch { /* ignore */ }
     finally { setLoading(false); }
@@ -63,7 +69,7 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
         : undefined;
       const res = await fetch(`/api/jobs/${jobId}/screening-questions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ question: newQ.question, questionType: newQ.questionType, options, required: newQ.required }),
       });
       if (!res.ok) { toast({ title: "Failed to add question", variant: "destructive" }); return; }
@@ -77,11 +83,33 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
   const handleDelete = async (qid: number) => {
     setDeletingId(qid);
     try {
-      await fetch(`/api/jobs/${jobId}/screening-questions/${qid}`, { method: "DELETE" });
+      await fetch(`/api/jobs/${jobId}/screening-questions/${qid}`, { method: "DELETE", headers: authHeaders() });
       await fetchQuestions();
       toast({ title: "Question removed" });
     } catch { toast({ title: "Failed to remove question", variant: "destructive" }); }
     finally { setDeletingId(null); }
+  };
+
+  const handleReorder = async (qid: number, direction: "up" | "down") => {
+    const idx = questions.findIndex(q => q.id === qid);
+    if (idx === -1) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= questions.length) return;
+    // Optimistic UI update
+    const reordered = [...questions];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    setQuestions(reordered);
+    try {
+      await fetch(`/api/jobs/${jobId}/screening-questions/${qid}/order`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ direction }),
+      });
+    } catch {
+      // Revert on failure
+      await fetchQuestions();
+      toast({ title: "Failed to reorder questions", variant: "destructive" });
+    }
   };
 
   return (
@@ -108,7 +136,7 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
             )}
             <div className="space-y-2">
               {questions.map((q, i) => (
-                <div key={q.id} className="flex items-start gap-3 p-3 rounded-md bg-muted/50 border">
+                <div key={q.id} className="flex items-start gap-2 p-3 rounded-md bg-muted/50 border">
                   <span className="text-xs text-muted-foreground font-mono w-5 flex-shrink-0 mt-0.5">{i + 1}.</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{q.question}</p>
@@ -119,6 +147,22 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
                     {q.options && Array.isArray(q.options) && (q.options as string[]).length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1">Options: {(q.options as string[]).join(", ")}</p>
                     )}
+                  </div>
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <Button
+                      type="button" size="sm" variant="ghost" className="h-6 w-6 p-0"
+                      onClick={() => handleReorder(q.id, "up")} disabled={i === 0}
+                      title="Move up"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      type="button" size="sm" variant="ghost" className="h-6 w-6 p-0"
+                      onClick={() => handleReorder(q.id, "down")} disabled={i === questions.length - 1}
+                      title="Move down"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
                   </div>
                   <Button
                     type="button" size="sm" variant="ghost" className="text-destructive h-7 px-2 flex-shrink-0"

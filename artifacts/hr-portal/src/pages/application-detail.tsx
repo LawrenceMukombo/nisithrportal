@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink } from "lucide-react";
+import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
   useGetAiScores,
@@ -215,6 +216,14 @@ function InterviewQuestionsPanel({ jobId, candidateId }: { jobId: number; candid
   );
 }
 
+type ScreeningAnswer = { id: number; questionId: number; answer: string | null; question: string | null; questionType: string | null };
+type AppDocument = { id: number; documentType: string; url: string; fileName: string | null; createdAt: string };
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  cv: "CV / Résumé", academic_cert: "Academic Certificate", professional_cert: "Professional Certificate",
+  reference_letter: "Reference Letter", other: "Other",
+};
+
 export default function ApplicationDetailPage() {
   const [match, params] = useRoute("/applications/:id");
   const [, setLocation] = useLocation();
@@ -222,6 +231,22 @@ export default function ApplicationDetailPage() {
   const queryClient = useQueryClient();
   const { isHiringManager, isAdmin, isHR } = useRole();
   const appId = match ? parseInt(params!.id) : 0;
+  const [screeningAnswers, setScreeningAnswers] = useState<ScreeningAnswer[]>([]);
+  const [appDocuments, setAppDocuments] = useState<AppDocument[]>([]);
+
+  useEffect(() => {
+    if (!appId || !(isAdmin || isHR || isHiringManager)) return;
+    const token = getToken();
+    if (!token) return;
+    const headers = { "Authorization": `Bearer ${token}` };
+    Promise.all([
+      fetch(`/api/applications/${appId}/screening-answers`, { headers }).then(r => r.ok ? r.json() as Promise<ScreeningAnswer[]> : []),
+      fetch(`/api/applications/${appId}/documents`, { headers }).then(r => r.ok ? r.json() as Promise<AppDocument[]> : []),
+    ]).then(([answers, docs]) => {
+      setScreeningAnswers(answers);
+      setAppDocuments(docs);
+    }).catch(() => { /* non-fatal */ });
+  }, [appId, isAdmin, isHR, isHiringManager]);
 
   const { data: app, isLoading } = useGetApplication(appId, {
     query: { enabled: !!appId, queryKey: getGetApplicationQueryKey(appId) },
@@ -433,6 +458,52 @@ export default function ApplicationDetailPage() {
                     </Badge>
                   </div>
                 ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {screeningAnswers.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <HelpCircle className="h-4 w-4 text-primary" /> Screening Answers
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {screeningAnswers.map((a, i) => (
+                <div key={a.id} className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Q{i + 1}. {a.question ?? `Question #${a.questionId}`}</p>
+                  <p className="text-sm pl-3 border-l-2 border-muted">{a.answer || <span className="italic text-muted-foreground">No answer provided</span>}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {appDocuments.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" /> Submitted Documents
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {appDocuments.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between gap-3 p-2 rounded-md border bg-muted/30">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.fileName ?? DOC_TYPE_LABELS[doc.documentType] ?? doc.documentType}</p>
+                      <p className="text-xs text-muted-foreground">{DOC_TYPE_LABELS[doc.documentType] ?? doc.documentType}</p>
+                    </div>
+                  </div>
+                  <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                    <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs flex-shrink-0">
+                      <ExternalLink className="h-3 w-3" /> Open
+                    </Button>
+                  </a>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}

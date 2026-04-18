@@ -15,7 +15,7 @@ import {
   candidateDiversityTable,
   jobsTable,
 } from "@workspace/db";
-import { applicationScreeningAnswersTable } from "@workspace/db";
+import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
   CreateApplicationBody,
@@ -208,19 +208,8 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
   res.json(apps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
-// Helper: check if authenticated user may access a draft by email
-// Unauthenticated users may access their own draft (keyed by email+jobId — low-risk pre-submission data).
-// Authenticated non-admin/hr users may only access drafts matching their own email.
-const draftEmailAllowed = (req: express.Request, email: string): boolean => {
-  const u = req.user;
-  if (!u) return true; // unauthenticated applicant — allowed (no JWT issued yet)
-  if (u.role === "admin" || u.role === "hr_officer") return true; // HR staff may view any draft
-  // Authenticated regular user: their JWT email must match
-  return u.email?.toLowerCase() === email.toLowerCase();
-};
-
-// Draft save endpoint (POST /applications/draft)
-router.post("/applications/draft", optionalAuth, async (req, res): Promise<void> => {
+// Draft save endpoint (POST /applications/draft) — requires auth to protect PII
+router.post("/applications/draft", authMiddleware, async (req, res): Promise<void> => {
   const { candidateEmail, jobId, draftData, currentStep } = req.body as {
     candidateEmail?: string; jobId?: number; draftData?: unknown; currentStep?: number;
   };
@@ -228,8 +217,12 @@ router.post("/applications/draft", optionalAuth, async (req, res): Promise<void>
     res.status(400).json({ error: "candidateEmail, jobId, and draftData required" });
     return;
   }
-  if (!draftEmailAllowed(req, candidateEmail)) {
-    res.status(403).json({ error: "Forbidden" }); return;
+  const user = req.user!;
+  // Non-admin/hr users may only save drafts for their own email
+  if (user.role !== "admin" && user.role !== "hr_officer") {
+    if (user.email?.toLowerCase() !== candidateEmail.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
+    }
   }
   const existing = await db.select({ id: applicationDraftTable.id })
     .from(applicationDraftTable)
@@ -249,31 +242,37 @@ router.post("/applications/draft", optionalAuth, async (req, res): Promise<void>
   res.json({ saved: true });
 });
 
-// Draft load endpoint (GET /applications/draft/:jobId?email=...)
-router.get("/applications/draft/:jobId", optionalAuth, async (req, res): Promise<void> => {
+// Draft load endpoint (GET /applications/draft/:jobId?email=...) — requires auth
+router.get("/applications/draft/:jobId", authMiddleware, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.jobId ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" });
     return;
   }
-  if (!draftEmailAllowed(req, email)) {
-    res.status(403).json({ error: "Forbidden" }); return;
+  const user = req.user!;
+  if (user.role !== "admin" && user.role !== "hr_officer") {
+    if (user.email?.toLowerCase() !== email.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
+    }
   }
   const [draft] = await db.select().from(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
   res.json(draft ?? null);
 });
 
-// Delete draft (used after successful submission)
-router.delete("/applications/draft/:jobId", optionalAuth, async (req, res): Promise<void> => {
+// Delete draft (POST-submission cleanup) — requires auth
+router.delete("/applications/draft/:jobId", authMiddleware, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.jobId ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" }); return;
   }
-  if (!draftEmailAllowed(req, email)) {
-    res.status(403).json({ error: "Forbidden" }); return;
+  const user = req.user!;
+  if (user.role !== "admin" && user.role !== "hr_officer") {
+    if (user.email?.toLowerCase() !== email.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: email mismatch" }); return;
+    }
   }
   await db.delete(applicationDraftTable)
     .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
@@ -719,6 +718,57 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     .where(eq(applicationStatusHistoryTable.applicationId, application.id))
     .orderBy(asc(applicationStatusHistoryTable.changedAt));
   res.json({ ...application, statusHistory });
+});
+
+// GET /applications/:id/screening-answers — returns answers with question text, for HR view
+router.get("/applications/:id/screening-answers", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const appId = parseIntParam(req.params.id);
+  if (!appId) { res.status(400).json({ error: "Invalid application id" }); return; }
+
+  // Verify application exists and apply tenant check
+  const [row] = await db
+    .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId })
+    .from(applicationsTable)
+    .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(eq(applicationsTable.id, appId));
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  const userAgencyId = getTenantAgencyId(req);
+  if (!assertTenantAccess(res, row.agencyId, userAgencyId)) return;
+
+  const answers = await db
+    .select({
+      id: applicationScreeningAnswersTable.id,
+      questionId: applicationScreeningAnswersTable.questionId,
+      answer: applicationScreeningAnswersTable.answer,
+      question: jobScreeningQuestionsTable.question,
+      questionType: jobScreeningQuestionsTable.questionType,
+    })
+    .from(applicationScreeningAnswersTable)
+    .leftJoin(jobScreeningQuestionsTable, eq(applicationScreeningAnswersTable.questionId, jobScreeningQuestionsTable.id))
+    .where(eq(applicationScreeningAnswersTable.applicationId, appId))
+    .orderBy(asc(jobScreeningQuestionsTable.displayOrder));
+
+  res.json(answers);
+});
+
+// GET /applications/:id/documents — returns uploaded documents for an application
+router.get("/applications/:id/documents", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const appId = parseIntParam(req.params.id);
+  if (!appId) { res.status(400).json({ error: "Invalid application id" }); return; }
+
+  const [row] = await db
+    .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId })
+    .from(applicationsTable)
+    .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(eq(applicationsTable.id, appId));
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  const userAgencyId = getTenantAgencyId(req);
+  if (!assertTenantAccess(res, row.agencyId, userAgencyId)) return;
+
+  const docs = await db.select().from(applicationDocumentsTable)
+    .where(eq(applicationDocumentsTable.applicationId, appId))
+    .orderBy(asc(applicationDocumentsTable.createdAt));
+  res.json(docs);
 });
 
 export default router;

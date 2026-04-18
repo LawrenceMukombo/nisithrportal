@@ -142,12 +142,14 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 - **Auth pages** — login and register with JWT stored in `localStorage` as `hr_portal_token`
 - **Dashboard** — KPI cards (open vacancies, applications, employees, expiring contracts), recruitment pipeline bar chart, workforce gaps, contract expiry table
 - **Jobs** — list with search + department filter + status filter; publish/close/delete actions; create/edit form
-- **Applications** — list with normalized status pipeline (applied → screening → interview → offer → hired / rejected / withdrawn); detail page with AI score display; inline status update
+- **Applications** — list with normalized status pipeline (applied → screening → interview → offer → hired / rejected / withdrawn); detail page with AI score, inline status update, Personal Statement, Cover Letter, Position Preferences, Compensation, Skills, Declarations cards; Screening Answers card (fetched from `GET /api/applications/:id/screening-answers`); Submitted Documents card (fetched from `GET /api/applications/:id/documents`) with "Open" links
+- **Job Form (Edit)** — Screening Questions section has add/delete and up/down reorder controls (optimistic UI); PATCH /api/jobs/:id/screening-questions/:qid/order swaps displayOrder in DB
 - **Candidates** — list with search; detail page with parsed CV data (skills, education)
 - **Employees** — list with search/filter; detail with contract history
 - **Contracts** — list with status filter; detail page
 - **Agencies & Departments** — admin-only CRUD management pages
 - **My Applications** — applicant-only view of own submitted applications (scoped by authenticated user's email, uses `GET /applications/my`)
+- **Apply Wizard** — 9-step wizard capturing personal info, education, work history, languages, skills, documents, position preferences, screening answers, declarations. CV upload with AI auto-fill (name/email/phone/skills/statement from parsed CV, shown in blue banner). Draft save/resume: localStorage-primary, server-sync if authenticated (`POST /api/applications/draft` requires auth). Screening answers persisted on submit. Declarations validated only at final submission.
 - **Apply Dialog** — includes CV/Résumé file upload using presigned GCS URL (max 10 MB, PDF/DOC/DOCX); file uploads directly to GCS, objectPath saved as cvUrl
 - **Notification Bell** — in top header bar; polls for notifications every 30s; unread count badge; dropdown with mark-as-read per item and mark-all-read; type icons (📋 application status, ⚠️ contract expiry)
 

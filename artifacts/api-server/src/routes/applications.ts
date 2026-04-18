@@ -45,7 +45,19 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
     ? await db.select().from(applicationsTable).where(and(...conditions)).orderBy(applicationsTable.createdAt)
     : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
 
-  res.json(allApps);
+  const appIds = allApps.map((a) => a.id);
+  const historyRows = appIds.length > 0
+    ? await db.select().from(applicationStatusHistoryTable)
+        .where(inArray(applicationStatusHistoryTable.applicationId, appIds))
+        .orderBy(asc(applicationStatusHistoryTable.changedAt))
+    : [];
+
+  const historyByApp: Record<number, typeof historyRows> = {};
+  for (const row of historyRows) {
+    (historyByApp[row.applicationId] ??= []).push(row);
+  }
+
+  res.json(allApps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
 router.get("/applications/my", authMiddleware, async (req, res): Promise<void> => {

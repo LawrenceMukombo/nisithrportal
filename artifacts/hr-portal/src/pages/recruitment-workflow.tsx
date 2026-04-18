@@ -52,6 +52,22 @@ function daysSince(dateStr: string | null | undefined): number {
 }
 
 /**
+ * Days a single application has been in its current stage.
+ * Uses the most-recent statusHistory entry for that status,
+ * falling back to createdAt when history is absent.
+ */
+function daysInStage(app: Application, stageStatus: string): number {
+  const history = (app.statusHistory ?? [])
+    .slice()
+    .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+  const lastEntry = [...history].reverse().find((h) => h.status === stageStatus);
+  if (lastEntry) {
+    return Math.max(0, Math.floor((Date.now() - new Date(lastEntry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  return daysSince(app.createdAt);
+}
+
+/**
  * Compute avg days applications have been in their current stage using
  * exact stage-entry timestamps from statusHistory. Falls back to createdAt
  * for applications that have no history (shouldn't happen for new data).
@@ -413,7 +429,7 @@ function StageCard({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     <Clock className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">{daysSince(app.createdAt)}d</span>
+                    <span className="text-xs text-muted-foreground" title="Days in this stage">{daysInStage(app, stage.status)}d</span>
                     <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>

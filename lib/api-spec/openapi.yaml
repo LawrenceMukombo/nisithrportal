@@ -2847,6 +2847,9 @@ components:
         candidatePhone:
           type: string
           nullable: true
+        alternativePhone:
+          type: string
+          nullable: true
         gender:
           type: string
           nullable: true
@@ -2862,7 +2865,19 @@ components:
         maritalStatus:
           type: string
           nullable: true
-        address:
+        physicalAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        province:
+          type: string
+          nullable: true
+        district:
+          type: string
+          nullable: true
+        postalAddress:
           type: string
           nullable: true
         vacancyRefNumber:
@@ -2874,14 +2889,27 @@ components:
         coverLetter:
           type: string
           nullable: true
-        technicalSkillsRaw:
+        personalStatement:
           type: string
           nullable: true
-          description: Comma-separated list of technical skills
-        softSkillsRaw:
+        computerLiteracy:
           type: string
           nullable: true
-          description: Comma-separated list of soft skills
+        certificationsLicenses:
+          type: string
+          nullable: true
+        technicalSkills:
+          type: array
+          nullable: true
+          description: Technical skills parsed from comma-separated wizard input
+          items:
+            type: string
+        softSkills:
+          type: array
+          nullable: true
+          description: Soft skills parsed from comma-separated wizard input
+          items:
+            type: string
         languages:
           type: array
           items:

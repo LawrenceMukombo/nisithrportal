@@ -333,6 +333,25 @@ router.post("/applications", async (req, res): Promise<void> => {
       res.status(422).json({ error: "You must consent to data privacy terms before submitting" });
       return;
     }
+    // Enforce required screening question answers
+    const requiredQuestions = await db
+      .select({ id: jobScreeningQuestionsTable.id, question: jobScreeningQuestionsTable.question })
+      .from(jobScreeningQuestionsTable)
+      .where(and(eq(jobScreeningQuestionsTable.jobId, jobId), eq(jobScreeningQuestionsTable.required, true)));
+    if (requiredQuestions.length > 0) {
+      const answeredQuestionIds = new Set(
+        (ext.screeningAnswers ?? [])
+          .filter(a => a.answer != null && String(a.answer).trim() !== "")
+          .map(a => a.questionId)
+      );
+      const missingRequired = requiredQuestions.filter(q => !answeredQuestionIds.has(q.id));
+      if (missingRequired.length > 0) {
+        res.status(422).json({
+          error: `Please answer all required screening questions: ${missingRequired.map(q => q.question).join("; ")}`,
+        });
+        return;
+      }
+    }
   }
 
   // Validate caller-provided cvUrl to prevent IDOR via forged internal storage paths.

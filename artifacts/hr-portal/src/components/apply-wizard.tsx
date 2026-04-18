@@ -1209,18 +1209,53 @@ export function ApplyWizard({
 
   const draftEmail = form.watch("candidateEmail");
 
-  // Load draft from localStorage on open
+  // Load draft on open: prioritise server draft (authenticated), fall back to localStorage
   useEffect(() => {
     if (!open) return;
-    const saved = localStorage.getItem(DRAFT_KEY(jobId));
-    if (saved) {
+    const localKey = DRAFT_KEY(jobId);
+    const local = localStorage.getItem(localKey);
+    let localValues: Partial<WizardValues> | null = null;
+    let localStep = 0;
+    if (local) {
       try {
-        const { values, step } = JSON.parse(saved) as { values: Partial<WizardValues>; step: number };
-        Object.entries(values).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
-        setCurrentStep(step ?? 0);
+        const parsed = JSON.parse(local) as { values: Partial<WizardValues>; step: number };
+        localValues = parsed.values;
+        localStep = parsed.step ?? 0;
       } catch { /* ignore */ }
     }
-  }, [open, jobId, form]);
+
+    // If authenticated, try to load server draft and prefer it if it's available
+    const token = getToken();
+    const emailFromLocal = localValues?.candidateEmail;
+    if (token && emailFromLocal) {
+      const loadServerDraft = async () => {
+        try {
+          const res = await fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(emailFromLocal)}`, {
+            headers: { "Authorization": `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const serverDraft = await res.json() as { draftData: Partial<WizardValues>; currentStep?: number } | null;
+            if (serverDraft?.draftData) {
+              // Server draft takes precedence — restore it
+              Object.entries(serverDraft.draftData).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
+              setCurrentStep(serverDraft.currentStep ?? 0);
+              return; // server draft loaded, skip localStorage
+            }
+          }
+        } catch { /* fall through to localStorage */ }
+        // Fall back to localStorage draft
+        if (localValues) {
+          Object.entries(localValues).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
+          setCurrentStep(localStep);
+        }
+      };
+      void loadServerDraft();
+    } else if (localValues) {
+      Object.entries(localValues).forEach(([k, v]) => form.setValue(k as keyof WizardValues, v as never));
+      setCurrentStep(localStep);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, jobId]);
 
   // Save draft to localStorage whenever form values change
   const saveDraftLocally = useCallback(() => {

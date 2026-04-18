@@ -462,19 +462,27 @@ export interface CreateApplicationRequest {
   candidateName?: string;
   candidateEmail: string;
   candidatePhone?: string | null;
+  alternativePhone?: string | null;
   gender?: string | null;
   dateOfBirth?: string | null;
   nationality?: string | null;
   nationalId?: string | null;
   maritalStatus?: string | null;
-  address?: string | null;
+  physicalAddress?: string | null;
+  city?: string | null;
+  province?: string | null;
+  district?: string | null;
+  postalAddress?: string | null;
   vacancyRefNumber?: string | null;
   cvUrl?: string | null;
   coverLetter?: string | null;
-  /** Comma-separated list of technical skills */
-  technicalSkillsRaw?: string | null;
-  /** Comma-separated list of soft skills */
-  softSkillsRaw?: string | null;
+  personalStatement?: string | null;
+  computerLiteracy?: string | null;
+  certificationsLicenses?: string | null;
+  /** Technical skills parsed from comma-separated wizard input */
+  technicalSkills?: string[] | null;
+  /** Soft skills parsed from comma-separated wizard input */
+  softSkills?: string[] | null;
   languages?: CreateApplicationRequestLanguagesItem[];
   education?: CreateApplicationRequestEducationItem[];
   experience?: CreateApplicationRequestExperienceItem[];

@@ -840,23 +840,31 @@ export const CreateApplicationBody = zod.object({
     ),
   candidateEmail: zod.string().email(),
   candidatePhone: zod.string().nullish(),
+  alternativePhone: zod.string().nullish(),
   gender: zod.string().nullish(),
   dateOfBirth: zod.string().nullish(),
   nationality: zod.string().nullish(),
   nationalId: zod.string().nullish(),
   maritalStatus: zod.string().nullish(),
-  address: zod.string().nullish(),
+  physicalAddress: zod.string().nullish(),
+  city: zod.string().nullish(),
+  province: zod.string().nullish(),
+  district: zod.string().nullish(),
+  postalAddress: zod.string().nullish(),
   vacancyRefNumber: zod.string().nullish(),
   cvUrl: zod.string().nullish(),
   coverLetter: zod.string().nullish(),
-  technicalSkillsRaw: zod
-    .string()
+  personalStatement: zod.string().nullish(),
+  computerLiteracy: zod.string().nullish(),
+  certificationsLicenses: zod.string().nullish(),
+  technicalSkills: zod
+    .array(zod.string())
     .nullish()
-    .describe("Comma-separated list of technical skills"),
-  softSkillsRaw: zod
-    .string()
+    .describe("Technical skills parsed from comma-separated wizard input"),
+  softSkills: zod
+    .array(zod.string())
     .nullish()
-    .describe("Comma-separated list of soft skills"),
+    .describe("Soft skills parsed from comma-separated wizard input"),
   languages: zod
     .array(
       zod.object({

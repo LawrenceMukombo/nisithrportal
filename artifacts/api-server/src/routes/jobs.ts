@@ -38,12 +38,9 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
     conditions.push(eq(jobsTable.agencyId, req.user.agencyId));
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !isStaff) {
     conditions.push(inArray(jobsTable.status, ["open", "published"]));
     conditions.push(PUBLIC_TARGET_FILTER);
-  } else if (!isStaff) {
-    conditions.push(PUBLIC_TARGET_FILTER);
-    if (query.data.status != null) conditions.push(eq(jobsTable.status, query.data.status));
   } else if (query.data.status != null) {
     conditions.push(eq(jobsTable.status, query.data.status));
   }
@@ -136,13 +133,14 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
   const isPublished = job.status === "published" || job.status === "open";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
-  const isStaff = isInternalStaff(req.user);
+  const isGlobalAdmin = req.user?.roleName === "admin";
+  const canViewInternal = isGlobalAdmin || (isInternalStaff(req.user) && isOwnAgency);
 
-  if (!isPublished && !isOwnAgency) {
+  if (!isPublished && !isOwnAgency && !isGlobalAdmin) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
-  if (isPublished && !isPublicTarget && !isStaff) {
+  if (isPublished && !isPublicTarget && !canViewInternal) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
@@ -249,13 +247,17 @@ router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Prom
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   const isPublishedStatus = job.status === "open" || job.status === "published";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
+  const isGlobalAdminSQ = req.user?.roleName === "admin";
+  const isSameAgencyStaffSQ = isInternalStaff(req.user) && req.user?.agencyId != null && req.user.agencyId === job.agencyId;
+  const canViewInternalSQ = isGlobalAdminSQ || isSameAgencyStaffSQ;
+
   if (!isPublishedStatus) {
     if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
     const userAgencyId = getTenantAgencyId(req);
-    if (req.user.roleName !== "admin" && userAgencyId !== job.agencyId) {
+    if (!isGlobalAdminSQ && userAgencyId !== job.agencyId) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-  } else if (!isPublicTarget && !isInternalStaff(req.user)) {
+  } else if (!isPublicTarget && !canViewInternalSQ) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" }); return;
   }
   const questions = await db.select().from(jobScreeningQuestionsTable)

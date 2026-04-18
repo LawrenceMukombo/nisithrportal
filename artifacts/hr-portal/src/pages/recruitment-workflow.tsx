@@ -7,6 +7,7 @@ import {
   TrendingUp,
   AlertTriangle,
   BarChart2,
+  Download,
 } from "lucide-react";
 import {
   useGetApplications,
@@ -20,6 +21,7 @@ import type { Application, Candidate, Job } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
@@ -96,7 +98,8 @@ const TREND_STATUSES: Array<{ status: string; label: string; color: string }> = 
 type TrendPoint = {
   week: string;
   weekStart: number;
-} & Partial<Record<string, number>>;
+  [key: string]: string | number | undefined;
+};
 
 /**
  * Builds 8-week trend data from applications.
@@ -144,6 +147,22 @@ function buildTrendData(applications: Application[]): TrendPoint[] {
   return weeks;
 }
 
+function exportTrendCSV(trendData: TrendPoint[]): void {
+  const headers = ["Week", ...TREND_STATUSES.map((s) => s.label)];
+  const rows = trendData.map((point) => [
+    point.week,
+    ...TREND_STATUSES.map(({ status }) => (point[status] !== undefined ? String(point[status]) : "")),
+  ]);
+  const csvContent = [headers, ...rows].map((row) => row.join(",")).join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `pipeline-trends-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function PipelineTrendChart({ applications, isLoading }: { applications: Application[]; isLoading: boolean }) {
   const trendData = buildTrendData(applications);
 
@@ -154,9 +173,23 @@ function PipelineTrendChart({ applications, isLoading }: { applications: Applica
   return (
     <Card data-testid="pipeline-trend-chart">
       <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <BarChart2 className="h-4 w-4 text-primary" />
-          <CardTitle className="text-base font-semibold">Pipeline Bottleneck Trends</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 text-primary" />
+            <CardTitle className="text-base font-semibold">Pipeline Bottleneck Trends</CardTitle>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => exportTrendCSV(trendData)}
+            disabled={isLoading}
+            data-testid="btn-export-trend-csv"
+            title="Download 8-week trend data as CSV"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
           Avg. days each application had been in the pipeline when last updated, grouped by stage and week — lower is faster, rising lines signal a worsening bottleneck

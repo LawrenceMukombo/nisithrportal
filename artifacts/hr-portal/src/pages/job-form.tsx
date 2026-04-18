@@ -46,6 +46,7 @@ const EMPLOYMENT_TYPES = [
   { value: "full_time", label: "Full-time" },
   { value: "part_time", label: "Part-time" },
   { value: "contract", label: "Contract" },
+  { value: "temporary", label: "Temporary" },
   { value: "casual", label: "Casual" },
 ];
 
@@ -152,9 +153,10 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
 };
 type NewQuestion = { question: string; questionType: string; options: string; required: boolean; isMandatoryFilter: boolean; autoReject: boolean; autoRejectValue: string };
 
-function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
+function ScreeningQuestionsSection({ jobId, onQuestionsChange }: { jobId: number; onQuestionsChange?: (qs: ScreeningQuestion[]) => void }) {
   const { toast } = useToast();
-  const [questions, setQuestions] = useState<ScreeningQuestion[]>([]);
+  const [questions, setQuestionsState] = useState<ScreeningQuestion[]>([]);
+  const setQuestions = (qs: ScreeningQuestion[]) => { setQuestionsState(qs); onQuestionsChange?.(qs); };
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -505,6 +507,7 @@ export default function JobFormPage() {
   })();
 
   const [currentStep, setCurrentStep] = useState(initialStep);
+  const [reviewScreeningQuestions, setReviewScreeningQuestions] = useState<ScreeningQuestion[]>([]);
   const [responsibilities, setResponsibilities] = useState<string[]>([]);
   const [technicalSkills, setTechnicalSkills] = useState<string[]>([]);
   const [softSkills, setSoftSkills] = useState<string[]>([]);
@@ -1024,7 +1027,7 @@ export default function JobFormPage() {
                 </CardHeader>
                 <CardContent>
                   {isEdit && jobId > 0 ? (
-                    <ScreeningQuestionsSection jobId={jobId} />
+                    <ScreeningQuestionsSection jobId={jobId} onQuestionsChange={setReviewScreeningQuestions} />
                   ) : (
                     <div className="py-10 text-center space-y-3">
                       <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto" />
@@ -1242,6 +1245,28 @@ export default function JobFormPage() {
                     <ReviewRow label="Soft Skills" value={softSkills.length > 0 ? softSkills.join(", ") : undefined} />
                     <ReviewRow label="Certifications" value={certifications.length > 0 ? certifications.join(", ") : undefined} />
                     <ReviewRow label="Languages" value={values.languageRequirements} />
+                  </ReviewSection>
+
+                  <ReviewSection label="Screening Questions" onEdit={() => setCurrentStep(3)}>
+                    {reviewScreeningQuestions.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">No screening questions configured</p>
+                    ) : (
+                      <>
+                        <ReviewRow label="Total Questions" value={`${reviewScreeningQuestions.length} question(s)`} />
+                        <ReviewRow
+                          label="Mandatory Filters"
+                          value={reviewScreeningQuestions.filter(q => q.isMandatoryFilter).length > 0
+                            ? `${reviewScreeningQuestions.filter(q => q.isMandatoryFilter).length} question(s) with filter`
+                            : undefined}
+                        />
+                        <ReviewRow
+                          label="Auto-Reject Rules"
+                          value={reviewScreeningQuestions.filter(q => q.autoReject).length > 0
+                            ? `${reviewScreeningQuestions.filter(q => q.autoReject).length} auto-reject rule(s)`
+                            : undefined}
+                        />
+                      </>
+                    )}
                   </ReviewSection>
 
                   <ReviewSection label="Settings" onEdit={() => setCurrentStep(4)}>

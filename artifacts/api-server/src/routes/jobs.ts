@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, asc } from "drizzle-orm";
+import { eq, and, inArray, asc, or, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, jobsTable, departmentsTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -32,6 +32,7 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
 
   if (!isAuthenticated) {
     conditions.push(inArray(jobsTable.status, ["open", "published"]));
+    conditions.push(or(isNull(jobsTable.publishTarget), inArray(jobsTable.publishTarget, ["public", "both"]))!);
   } else if (query.data.status != null) {
     conditions.push(eq(jobsTable.status, query.data.status));
   }
@@ -123,9 +124,14 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   }
   const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
   const isPublished = job.status === "published" || job.status === "open";
+  const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
 
   if (!isPublished && !isOwnAgency) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
+    return;
+  }
+  if (isPublished && !req.user && !isPublicTarget) {
+    res.status(404).json({ error: "Job not found" });
     return;
   }
   res.json(job);

@@ -31,6 +31,9 @@ export type ScreeningQuestion = {
   questionType: string;
   options?: string[] | null;
   required: boolean;
+  isMandatoryFilter?: boolean | null;
+  autoReject?: boolean | null;
+  autoRejectValue?: string | null;
 };
 
 type EducationEntry = {

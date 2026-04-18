@@ -208,9 +208,14 @@ type ExtJob = {
   closingDate?: string | null;
   createdAt?: string;
   referenceNumber?: string | null;
+  country?: string | null;
+  province?: string | null;
+  officeSite?: string | null;
   location?: string | null;
   employmentType?: string | null;
   workArrangement?: string | null;
+  publishTarget?: string | null;
+  autoExpire?: boolean | null;
   jobSummary?: string | null;
   responsibilities?: string[] | null;
   reportingLine?: string | null;
@@ -306,9 +311,10 @@ export default function JobDetailPage() {
                     <Building2 className="h-3.5 w-3.5" /> Dept #{job.departmentId}
                   </span>
                 )}
-                {job.location && (
+                {(job.province || job.location) && (
                   <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" /> {job.location}
+                    <MapPin className="h-3.5 w-3.5" />
+                    {[job.officeSite, job.province || job.location, job.country !== "Papua New Guinea" ? job.country : null].filter(Boolean).join(", ")}
                   </span>
                 )}
                 {job.employmentType && (

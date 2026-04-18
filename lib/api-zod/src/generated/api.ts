@@ -279,6 +279,11 @@ export const GetJobsResponseItem = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 export const GetJobsResponse = zod.array(GetJobsResponseItem);
 
@@ -315,6 +320,11 @@ export const CreateJobBody = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 /**
@@ -358,6 +368,11 @@ export const GetJobResponse = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 /**
@@ -397,6 +412,11 @@ export const UpdateJobBody = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 export const UpdateJobResponse = zod.object({
@@ -433,6 +453,11 @@ export const UpdateJobResponse = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 /**
@@ -483,6 +508,11 @@ export const PublishJobResponse = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 /**
@@ -526,6 +556,11 @@ export const CloseJobResponse = zod.object({
   requiredDocuments: zod.array(zod.string()).nullish(),
   maxApplicants: zod.number().nullish(),
   isFeatured: zod.boolean().nullish(),
+  publishTarget: zod.string().nullish(),
+  autoExpire: zod.boolean().nullish(),
+  country: zod.string().nullish(),
+  province: zod.string().nullish(),
+  officeSite: zod.string().nullish(),
 });
 
 /**
@@ -544,6 +579,9 @@ export const GetJobScreeningQuestionsResponseItem = zod.object({
     .optional(),
   options: zod.array(zod.string()).nullish(),
   required: zod.boolean().optional(),
+  isMandatoryFilter: zod.boolean().optional(),
+  autoReject: zod.boolean().optional(),
+  autoRejectValue: zod.string().nullish(),
   displayOrder: zod.number().optional(),
   createdAt: zod.coerce.date().optional(),
 });
@@ -559,6 +597,8 @@ export const CreateJobScreeningQuestionParams = zod.object({
 });
 
 export const createJobScreeningQuestionBodyRequiredDefault = true;
+export const createJobScreeningQuestionBodyIsMandatoryFilterDefault = false;
+export const createJobScreeningQuestionBodyAutoRejectDefault = false;
 
 export const CreateJobScreeningQuestionBody = zod.object({
   question: zod.string(),
@@ -572,6 +612,13 @@ export const CreateJobScreeningQuestionBody = zod.object({
   required: zod
     .boolean()
     .default(createJobScreeningQuestionBodyRequiredDefault),
+  isMandatoryFilter: zod
+    .boolean()
+    .default(createJobScreeningQuestionBodyIsMandatoryFilterDefault),
+  autoReject: zod
+    .boolean()
+    .default(createJobScreeningQuestionBodyAutoRejectDefault),
+  autoRejectValue: zod.string().optional(),
   displayOrder: zod.number().optional(),
 });
 

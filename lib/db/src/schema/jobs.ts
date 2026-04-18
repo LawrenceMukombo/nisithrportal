@@ -18,6 +18,9 @@ export const jobsTable = pgTable("jobs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 
   referenceNumber: text("reference_number"),
+  country: text("country"),
+  province: text("province"),
+  officeSite: text("office_site"),
   location: text("location"),
   employmentType: text("employment_type"),
   workArrangement: text("work_arrangement"),
@@ -40,6 +43,8 @@ export const jobsTable = pgTable("jobs", {
   requiredDocuments: jsonb("required_documents").$type<string[]>(),
   maxApplicants: integer("max_applicants"),
   isFeatured: boolean("is_featured"),
+  publishTarget: text("publish_target"),
+  autoExpire: boolean("auto_expire"),
 });
 
 export const insertJobSchema = createInsertSchema(jobsTable).omit({ id: true, createdAt: true, updatedAt: true });

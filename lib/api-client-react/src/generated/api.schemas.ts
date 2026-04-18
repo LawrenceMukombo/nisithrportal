@@ -30,6 +30,10 @@ export interface ScreeningQuestion {
   questionType?: ScreeningQuestionQuestionType;
   options?: string[] | null;
   required?: boolean;
+  isMandatoryFilter?: boolean;
+  autoReject?: boolean;
+  /** @nullable */
+  autoRejectValue?: string | null;
   displayOrder?: number;
   createdAt?: string;
 }
@@ -49,6 +53,9 @@ export interface CreateScreeningQuestionRequest {
   questionType: CreateScreeningQuestionRequestQuestionType;
   options?: string[];
   required?: boolean;
+  isMandatoryFilter?: boolean;
+  autoReject?: boolean;
+  autoRejectValue?: string;
   displayOrder?: number;
 }
 
@@ -191,6 +198,16 @@ export interface Job {
   maxApplicants?: number | null;
   /** @nullable */
   isFeatured?: boolean | null;
+  /** @nullable */
+  publishTarget?: string | null;
+  /** @nullable */
+  autoExpire?: boolean | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  province?: string | null;
+  /** @nullable */
+  officeSite?: string | null;
 }
 
 export interface CreateJobRequest {
@@ -249,6 +266,16 @@ export interface CreateJobRequest {
   maxApplicants?: number | null;
   /** @nullable */
   isFeatured?: boolean | null;
+  /** @nullable */
+  publishTarget?: string | null;
+  /** @nullable */
+  autoExpire?: boolean | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  province?: string | null;
+  /** @nullable */
+  officeSite?: string | null;
 }
 
 export interface Candidate {

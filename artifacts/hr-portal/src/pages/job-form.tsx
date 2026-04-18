@@ -69,6 +69,12 @@ const SALARY_VISIBILITY_OPTS = [
   { value: "hidden", label: "Do not display salary" },
 ];
 
+const PUBLISH_TARGET_OPTS = [
+  { value: "public", label: "Public Portal", description: "Visible to all applicants on the public job board" },
+  { value: "internal", label: "Internal Portal", description: "Visible only to staff with an account" },
+  { value: "both", label: "Both Portals", description: "Visible on both public and internal portals" },
+];
+
 const REQUIRED_DOCS_OPTIONS = [
   "Updated CV / Résumé",
   "Cover Letter",
@@ -108,6 +114,9 @@ const schema = z.object({
   title: z.string().min(2, "Job title is required"),
   referenceNumber: z.string().optional(),
   departmentId: z.coerce.number().optional(),
+  country: z.string().optional(),
+  province: z.string().optional(),
+  officeSite: z.string().optional(),
   employmentType: z.string().optional(),
   workArrangement: z.string().optional(),
   location: z.string().optional(),
@@ -127,6 +136,8 @@ const schema = z.object({
   salaryVisibility: z.string().optional(),
   contractDuration: z.string().optional(),
   isFeatured: z.boolean().optional(),
+  publishTarget: z.string().optional(),
+  autoExpire: z.boolean().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -139,7 +150,7 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
   yes_no: "Yes / No",
   multiple_choice: "Multiple Choice",
 };
-type NewQuestion = { question: string; questionType: string; options: string; required: boolean };
+type NewQuestion = { question: string; questionType: string; options: string; required: boolean; isMandatoryFilter: boolean; autoReject: boolean; autoRejectValue: string };
 
 function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
   const { toast } = useToast();
@@ -147,7 +158,7 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [newQ, setNewQ] = useState<NewQuestion>({ question: "", questionType: "short_answer", options: "", required: true });
+  const [newQ, setNewQ] = useState<NewQuestion>({ question: "", questionType: "short_answer", options: "", required: true, isMandatoryFilter: false, autoReject: false, autoRejectValue: "No" });
 
   const authHeaders = (): Record<string, string> => {
     const token = getToken();
@@ -174,10 +185,18 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
       const res = await fetch(`/api/jobs/${jobId}/screening-questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ question: newQ.question, questionType: newQ.questionType, options, required: newQ.required }),
+        body: JSON.stringify({
+          question: newQ.question,
+          questionType: newQ.questionType,
+          options,
+          required: newQ.required,
+          isMandatoryFilter: newQ.isMandatoryFilter,
+          autoReject: newQ.autoReject,
+          autoRejectValue: newQ.autoReject ? newQ.autoRejectValue : undefined,
+        }),
       });
       if (!res.ok) { toast({ title: "Failed to add question", variant: "destructive" }); return; }
-      setNewQ({ question: "", questionType: "short_answer", options: "", required: true });
+      setNewQ({ question: "", questionType: "short_answer", options: "", required: true, isMandatoryFilter: false, autoReject: false, autoRejectValue: "No" });
       await fetchQuestions();
       toast({ title: "Screening question added" });
     } catch { toast({ title: "Failed to add question", variant: "destructive" }); }
@@ -235,9 +254,17 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
                 <span className="text-xs text-muted-foreground font-mono w-5 flex-shrink-0 mt-0.5">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{q.question}</p>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
                     <Badge variant="secondary" className="text-xs">{QUESTION_TYPE_LABELS[q.questionType] ?? q.questionType}</Badge>
                     {q.required && <Badge variant="outline" className="text-xs text-red-600">Required</Badge>}
+                    {(q as typeof q & { isMandatoryFilter?: boolean }).isMandatoryFilter && (
+                      <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50">Filter Question</Badge>
+                    )}
+                    {(q as typeof q & { autoReject?: boolean; autoRejectValue?: string }).autoReject && (
+                      <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50">
+                        Auto-Reject if: {(q as typeof q & { autoRejectValue?: string }).autoRejectValue ?? "No"}
+                      </Badge>
+                    )}
                   </div>
                   {q.options && Array.isArray(q.options) && (q.options as string[]).length > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">Options: {(q.options as string[]).join(", ")}</p>
@@ -296,6 +323,42 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Options (comma separated)</label>
                 <Input placeholder="Option A, Option B, Option C" value={newQ.options} onChange={e => setNewQ(p => ({ ...p, options: e.target.value }))} />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center justify-between rounded-md border p-2.5">
+                <div>
+                  <p className="text-xs font-medium">Mandatory Filter</p>
+                  <p className="text-xs text-muted-foreground">Used to pre-screen candidates</p>
+                </div>
+                <Switch checked={newQ.isMandatoryFilter} onCheckedChange={v => setNewQ(p => ({ ...p, isMandatoryFilter: v }))} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border p-2.5">
+                <div>
+                  <p className="text-xs font-medium">Auto-Reject</p>
+                  <p className="text-xs text-muted-foreground">Reject if specific answer given</p>
+                </div>
+                <Switch
+                  checked={newQ.autoReject}
+                  disabled={newQ.questionType !== "yes_no" && newQ.questionType !== "multiple_choice"}
+                  onCheckedChange={v => setNewQ(p => ({ ...p, autoReject: v }))}
+                />
+              </div>
+            </div>
+            {newQ.autoReject && (newQ.questionType === "yes_no" || newQ.questionType === "multiple_choice") && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Auto-reject if answer is</label>
+                {newQ.questionType === "yes_no" ? (
+                  <Select value={newQ.autoRejectValue} onValueChange={v => setNewQ(p => ({ ...p, autoRejectValue: v }))}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input className="h-8 text-xs" placeholder="Enter the reject-trigger answer" value={newQ.autoRejectValue} onChange={e => setNewQ(p => ({ ...p, autoRejectValue: e.target.value }))} />
+                )}
               </div>
             )}
             <Button type="button" size="sm" onClick={handleAdd} disabled={saving}>
@@ -456,6 +519,7 @@ export default function JobFormPage() {
     resolver: zodResolver(schema),
     defaultValues: {
       title: "", referenceNumber: "", departmentId: undefined,
+      country: "Papua New Guinea", province: "", officeSite: "",
       employmentType: "", workArrangement: "", location: "",
       gradeBand: "", openingDate: "", closingDate: "",
       maxApplicants: undefined, jobSummary: "", description: "",
@@ -463,6 +527,7 @@ export default function JobFormPage() {
       languageRequirements: "", salaryMin: undefined, salaryMax: undefined,
       salaryCurrency: "PGK", salaryVisibility: "public",
       contractDuration: "", isFeatured: false,
+      publishTarget: "public", autoExpire: false,
     },
   });
 
@@ -472,7 +537,8 @@ export default function JobFormPage() {
     if (existingJob && !populatedRef.current) {
       populatedRef.current = true;
       type ExtJob = typeof existingJob & {
-        referenceNumber?: string | null; location?: string | null; employmentType?: string | null;
+        referenceNumber?: string | null; country?: string | null; province?: string | null;
+        officeSite?: string | null; location?: string | null; employmentType?: string | null;
         workArrangement?: string | null; jobSummary?: string | null; responsibilities?: string[] | null;
         reportingLine?: string | null; minEducation?: string | null; yearsExperience?: number | null;
         technicalSkills?: string[] | null; softSkills?: string[] | null; certifications?: string[] | null;
@@ -480,6 +546,7 @@ export default function JobFormPage() {
         salaryCurrency?: string | null; salaryVisibility?: string | null; gradeBand?: string | null;
         contractDuration?: string | null; openingDate?: string | null;
         requiredDocuments?: string[] | null; maxApplicants?: number | null; isFeatured?: boolean | null;
+        publishTarget?: string | null; autoExpire?: boolean | null;
       };
       const j = existingJob as ExtJob;
       form.reset({
@@ -488,6 +555,9 @@ export default function JobFormPage() {
         description: j.description ?? "",
         closingDate: j.closingDate ? j.closingDate.slice(0, 10) : "",
         referenceNumber: j.referenceNumber ?? "",
+        country: j.country ?? "Papua New Guinea",
+        province: j.province ?? j.location ?? "",
+        officeSite: j.officeSite ?? "",
         location: j.location ?? "",
         employmentType: j.employmentType ?? "",
         workArrangement: j.workArrangement ?? "",
@@ -505,6 +575,8 @@ export default function JobFormPage() {
         openingDate: j.openingDate ? j.openingDate.slice(0, 10) : "",
         maxApplicants: j.maxApplicants ?? undefined,
         isFeatured: j.isFeatured ?? false,
+        publishTarget: j.publishTarget ?? "public",
+        autoExpire: j.autoExpire ?? false,
       });
       if (j.responsibilities) setResponsibilities(j.responsibilities);
       if (j.technicalSkills) setTechnicalSkills(j.technicalSkills);
@@ -520,7 +592,12 @@ export default function JobFormPage() {
     departmentId: values.departmentId ?? null,
     closingDate: values.closingDate || null,
     referenceNumber: values.referenceNumber || null,
-    location: values.location || null,
+    country: values.country || null,
+    province: values.province || null,
+    officeSite: values.officeSite || null,
+    location: values.province || values.location || null,
+    publishTarget: values.publishTarget || "public",
+    autoExpire: values.autoExpire ?? false,
     employmentType: values.employmentType || null,
     workArrangement: values.workArrangement || null,
     jobSummary: values.jobSummary || null,
@@ -664,7 +741,19 @@ export default function JobFormPage() {
                     <FormField control={form.control} name="referenceNumber" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Reference Number</FormLabel>
-                        <FormControl><Input placeholder="e.g. NISIT-2025-001" {...field} /></FormControl>
+                        <div className="flex gap-1.5">
+                          <FormControl><Input placeholder="e.g. NISIT-2026-001" {...field} /></FormControl>
+                          <Button
+                            type="button" size="sm" variant="outline" className="flex-shrink-0 px-2"
+                            onClick={() => {
+                              const year = new Date().getFullYear();
+                              const rand = Math.floor(100 + Math.random() * 900);
+                              field.onChange(`NISIT-${year}-${rand}`);
+                            }}
+                          >
+                            Auto
+                          </Button>
+                        </div>
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="gradeBand" render={({ field }) => (
@@ -722,19 +811,33 @@ export default function JobFormPage() {
                       </FormItem>
                     )} />
 
-                    <FormField control={form.control} name="location" render={({ field }) => (
+                    <FormField control={form.control} name="country" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Location / Province</FormLabel>
+                        <FormLabel>Country</FormLabel>
+                        <FormControl><Input placeholder="Papua New Guinea" {...field} /></FormControl>
+                      </FormItem>
+                    )} />
+
+                    <FormField control={form.control} name="province" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Province</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-location">
                               <SelectValue placeholder="Select province" />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent position="popper">
                             {PNG_PROVINCES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                      </FormItem>
+                    )} />
+
+                    <FormField control={form.control} name="officeSite" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Office / Site</FormLabel>
+                        <FormControl><Input placeholder="e.g. NISIT Head Office, Waigani" {...field} /></FormControl>
                       </FormItem>
                     )} />
 
@@ -1028,12 +1131,60 @@ export default function JobFormPage() {
 
                   <Separator />
 
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Publish Target</p>
+                    <p className="text-xs text-muted-foreground">Choose where this vacancy will be visible after publishing.</p>
+                    <div className="space-y-2">
+                      {PUBLISH_TARGET_OPTS.map(opt => {
+                        const currentVal = form.watch("publishTarget");
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => form.setValue("publishTarget", opt.value)}
+                            className={`w-full flex items-start gap-3 p-3 rounded-lg border text-left transition-colors ${
+                              currentVal === opt.value
+                                ? "border-primary bg-primary/5"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
+                              currentVal === opt.value ? "border-primary" : "border-muted-foreground/40"
+                            }`}>
+                              {currentVal === opt.value && <div className="h-2 w-2 rounded-full bg-primary" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{opt.label}</p>
+                              <p className="text-xs text-muted-foreground">{opt.description}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <Separator />
+
                   <FormField control={form.control} name="isFeatured" render={({ field }) => (
                     <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <div>
                         <FormLabel className="text-base cursor-pointer">Featured Vacancy</FormLabel>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Featured jobs are highlighted on the public job board
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )} />
+
+                  <FormField control={form.control} name="autoExpire" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div>
+                        <FormLabel className="text-base cursor-pointer">Auto-Expire on Close</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Automatically close this vacancy on the closing date
                         </p>
                       </div>
                       <FormControl>
@@ -1061,7 +1212,9 @@ export default function JobFormPage() {
                     <ReviewRow label="Department" value={DEPT_LABEL} />
                     <ReviewRow label="Employment Type" value={EMPLOYMENT_LABEL} />
                     <ReviewRow label="Work Arrangement" value={ARRANGEMENT_LABEL} />
-                    <ReviewRow label="Location" value={values.location} />
+                    <ReviewRow label="Country" value={values.country} />
+                    <ReviewRow label="Province" value={values.province} />
+                    <ReviewRow label="Office / Site" value={values.officeSite} />
                     <ReviewRow label="Grade / Band" value={values.gradeBand} />
                     <ReviewRow label="Opening Date" value={values.openingDate} />
                     <ReviewRow label="Closing Date" value={values.closingDate} />
@@ -1096,7 +1249,9 @@ export default function JobFormPage() {
                     ) : null}
                     <ReviewRow label="Salary Visibility" value={SALARY_VISIBILITY_OPTS.find(o => o.value === values.salaryVisibility)?.label} />
                     <ReviewRow label="Required Docs" value={requiredDocuments.length > 0 ? `${requiredDocuments.length} document(s) required` : undefined} />
+                    <ReviewRow label="Publish Target" value={PUBLISH_TARGET_OPTS.find(o => o.value === values.publishTarget)?.label} />
                     <ReviewRow label="Featured" value={values.isFeatured ? "Yes" : undefined} />
+                    <ReviewRow label="Auto-Expire" value={values.autoExpire ? "Yes — closes automatically on the closing date" : undefined} />
                   </ReviewSection>
 
                   <div className="flex flex-col sm:flex-row gap-3 pt-2">

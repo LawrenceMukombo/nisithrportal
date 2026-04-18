@@ -78,9 +78,10 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                   <Building2 className="h-3 w-3" /> {deptName}
                 </span>
               )}
-              {(job as Job & { location?: string }).location && (
+              {((job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location) && (
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <MapPin className="h-3 w-3" /> {(job as Job & { location?: string }).location}
+                  <MapPin className="h-3 w-3" />
+                  {(job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location}
                 </span>
               )}
               {job.closingDate && closingLabel && (
@@ -191,7 +192,7 @@ export default function LandingPage() {
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);
       const jobWorkType = (j as Job & { employmentType?: string; workType?: string }).employmentType ?? (j as Job & { workType?: string }).workType ?? "";
       const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
-      const jobLocation = (j as Job & { location?: string }).location ?? "";
+      const jobLocation = (j as Job & { province?: string; location?: string }).province ?? (j as Job & { location?: string }).location ?? "";
       const matchLocation = locationFilter === "all" ||
         jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
       let matchSalary = true;

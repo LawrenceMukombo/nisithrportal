@@ -2152,6 +2152,12 @@ components:
           nullable: true
         required:
           type: boolean
+        isMandatoryFilter:
+          type: boolean
+        autoReject:
+          type: boolean
+        autoRejectValue:
+          type: ["string", "null"]
         displayOrder:
           type: integer
         createdAt:
@@ -2174,6 +2180,14 @@ components:
         required:
           type: boolean
           default: true
+        isMandatoryFilter:
+          type: boolean
+          default: false
+        autoReject:
+          type: boolean
+          default: false
+        autoRejectValue:
+          type: string
         displayOrder:
           type: integer
 
@@ -2419,6 +2433,16 @@ components:
           type: ["integer", "null"]
         isFeatured:
           type: ["boolean", "null"]
+        publishTarget:
+          type: ["string", "null"]
+        autoExpire:
+          type: ["boolean", "null"]
+        country:
+          type: ["string", "null"]
+        province:
+          type: ["string", "null"]
+        officeSite:
+          type: ["string", "null"]
       required:
         - id
         - title
@@ -2496,6 +2520,16 @@ components:
           type: ["integer", "null"]
         isFeatured:
           type: ["boolean", "null"]
+        publishTarget:
+          type: ["string", "null"]
+        autoExpire:
+          type: ["boolean", "null"]
+        country:
+          type: ["string", "null"]
+        province:
+          type: ["string", "null"]
+        officeSite:
+          type: ["string", "null"]
       required:
         - title
         - description

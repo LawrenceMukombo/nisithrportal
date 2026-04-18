@@ -55,7 +55,12 @@ function extractJobFields(data: typeof CreateJobBody._type | typeof UpdateJobBod
     status: "status" in data ? (data.status ?? undefined) : undefined,
     closingDate: data.closingDate ?? null,
     referenceNumber: data.referenceNumber ?? null,
+    country: (data as Record<string, unknown>).country as string | null ?? null,
+    province: (data as Record<string, unknown>).province as string | null ?? null,
+    officeSite: (data as Record<string, unknown>).officeSite as string | null ?? null,
     location: data.location ?? null,
+    publishTarget: (data as Record<string, unknown>).publishTarget as string | null ?? null,
+    autoExpire: (data as Record<string, unknown>).autoExpire as boolean | null ?? null,
     employmentType: data.employmentType ?? null,
     workArrangement: data.workArrangement ?? null,
     jobSummary: data.jobSummary ?? null,
@@ -213,6 +218,9 @@ const ScreeningQuestionBody = z.object({
   questionType: z.enum(["short_answer", "yes_no", "multiple_choice", "long_answer"]).default("short_answer"),
   options: z.array(z.string()).optional(),
   required: z.boolean().default(true),
+  isMandatoryFilter: z.boolean().default(false),
+  autoReject: z.boolean().default(false),
+  autoRejectValue: z.string().optional(),
   displayOrder: z.number().int().optional(),
 });
 
@@ -249,6 +257,9 @@ router.post("/jobs/:id/screening-questions", authMiddleware, requireRole("admin"
     questionType: parsed.data.questionType,
     options: parsed.data.options ?? null,
     required: parsed.data.required,
+    isMandatoryFilter: parsed.data.isMandatoryFilter,
+    autoReject: parsed.data.autoReject,
+    autoRejectValue: parsed.data.autoRejectValue ?? null,
     displayOrder: parsed.data.displayOrder ?? 0,
   }).returning();
   res.status(201).json(q);

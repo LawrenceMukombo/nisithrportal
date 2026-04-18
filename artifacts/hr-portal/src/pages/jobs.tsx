@@ -61,9 +61,9 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
           </span>
         </Link>
         <div className="flex flex-wrap items-center gap-2 mt-0.5">
-          {(job as Job & { location?: string }).location && (
+          {((job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location) && (
             <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-              <MapPin className="h-3 w-3" />{(job as Job & { location?: string }).location}
+              <MapPin className="h-3 w-3" />{(job as Job & { province?: string; location?: string }).province || (job as Job & { location?: string }).location}
             </span>
           )}
           {(job as Job & { employmentType?: string }).employmentType && (

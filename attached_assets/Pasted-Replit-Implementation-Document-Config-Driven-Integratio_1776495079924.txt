@@ -1,0 +1,312 @@
+Replit Implementation Document
+Config-Driven Integration Middleware with AI Mapping
+1. Objective
+
+Refactor the current integration service into a configuration-driven, plug-and-play middleware capable of connecting to any external system using:
+
+Configurable endpoints
+Dynamic payload mapping
+Multiple authentication types
+Reusable connectors
+
+This middleware will serve as a central interoperability layer for the HR system and future government integrations.
+
+2. Phase 1: Connector-Based Architecture
+Step 1: Generic Connector Engine
+
+Create a reusable connector to eliminate hardcoded integrations.
+
+📁 src/core/connectorEngine.js
+
+const apiClient = require("../utils/apiClient");
+
+const executeConnector = async (config, inputData) => {
+  const { method, url, headers, mapping } = config;
+
+  let payload = mapPayload(mapping, inputData);
+
+  // Optional transformation hook
+  if (config.transformRequest) {
+    payload = config.transformRequest(payload);
+  }
+
+  const response = await apiClient({
+    method,
+    url,
+    headers: buildHeaders(headers),
+    data: payload
+  });
+
+  return normalizeResponse(response, config);
+};
+
+// Mapping function
+const mapPayload = (mapping, data) => {
+  const result = {};
+  for (const key in mapping) {
+    result[key] = data[mapping[key]];
+  }
+  return result;
+};
+
+// Header builder (supports multiple auth types)
+const buildHeaders = (headersConfig) => {
+  const headers = {};
+  for (const key in headersConfig) {
+    headers[key] = headersConfig[key];
+  }
+  return headers;
+};
+
+// Response normalization
+const normalizeResponse = (response, config) => {
+  if (config.responseMap) {
+    const result = {};
+    for (const key in config.responseMap) {
+      result[key] = response[config.responseMap[key]];
+    }
+    return result;
+  }
+  return response;
+};
+
+module.exports = executeConnector;
+3. Phase 2: Config-Driven Integrations
+Step 2: Static Config (Initial Approach)
+
+📁 src/config/integrations.js
+
+module.exports = {
+  ifmis_employee_create: {
+    method: "POST",
+    url: process.env.IFMIS_BASE_URL + "/employees",
+    headers: {
+      Authorization: `Bearer ${process.env.IFMIS_API_KEY}`
+    },
+    mapping: {
+      employeeId: "id",
+      fullName: "name",
+      department: "department",
+      salaryGrade: "grade"
+    }
+  },
+
+  exam_verification: {
+    method: "POST",
+    url: process.env.EXAM_API_URL + "/verify-results",
+    headers: {
+      "x-api-key": process.env.EXAM_API_KEY
+    },
+    mapping: {
+      examNumber: "examNumber",
+      year: "year"
+    }
+  },
+
+  identity_verification: {
+    method: "POST",
+    url: process.env.NID_API_URL + "/verify",
+    headers: {
+      Authorization: `Bearer ${process.env.NID_API_KEY}`
+    },
+    mapping: {
+      nationalId: "nationalId",
+      name: "name",
+      dob: "dob"
+    }
+  }
+};
+
+Outcome: New integrations can be added via configuration only (no code changes).
+
+4. Phase 3: Generic Controller
+Step 3: Single Dynamic Controller
+
+📁 src/controllers/integrationController.js
+
+const executeConnector = require("../core/connectorEngine");
+const integrations = require("../config/integrations");
+
+exports.handleIntegration = async (req, res) => {
+  try {
+    const { type } = req.params;
+    const config = integrations[type];
+
+    if (!config) {
+      return res.status(404).json({ error: "Integration not found" });
+    }
+
+    const result = await executeConnector(config, req.body);
+
+    res.json({ success: true, data: result });
+
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+5. Phase 4: Dynamic Routing
+
+📁 src/routes/integrationRoutes.js
+
+const express = require("express");
+const router = express.Router();
+const controller = require("../controllers/integrationController");
+
+router.post("/:type", controller.handleIntegration);
+
+module.exports = router;
+6. Phase 5: Advanced Flexibility
+Capabilities Added
+Multiple authentication types (API Key, Bearer Token, OAuth-ready)
+Payload transformation hooks
+Response normalization
+Plug-and-play integration model
+7. Phase 6: Future-Proof Enhancements
+1. Async Processing
+Introduce queues (RabbitMQ/Kafka)
+Use for bulk operations and IFMIS sync
+2. Webhooks
+Allow external systems to push data
+3. Retry & Circuit Breaker
+Prevent cascading failures
+4. Database-Driven Integration Registry
+CREATE TABLE integrations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100),
+  type VARCHAR(100),
+  method VARCHAR(10),
+  url TEXT,
+  headers JSON,
+  mapping JSON,
+  response_mapping JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+8. Integration Builder UI (No-Code Platform)
+Objective
+
+Enable admins to configure integrations without coding.
+
+Backend Tasks
+CRUD APIs
+
+📁 src/routes/integrationConfigRoutes.js
+
+router.post("/", controller.createIntegration);
+router.get("/", controller.getIntegrations);
+router.get("/:id", controller.getIntegration);
+router.put("/:id", controller.updateIntegration);
+router.delete("/:id", controller.deleteIntegration);
+DB-Based Config Loader
+const getIntegrationConfig = async (type) => {
+  const [rows] = await db.query(
+    "SELECT * FROM integrations WHERE type = ?",
+    [type]
+  );
+
+  if (!rows.length) throw new Error("Integration not found");
+
+  return {
+    ...rows[0],
+    headers: JSON.parse(rows[0].headers),
+    mapping: JSON.parse(rows[0].mapping)
+  };
+};
+Frontend (Replit UI)
+Screens
+Integration List
+Create/Edit Form
+Test Integration
+Form Fields
+Name
+Type
+Method
+URL
+Headers (JSON)
+Mapping (JSON)
+9. AI Mapping Assistant
+Objective
+
+Automatically generate field mappings between systems.
+
+Backend Service
+
+📁 src/services/aiMappingService.js
+
+const axios = require("axios");
+
+exports.generateMapping = async (internalFields, externalFields) => {
+  const prompt = `
+Match internal fields to external API fields.
+
+Internal:
+${JSON.stringify(internalFields)}
+
+External:
+${JSON.stringify(externalFields)}
+
+Return JSON mapping.
+`;
+
+  const response = await axios.post("https://api.openai.com/v1/chat/completions", {
+    model: "gpt-4.1",
+    messages: [{ role: "user", content: prompt }]
+  }, {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+    }
+  });
+
+  return response.data.choices[0].message.content;
+};
+Endpoint
+router.post("/ai/suggest-mapping", async (req, res) => {
+  const { internalFields, externalFields } = req.body;
+
+  const mapping = await aiService.generateMapping(
+    internalFields,
+    externalFields
+  );
+
+  res.json({ mapping });
+});
+UI Integration
+Add “Auto Map” button
+Display editable JSON mapping
+Allow user confirmation before saving
+10. Final Architecture
+HR SYSTEM
+    |
+    v
+INTEGRATION MIDDLEWARE
+    |
+    |--- Config DB (dynamic integrations)
+    |--- AI Mapping Engine
+    |
+    v
+External Systems (IFMIS, Exams, Universities, Identity, etc.)
+11. Key Outcomes
+No-code integration onboarding
+AI-assisted configuration
+Zero-code addition of new systems
+Scalable across government agencies
+Foundation for national interoperability platform
+12. Execution Order
+Build connector engine
+Implement config-driven integrations
+Add DB-driven integration registry
+Build Integration Builder UI
+Add AI Mapping Assistant
+Add validation and testing tools
+13. Final Task Summary (Replit)
+
+Refactor integration service into a config-driven connector engine with:
+
+Dynamic endpoint: /api/integration/:type
+Mapping-based payload transformation
+Pluggable authentication
+Centralised integration configuration (DB-driven)
+Integration Builder UI (no-code)
+AI Mapping Assistant for automatic field mapping
+Future support for queues, retries, and AI orchestration
+
+End of Document

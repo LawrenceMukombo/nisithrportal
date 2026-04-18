@@ -138,6 +138,12 @@ function buildTrendData(applications: Application[]): TrendPoint[] {
   const now = Date.now();
   const weeks: TrendPoint[] = [];
 
+  const sortedHistories = applications.map((app) => ({
+    sorted: (app.statusHistory ?? [])
+      .slice()
+      .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime()),
+  }));
+
   for (let w = NUM_WEEKS - 1; w >= 0; w--) {
     const weekStart = getWeekMonday(w);
     const weekEnd = new Date(weekStart);
@@ -153,11 +159,7 @@ function buildTrendData(applications: Application[]): TrendPoint[] {
     for (const { status } of TREND_STATUSES) {
       const durations: number[] = [];
 
-      for (const app of applications) {
-        const history = (app.statusHistory ?? [])
-          .slice()
-          .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
-
+      for (const { sorted: history } of sortedHistories) {
         for (let i = 0; i < history.length; i++) {
           if (history[i].status !== status) continue;
           const entryMs = new Date(history[i].changedAt).getTime();

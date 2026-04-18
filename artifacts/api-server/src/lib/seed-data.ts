@@ -4,7 +4,7 @@
  * contracts, positions, and screening questions.
  * Called once at startup if the candidates table is empty.
  */
-import { eq, inArray } from "drizzle-orm";
+import { and, count as countFn, eq, inArray } from "drizzle-orm";
 import {
   db,
   agenciesTable,
@@ -137,10 +137,10 @@ const CANDIDATES = [
   },
   {
     name: "Peter Waim Siune",
-    otherNames: null,
+    otherNames: "Waim",
     email: "peter.siune@gmail.com",
     phone: "70345678",
-    alternativePhone: null,
+    alternativePhone: "7530003",
     gender: "male",
     dateOfBirth: "1995-11-03",
     nationality: "Papua New Guinean",
@@ -150,7 +150,7 @@ const CANDIDATES = [
     city: "Port Moresby",
     province: "National Capital District",
     district: "Moresby North-West",
-    postalAddress: null,
+    postalAddress: "PO Box 3456, Waigani",
     education: [
       { institution: "University of Papua New Guinea", level: "bachelor", qualification: "Bachelor of Computer Science", fieldOfStudy: "Computer Science", startDate: "2014-02-01", endDate: "2018-11-30" },
     ],
@@ -169,7 +169,7 @@ const CANDIDATES = [
       { language: "English", proficiency: "fluent" },
       { language: "Tok Pisin", proficiency: "native" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Sepik" },
   },
   {
     name: "Elizabeth Kore Haro",
@@ -210,7 +210,7 @@ const CANDIDATES = [
   },
   {
     name: "David Nali Kambu",
-    otherNames: null,
+    otherNames: "Nali",
     email: "dnali.kambu@outlook.com",
     phone: "70567890",
     alternativePhone: "7550005",
@@ -243,14 +243,14 @@ const CANDIDATES = [
       { language: "English", proficiency: "fluent" },
       { language: "Tok Pisin", proficiency: "fluent" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Milne Bay" },
   },
   {
     name: "Rose Kekeya Tago",
     otherNames: "Rosie",
     email: "rose.tago@gmail.com",
     phone: "70678901",
-    alternativePhone: null,
+    alternativePhone: "7563006",
     gender: "female",
     dateOfBirth: "1993-12-30",
     nationality: "Papua New Guinean",
@@ -260,7 +260,7 @@ const CANDIDATES = [
     city: "Port Moresby",
     province: "National Capital District",
     district: "Moresby North-East",
-    postalAddress: null,
+    postalAddress: "PO Box 1630, Tokarara",
     education: [
       { institution: "Divine Word University", level: "bachelor", qualification: "Bachelor of Science (Nursing)", fieldOfStudy: "Nursing", startDate: "2012-02-01", endDate: "2015-11-30" },
       { institution: "PNG School of Medicine and Health Sciences", level: "postgraduate", qualification: "Postgraduate Diploma in Public Health", fieldOfStudy: "Public Health", startDate: "2017-02-01", endDate: "2018-11-30" },
@@ -284,7 +284,7 @@ const CANDIDATES = [
   },
   {
     name: "Michael Gari Supa",
-    otherNames: null,
+    otherNames: "Gari",
     email: "m.gari.supa@gmail.com",
     phone: "70789012",
     alternativePhone: "7570007",
@@ -317,7 +317,7 @@ const CANDIDATES = [
       { language: "English", proficiency: "fluent" },
       { language: "Tok Pisin", proficiency: "fluent" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Chimbu" },
   },
   {
     name: "Anna Meke Tolo",
@@ -358,10 +358,10 @@ const CANDIDATES = [
   },
   {
     name: "Thomas Buna Laive",
-    otherNames: null,
+    otherNames: "Buna",
     email: "thomas.buna@gmail.com",
     phone: "70901234",
-    alternativePhone: null,
+    alternativePhone: "7600011",
     gender: "male",
     dateOfBirth: "1991-01-25",
     nationality: "Papua New Guinean",
@@ -391,7 +391,7 @@ const CANDIDATES = [
       { language: "Tok Pisin", proficiency: "fluent" },
       { language: "Huli", proficiency: "conversational" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Huli" },
   },
   {
     name: "Cecilia Ware Pari",
@@ -435,7 +435,7 @@ const CANDIDATES = [
     otherNames: "Ben",
     email: "ben.kanau@gmail.com",
     phone: "71123456",
-    alternativePhone: null,
+    alternativePhone: "7610012",
     gender: "male",
     dateOfBirth: "1996-02-14",
     nationality: "Papua New Guinean",
@@ -445,7 +445,7 @@ const CANDIDATES = [
     city: "Madang",
     province: "Madang Province",
     district: "Madang",
-    postalAddress: null,
+    postalAddress: "PO Box 500, Madang",
     education: [
       { institution: "Divine Word University", level: "bachelor", qualification: "Bachelor of Science (Industrial Technology)", fieldOfStudy: "Industrial Technology", startDate: "2015-02-01", endDate: "2019-11-30" },
     ],
@@ -465,11 +465,11 @@ const CANDIDATES = [
       { language: "Tok Pisin", proficiency: "fluent" },
       { language: "Austronesian (Madang)", proficiency: "native" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Madang" },
   },
   {
     name: "Grace Sihu Ova",
-    otherNames: null,
+    otherNames: "Gracie",
     email: "grace.sihu@gmail.com",
     phone: "71234567",
     alternativePhone: "7621212",
@@ -538,14 +538,14 @@ const CANDIDATES = [
       { language: "Tok Pisin", proficiency: "fluent" },
       { language: "Kewa", proficiency: "native" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Enga" },
   },
   {
     name: "Naomi Tari Boko",
     otherNames: "Nao",
     email: "naomi.boko@gmail.com",
     phone: "71456789",
-    alternativePhone: null,
+    alternativePhone: "7641414",
     gender: "female",
     dateOfBirth: "1990-07-01",
     nationality: "Papua New Guinean",
@@ -612,7 +612,7 @@ const CANDIDATES = [
       { language: "English", proficiency: "fluent" },
       { language: "Tok Pisin", proficiency: "fluent" },
     ],
-    diversity: null,
+    diversity: { disabilityStatus: "none", genderIdentity: "male", ethnicity: "Chimbu" },
   },
 ];
 
@@ -689,8 +689,8 @@ const TRAILS: StatusTrail[] = [
   ],
 ];
 
-// 21 trail indices for 21 applications (one-third each group roughly)
-const TRAIL_ASSIGNMENTS = [0,0,0,0,0,0,0, 1,1,1, 2,2,2,2, 3,3,3, 4,4, 5,5];
+// 21 trail indices: ~1/3 applied, ~1/3 interview stage, ~1/3 offered/rejected
+const TRAIL_ASSIGNMENTS = [0,0,0,0,0,0,0, 1,1, 2,2, 3,3,3, 4,4,4,4, 5,5,5];
 
 // ─── Employees & Contracts ────────────────────────────────────────────────────
 
@@ -710,7 +710,7 @@ const EMPLOYEES_DEF = [
 // ─── Main Seed Function ───────────────────────────────────────────────────────
 
 export async function seedCompleteData(): Promise<void> {
-  // Idempotency guard — check for a specific seed candidate (not just any candidate)
+  // Fast-path idempotency guard — skip entirely if seed marker candidate is present
   const [seeded] = await db
     .select()
     .from(candidatesTable)
@@ -734,18 +734,29 @@ export async function seedCompleteData(): Promise<void> {
 
   logger.info("seedCompleteData: starting…");
 
-  // ── Step 1: Positions ────────────────────────────────────────────────────
+  // ── Step 1: Positions (per-table guard) ──────────────────────────────────
+  const deptIds = Object.values(deptMap);
+  const [posCountRow] = await db.select({ c: countFn() }).from(positionsTable).where(inArray(positionsTable.departmentId, deptIds));
+  const positionsAlreadySeeded = Number(posCountRow?.c ?? 0) >= POSITION_DEFS.length;
+
   const posIdMap: Record<string, number> = {};
-  for (const pd of POSITION_DEFS) {
-    const deptId = deptMap[pd.dept];
-    if (!deptId) continue;
-    const [pos] = await db
-      .insert(positionsTable)
-      .values({ title: pd.title, departmentId: deptId, filledCount: pd.filled, totalCount: pd.total })
-      .returning();
-    posIdMap[pd.title] = pos.id;
+  if (positionsAlreadySeeded) {
+    // Reload existing positions into the map
+    const existingPos = await db.select().from(positionsTable).where(inArray(positionsTable.departmentId, deptIds));
+    for (const p of existingPos) posIdMap[p.title] = p.id;
+    logger.info("seedCompleteData: positions already seeded, skipping");
+  } else {
+    for (const pd of POSITION_DEFS) {
+      const deptId = deptMap[pd.dept];
+      if (!deptId) continue;
+      const [pos] = await db
+        .insert(positionsTable)
+        .values({ title: pd.title, departmentId: deptId, filledCount: pd.filled, totalCount: pd.total })
+        .returning();
+      posIdMap[pd.title] = pos.id;
+    }
+    logger.info({ count: Object.keys(posIdMap).length }, "seedCompleteData: positions inserted");
   }
-  logger.info({ count: Object.keys(posIdMap).length }, "seedCompleteData: positions inserted");
 
   // ── Step 2: Candidates ────────────────────────────────────────────────────
   const candidateIds: number[] = [];
@@ -797,11 +808,11 @@ export async function seedCompleteData(): Promise<void> {
   }
   logger.info({ count: candidateIds.length }, "seedCompleteData: candidates inserted");
 
-  // ── Step 3: Find open jobs — only for the NISIT agency ──────────────────
+  // ── Step 3: Find open jobs — only open jobs for the NISIT agency ─────────
   const openJobs = await db
     .select()
     .from(jobsTable)
-    .where(eq(jobsTable.agencyId, agency.id));
+    .where(and(eq(jobsTable.agencyId, agency.id), eq(jobsTable.status, "open")));
 
   if (openJobs.length < 4) {
     logger.warn("seedCompleteData: fewer than 4 open jobs found — screening questions will be partial");
@@ -886,8 +897,8 @@ export async function seedCompleteData(): Promise<void> {
         certificationsLicenses: i % 3 === 0 ? "Valid PNG Driver's Licence; First Aid Certificate" : i % 3 === 1 ? "CCNA Certification; ISO 9001 Lead Auditor" : null,
         declarationAgreed: true,
         backgroundCheckConsent: true,
-        conflictOfInterest: false,
-        criminalRecord: false,
+        conflictOfInterest: true,
+        criminalRecord: true,
         dataPrivacyConsent: true,
         score: trail.length >= 4 ? String(60 + (i % 4) * 8) : null,
       })
@@ -964,7 +975,13 @@ export async function seedCompleteData(): Promise<void> {
 
   logger.info({ count: applicationIds.length }, "seedCompleteData: applications inserted");
 
-  // ── Step 6: Employees & Contracts ─────────────────────────────────────────
+  // ── Step 6: Employees & Contracts (per-table guard) ───────────────────────
+  const [empCountRow] = await db.select({ c: countFn() }).from(employeesTable).where(eq(employeesTable.agencyId, agency.id));
+  const employeesAlreadySeeded = Number(empCountRow?.c ?? 0) >= EMPLOYEES_DEF.length;
+
+  if (employeesAlreadySeeded) {
+    logger.info("seedCompleteData: employees already seeded, skipping");
+  } else {
   for (const ed of EMPLOYEES_DEF) {
     const deptId = deptMap[ed.dept];
     const posId = posIdMap[ed.posTitle];
@@ -995,7 +1012,8 @@ export async function seedCompleteData(): Promise<void> {
       documentUrl: "https://storage.nisit.gov.pg/contract-placeholder.pdf",
     });
   }
-
   logger.info({ count: EMPLOYEES_DEF.length }, "seedCompleteData: employees and contracts inserted");
+  } // end else (employees not already seeded)
+
   logger.info("seedCompleteData: complete data seed finished successfully");
 }

@@ -103,6 +103,12 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                     : <Badge variant="secondary" className="text-xs py-0">Public Service</Badge>;
                 })()}
                 {(() => {
+                  const arr = (job as Job & { workArrangement?: string }).workArrangement;
+                  if (!arr) return null;
+                  const label = { remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" }[arr] ?? arr;
+                  return <Badge variant="outline" className="text-xs py-0">{label}</Badge>;
+                })()}
+                {(() => {
                   const j = job as Job & { salaryMin?: number; salaryMax?: number; salaryCurrency?: string; salaryVisibility?: string };
                   if (j.salaryVisibility === "public" && (j.salaryMin || j.salaryMax)) {
                     return (

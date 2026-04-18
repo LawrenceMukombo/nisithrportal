@@ -71,6 +71,11 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
               <Briefcase className="h-3 w-3" />{WORK_TYPE_LABELS[(job as Job & { employmentType?: string }).employmentType ?? ""] ?? (job as Job & { employmentType?: string }).employmentType}
             </span>
           )}
+          {(job as Job & { workArrangement?: string }).workArrangement && (
+            <span className="text-xs text-muted-foreground">
+              {({ remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" } as Record<string, string>)[(job as Job & { workArrangement?: string }).workArrangement ?? ""] ?? (job as Job & { workArrangement?: string }).workArrangement}
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">
             Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
           </span>

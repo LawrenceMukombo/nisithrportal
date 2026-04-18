@@ -494,6 +494,7 @@ export default function JobFormPage() {
   const queryClient = useQueryClient();
   const isEdit = !!matchEdit;
   const jobId = isEdit ? parseInt(paramsEdit!.id) : 0;
+  const pendingPublishId = useRef<number>(0);
 
   const initialStep = (() => {
     if (typeof window !== "undefined") {
@@ -640,10 +641,11 @@ export default function JobFormPage() {
   const publishMutation = usePublishJob({
     mutation: {
       onSuccess: () => {
+        const publishedId = pendingPublishId.current || jobId;
         queryClient.invalidateQueries({ queryKey: getGetJobsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetJobQueryKey(jobId) });
+        queryClient.invalidateQueries({ queryKey: getGetJobQueryKey(publishedId) });
         toast({ title: "Job published successfully" });
-        setLocation(`/jobs/${jobId}`);
+        setLocation(`/jobs/${publishedId}`);
       },
       onError: () => toast({ title: "Failed to publish job", variant: "destructive" }),
     },
@@ -680,10 +682,12 @@ export default function JobFormPage() {
     const payload = buildPayload(values);
     if (isEdit) {
       await updateJob.mutateAsync({ id: jobId, data: payload });
+      pendingPublishId.current = jobId;
       publishMutation.mutate({ id: jobId });
     } else {
       const created = await createJob.mutateAsync({ data: { ...payload, status: "draft" } });
       queryClient.invalidateQueries({ queryKey: getGetJobsQueryKey() });
+      pendingPublishId.current = created.id;
       publishMutation.mutate({ id: created.id });
     }
   };

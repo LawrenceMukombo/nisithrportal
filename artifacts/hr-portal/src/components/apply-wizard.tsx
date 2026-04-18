@@ -1618,12 +1618,45 @@ export function ApplyWizard({
 
 // ─── Draft Banner ─────────────────────────────────────────────────────────────
 
+const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function draftRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+}
+
 export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () => void }) {
   const [hasDraft, setHasDraft] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check localStorage first
-    const localDraft = !!localStorage.getItem(DRAFT_KEY(jobId));
+    // Check localStorage first; auto-discard if older than 30 days
+    const localKey = DRAFT_KEY(jobId);
+    const raw = localStorage.getItem(localKey);
+    let localHasDraft = false;
+    let localSavedAt: string | null = null;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { savedAt?: string };
+        const ts = parsed.savedAt ? new Date(parsed.savedAt).getTime() : null;
+        if (ts && Date.now() - ts > DRAFT_MAX_AGE_MS) {
+          localStorage.removeItem(localKey);
+        } else {
+          localHasDraft = true;
+          localSavedAt = parsed.savedAt ?? null;
+        }
+      } catch {
+        localHasDraft = true;
+      }
+    }
 
     // Also check server draft for authenticated users
     const token = getToken();
@@ -1636,13 +1669,15 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
         })
           .then(res => (res.ok ? res.json() : null))
           .then((draft: { draftData?: unknown } | null) => {
-            setHasDraft(localDraft || !!(draft?.draftData));
+            setHasDraft(localHasDraft || !!(draft?.draftData));
+            setSavedAt(localSavedAt);
           })
-          .catch(() => setHasDraft(localDraft));
+          .catch(() => { setHasDraft(localHasDraft); setSavedAt(localSavedAt); });
         return;
       }
     }
-    setHasDraft(localDraft);
+    setHasDraft(localHasDraft);
+    setSavedAt(localSavedAt);
   }, [jobId]);
 
   if (!hasDraft) return null;
@@ -1651,7 +1686,14 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
     <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
       <div className="flex items-center gap-2 text-amber-800">
         <Save className="h-4 w-4" />
-        <span>You have a saved draft for this position.</span>
+        <div>
+          <span>You have a saved draft for this position.</span>
+          {savedAt && (
+            <span className="ml-1 text-amber-600 text-xs">
+              Saved {draftRelativeTime(savedAt)}
+            </span>
+          )}
+        </div>
       </div>
       <Button size="sm" variant="outline" className="border-amber-300 text-amber-800 hover:bg-amber-100" onClick={onResume}>
         Continue Application

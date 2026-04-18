@@ -22,6 +22,21 @@ import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, Aler
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX } from "@/lib/draftKeys";
 
+const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+}
+
 const STATUS_CONFIG: Record<string, {
   label: string;
   variant: "default" | "secondary" | "outline" | "destructive";
@@ -43,6 +58,7 @@ type LocalDraft = { jobId: number; savedAt: string | null; step: number };
 
 function scanLocalDrafts(): LocalDraft[] {
   const drafts: LocalDraft[] = [];
+  const keysToRemove: string[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key?.startsWith(DRAFT_KEY_PREFIX)) continue;
@@ -52,11 +68,17 @@ function scanLocalDrafts(): LocalDraft[] {
     if (!raw) continue;
     try {
       const parsed = JSON.parse(raw) as { step?: number; savedAt?: string };
+      // Auto-discard drafts older than 30 days
+      if (parsed.savedAt && Date.now() - new Date(parsed.savedAt).getTime() > DRAFT_MAX_AGE_MS) {
+        keysToRemove.push(key);
+        continue;
+      }
       drafts.push({ jobId, savedAt: parsed.savedAt ?? null, step: parsed.step ?? 0 });
     } catch {
       // Malformed entry — skip and continue scanning
     }
   }
+  keysToRemove.forEach(k => localStorage.removeItem(k));
   return drafts.sort((a, b) => {
     if (!a.savedAt && !b.savedAt) return 0;
     if (!a.savedAt) return 1;
@@ -212,7 +234,7 @@ export default function MyApplicationsPage() {
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {draft.savedAt
-                              ? `Last saved ${new Date(draft.savedAt).toLocaleString()}`
+                              ? `Saved ${relativeTime(draft.savedAt)}`
                               : "Draft saved"}
                             {" · "}Step {draft.step + 1} of application
                           </p>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { Search, Briefcase, ChevronRight, Calendar, Building2, MapPin, Clock, ArrowRight } from "lucide-react";
-import { useGetJobs, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
+import { useGetJobs, useGetDepartments, getGetJobsQueryKey, getGetDepartmentsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,7 +112,7 @@ export default function LandingPage() {
     { query: { queryKey: getGetJobsQueryKey({ status: "published" }) } }
   );
 
-  const depts = useGetDepartments(undefined, { query: { enabled: true } });
+  const depts = useGetDepartments(undefined, { query: { enabled: true, queryKey: getGetDepartmentsQueryKey() } });
   const deptMap = useMemo(() => {
     const m: Record<number, string> = {};
     (depts.data ?? []).forEach(d => { m[d.id] = d.name; });

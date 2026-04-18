@@ -766,8 +766,8 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
               form.setValue("candidatePhone", parsed.phone);
               filled.push("Phone");
             }
-            if (parsed.skills?.length && !form.getValues("technicalSkills")?.length) {
-              form.setValue("technicalSkills", parsed.skills.slice(0, 10));
+            if (parsed.skills?.length && !form.getValues("technicalSkillsRaw")) {
+              form.setValue("technicalSkillsRaw", parsed.skills.slice(0, 10).join(", "));
               filled.push("Technical Skills");
             }
             if (parsed.summary && !form.getValues("personalStatement")) {
@@ -1267,7 +1267,7 @@ export function ApplyWizard({
     const fieldsToValidate = stepDef.fields.filter(
       f => !DECLARATION_FIELDS.includes(f as keyof WizardValues)
     ) as Parameters<typeof form.trigger>[0];
-    if (!fieldsToValidate.length) return true;
+    if (!fieldsToValidate || !(fieldsToValidate as unknown[]).length) return true;
     const result = await form.trigger(fieldsToValidate);
     return result;
   };

@@ -219,7 +219,7 @@ router.post("/applications/draft", authMiddleware, async (req, res): Promise<voi
   }
   const user = req.user!;
   // Non-admin/hr users may only save drafts for their own email
-  if (user.role !== "admin" && user.role !== "hr_officer") {
+  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
     if (user.email?.toLowerCase() !== candidateEmail.toLowerCase()) {
       res.status(403).json({ error: "Forbidden: email mismatch" }); return;
     }
@@ -244,14 +244,14 @@ router.post("/applications/draft", authMiddleware, async (req, res): Promise<voi
 
 // Draft load endpoint (GET /applications/draft/:jobId?email=...) — requires auth
 router.get("/applications/draft/:jobId", authMiddleware, async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.jobId ?? "");
+  const jobId = parseInt(req.params.jobId as string ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" });
     return;
   }
   const user = req.user!;
-  if (user.role !== "admin" && user.role !== "hr_officer") {
+  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
     if (user.email?.toLowerCase() !== email.toLowerCase()) {
       res.status(403).json({ error: "Forbidden: email mismatch" }); return;
     }
@@ -263,13 +263,13 @@ router.get("/applications/draft/:jobId", authMiddleware, async (req, res): Promi
 
 // Delete draft (POST-submission cleanup) — requires auth
 router.delete("/applications/draft/:jobId", authMiddleware, async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.jobId ?? "");
+  const jobId = parseInt(req.params.jobId as string ?? "");
   const email = typeof req.query.email === "string" ? req.query.email : "";
   if (!email || isNaN(jobId)) {
     res.status(400).json({ error: "email and jobId required" }); return;
   }
   const user = req.user!;
-  if (user.role !== "admin" && user.role !== "hr_officer") {
+  if (user.roleName !== "admin" && user.roleName !== "hr_officer") {
     if (user.email?.toLowerCase() !== email.toLowerCase()) {
       res.status(403).json({ error: "Forbidden: email mismatch" }); return;
     }
@@ -287,7 +287,7 @@ router.post("/applications", async (req, res): Promise<void> => {
     res.status(400).json({ error: extended.error.message });
     return;
   }
-  const data = extended.success ? extended.data : basic!.data;
+  const data = (extended.success ? extended.data : basic?.data)!;
   const jobId = data.jobId;
   const candidateEmail = data.candidateEmail;
   const candidatePhone = data.candidatePhone;

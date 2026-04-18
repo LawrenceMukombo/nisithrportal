@@ -13,6 +13,7 @@ import {
   getGetApplicationQueryKey,
   getGetAiScoresQueryKey,
   getGetApplicationsQueryKey,
+  getGetCandidateQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -253,7 +254,7 @@ export default function ApplicationDetailPage() {
   });
 
   const { data: candidate } = useGetCandidate(app?.candidateId ?? 0, {
-    query: { enabled: !!app?.candidateId },
+    query: { enabled: !!app?.candidateId, queryKey: getGetCandidateQueryKey(app?.candidateId ?? 0) },
   });
 
   const { data: aiScores } = useGetAiScores(undefined, { query: { queryKey: getGetAiScoresQueryKey() } });

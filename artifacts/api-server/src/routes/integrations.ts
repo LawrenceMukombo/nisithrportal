@@ -82,7 +82,7 @@ router.post("/integration-config", authMiddleware, requireRole("admin"), async (
 
 router.get("/integration-config/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    const id = parseInt(req.params["id"]);
+    const id = parseInt(req.params["id"] as string);
     const [cfg] = await db.select().from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
@@ -99,7 +99,7 @@ router.put("/integration-config/:id", authMiddleware, requireRole("admin"), asyn
   const parse = UpdateIntegrationConfigSchema.safeParse(req.body);
   if (!parse.success) { res.status(400).json({ error: parse.error.flatten() }); return; }
   try {
-    const id = parseInt(req.params["id"]);
+    const id = parseInt(req.params["id"] as string);
     const [existing] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessConfig(getTenantAgencyId(req), existing.agencyId)) {
@@ -118,7 +118,7 @@ router.put("/integration-config/:id", authMiddleware, requireRole("admin"), asyn
 
 router.delete("/integration-config/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    const id = parseInt(req.params["id"]);
+    const id = parseInt(req.params["id"] as string);
     const [existing] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessConfig(getTenantAgencyId(req), existing.agencyId)) {
@@ -135,7 +135,7 @@ router.delete("/integration-config/:id", authMiddleware, requireRole("admin"), a
 // ─── Execute integration ───────────────────────────────────────────────────────
 
 router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "hr_officer"), async (req, res) => {
-  const connectorType = req.params["type"];
+  const connectorType = req.params["type"] as string;
   const connector = getConnector(connectorType);
   if (!connector) {
     res.status(400).json({ error: `Unknown integration type: ${connectorType}` });
@@ -183,7 +183,7 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
 
 router.get("/integration-config/:id/logs", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    const id = parseInt(req.params["id"]);
+    const id = parseInt(req.params["id"] as string);
     const [cfg] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
     if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {

@@ -271,7 +271,7 @@ export default function CandidateDetailPage() {
                             </span>
                           </Link>
                           <p className="text-xs text-muted-foreground">
-                            Job #{app.jobId} · {new Date(app.createdAt).toLocaleDateString()}
+                            Job #{app.jobId}{app.createdAt ? ` · ${new Date(app.createdAt).toLocaleDateString()}` : ""}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">

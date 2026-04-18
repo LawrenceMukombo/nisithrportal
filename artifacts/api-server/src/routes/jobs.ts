@@ -189,7 +189,7 @@ const ScreeningQuestionBody = z.object({
 });
 
 router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.id ?? "");
+  const jobId = parseInt(req.params.id as string);
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
   const questions = await db.select().from(jobScreeningQuestionsTable)
     .where(eq(jobScreeningQuestionsTable.jobId, jobId))
@@ -198,7 +198,7 @@ router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Prom
 });
 
 router.post("/jobs/:id/screening-questions", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.id ?? "");
+  const jobId = parseInt(req.params.id as string);
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
   const parsed = ScreeningQuestionBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -218,8 +218,8 @@ router.post("/jobs/:id/screening-questions", authMiddleware, requireRole("admin"
 });
 
 router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.id ?? "");
-  const qid = parseInt(req.params.qid ?? "");
+  const jobId = parseInt(req.params.id as string);
+  const qid = parseInt(req.params.qid as string);
   if (isNaN(jobId) || isNaN(qid)) { res.status(400).json({ error: "Invalid id" }); return; }
   // Verify the job belongs to the same agency before deleting
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
@@ -235,8 +235,8 @@ router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole(
 // PATCH /jobs/:id/screening-questions/:qid/order — reorder a question (move up/down)
 // Body: { direction: "up" | "down" }
 router.patch("/jobs/:id/screening-questions/:qid/order", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
-  const jobId = parseInt(req.params.id ?? "");
-  const qid = parseInt(req.params.qid ?? "");
+  const jobId = parseInt(req.params.id as string);
+  const qid = parseInt(req.params.qid as string);
   const { direction } = req.body as { direction?: string };
   if (isNaN(jobId) || isNaN(qid) || (direction !== "up" && direction !== "down")) {
     res.status(400).json({ error: "Invalid id or direction (must be 'up' or 'down')" }); return;

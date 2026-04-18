@@ -43,7 +43,7 @@ function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newQ, setNewQ] = useState<NewQuestion>({ question: "", questionType: "short_answer", options: "", required: true });
 
-  const authHeaders = () => {
+  const authHeaders = (): Record<string, string> => {
     const token = getToken();
     return token ? { "Authorization": `Bearer ${token}` } : {};
   };

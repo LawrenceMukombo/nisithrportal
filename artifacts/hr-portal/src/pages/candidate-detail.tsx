@@ -295,19 +295,24 @@ export default function CandidateDetailPage() {
                       <div key={app.id} className="py-2.5 space-y-2" data-testid={`row-application-${app.id}`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <Link href={`/applications/${app.id}`}>
-                              <span className="text-sm font-medium text-primary hover:underline cursor-pointer flex items-center gap-1">
-                                Application #{app.id} <ChevronRight className="h-3 w-3" />
-                              </span>
-                            </Link>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+                            <div className="flex flex-wrap items-center gap-x-1.5">
+                              <Link href={`/applications/${app.id}`}>
+                                <span className="text-sm font-medium text-primary hover:underline cursor-pointer flex items-center gap-1">
+                                  Application #{app.id} <ChevronRight className="h-3 w-3" />
+                                </span>
+                              </Link>
+                              <span className="text-xs text-muted-foreground">·</span>
                               <Link href={`/jobs/${app.jobId}`}>
-                                <span className="hover:underline cursor-pointer" data-testid={`job-title-${app.id}`}>
+                                <span className="text-sm hover:underline cursor-pointer text-foreground/80" data-testid={`job-title-${app.id}`}>
                                   {job?.title ?? `Job #${app.jobId}`}
                                 </span>
                               </Link>
-                              {app.createdAt && <span>· {new Date(app.createdAt).toLocaleDateString()}</span>}
                             </div>
+                            {app.createdAt && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {new Date(app.createdAt).toLocaleDateString()}
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-3">
                             {score && (

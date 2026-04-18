@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2 } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User } from "lucide-react";
 import {
   useGetApplication,
   useGetAiScores,
+  useGetCandidate,
   useUpdateApplicationStatus,
   useCreateAiScore,
   useUpdateAiScore,
@@ -226,6 +227,10 @@ export default function ApplicationDetailPage() {
     query: { enabled: !!appId, queryKey: getGetApplicationQueryKey(appId) },
   });
 
+  const { data: candidate } = useGetCandidate(app?.candidateId ?? 0, {
+    query: { enabled: !!app?.candidateId },
+  });
+
   const { data: aiScores } = useGetAiScores(undefined, { query: { queryKey: getGetAiScoresQueryKey() } });
   const score = aiScores?.find(
     (s) => app?.candidateId && s.candidateId === app.candidateId && s.jobId === app.jobId
@@ -255,9 +260,17 @@ export default function ApplicationDetailPage() {
   return (
     <AppLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => setLocation("/applications")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Applications
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/applications")} data-testid="button-back">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to Applications
+          </Button>
+          {app.candidateId && (
+            <Button variant="outline" size="sm" onClick={() => setLocation(`/candidates/${app.candidateId}`)} data-testid="button-view-candidate-profile">
+              <User className="h-4 w-4 mr-1" />
+              {candidate?.name ? `${candidate.name}'s Profile` : "Candidate Profile"}
+            </Button>
+          )}
+        </div>
 
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -268,7 +281,10 @@ export default function ApplicationDetailPage() {
               </Link>
               {app.candidateId && (
                 <Link href={`/candidates/${app.candidateId}`}>
-                  <span className="hover:underline cursor-pointer">Candidate #{app.candidateId}</span>
+                  <span className="hover:underline cursor-pointer flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    {candidate?.name ?? `Candidate #${app.candidateId}`}
+                  </span>
                 </Link>
               )}
             </div>

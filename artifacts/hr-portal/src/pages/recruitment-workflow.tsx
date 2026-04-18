@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   GitBranch,
   Users,
@@ -278,6 +278,7 @@ function StageCard({
   avgDaysInStage: number;
   isSlowest: boolean;
 }) {
+  const [, setLocation] = useLocation();
   const colors = STAGE_COLOR_MAP[stage.color];
   const Icon = stage.icon;
 
@@ -341,21 +342,33 @@ function StageCard({
               const name = candidate?.name ?? `Candidate #${app.candidateId}`;
               const position = job?.title ?? `Job #${app.jobId}`;
               return (
-                <Link key={app.id} href={`/applications/${app.id}`}>
-                  <div className="flex items-center justify-between p-2 rounded-md hover:bg-muted/60 cursor-pointer transition-colors group">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate group-hover:text-primary transition-colors">
-                        {name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{position}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{daysSince(app.createdAt)}d</span>
-                      <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
+                <div
+                  key={app.id}
+                  className="flex items-center justify-between p-2 rounded-md hover:bg-muted/60 cursor-pointer transition-colors group"
+                  onClick={() => setLocation(`/applications/${app.id}`)}
+                  data-testid={`pipeline-app-${app.id}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    {app.candidateId ? (
+                      <Link
+                        href={`/candidates/${app.candidateId}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <p className="text-xs font-medium truncate text-primary hover:underline transition-colors">
+                          {name}
+                        </p>
+                      </Link>
+                    ) : (
+                      <p className="text-xs font-medium truncate text-foreground">{name}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground truncate">{position}</p>
                   </div>
-                </Link>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <Clock className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">{daysSince(app.createdAt)}d</span>
+                    <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                </div>
               );
             })}
             {apps.length > 5 && (

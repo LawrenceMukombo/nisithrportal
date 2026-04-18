@@ -1232,10 +1232,21 @@ export default function IntegrationBuilderPage() {
                 <CardContent className="pt-0">
                   <div className="space-y-2">
                     {stats.recentFailures.map(f => (
-                      <div key={f.logId} className="flex items-start gap-3 text-xs p-2 rounded-md bg-white border border-red-100">
+                      <a
+                        key={f.logId}
+                        href={f.configId ? `#integration-config-${f.configId}` : undefined}
+                        onClick={e => {
+                          if (!f.configId) return;
+                          e.preventDefault();
+                          const el = document.getElementById(`integration-config-${f.configId}`);
+                          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }}
+                        className="flex items-start gap-3 text-xs p-2 rounded-md bg-white border border-red-100 hover:border-red-300 hover:bg-red-50/60 transition-colors cursor-pointer no-underline"
+                        title={`Jump to ${f.configName}`}
+                      >
                         <XCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <span className="font-medium text-red-800">{f.configName}</span>
+                          <span className="font-medium text-red-800 underline-offset-2 hover:underline">{f.configName}</span>
                           {f.errorMessage && (
                             <p className="text-muted-foreground truncate mt-0.5">{f.errorMessage}</p>
                           )}
@@ -1243,7 +1254,7 @@ export default function IntegrationBuilderPage() {
                         <span className="text-muted-foreground shrink-0 font-mono">
                           {f.createdAt ? new Date(f.createdAt).toLocaleString() : "—"}
                         </span>
-                      </div>
+                      </a>
                     ))}
                   </div>
                 </CardContent>
@@ -1320,20 +1331,21 @@ export default function IntegrationBuilderPage() {
           <div className="space-y-3">
             <h2 className="text-base font-semibold">Configured Integrations ({configs.length})</h2>
             {configs.map(cfg => (
-              <IntegrationConfigCard
-                key={cfg.id}
-                config={cfg}
-                catalog={catalog}
-                health={healthMap[cfg.id]}
-                onDeleted={() => {
-                  qc.invalidateQueries({ queryKey: ["integration-configs"] });
-                  qc.invalidateQueries({ queryKey: ["integration-stats"] });
-                }}
-                onUpdated={() => {
-                  qc.invalidateQueries({ queryKey: ["integration-configs"] });
-                  qc.invalidateQueries({ queryKey: ["integration-stats"] });
-                }}
-              />
+              <div key={cfg.id} id={`integration-config-${cfg.id}`}>
+                <IntegrationConfigCard
+                  config={cfg}
+                  catalog={catalog}
+                  health={healthMap[cfg.id]}
+                  onDeleted={() => {
+                    qc.invalidateQueries({ queryKey: ["integration-configs"] });
+                    qc.invalidateQueries({ queryKey: ["integration-stats"] });
+                  }}
+                  onUpdated={() => {
+                    qc.invalidateQueries({ queryKey: ["integration-configs"] });
+                    qc.invalidateQueries({ queryKey: ["integration-stats"] });
+                  }}
+                />
+              </div>
             ))}
           </div>
         )}

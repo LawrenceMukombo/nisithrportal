@@ -233,15 +233,18 @@ const ScreeningQuestionBody = z.object({
 router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Promise<void> => {
   const jobId = parseInt(req.params.id as string);
   if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
-  const [job] = await db.select({ status: jobsTable.status, agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  const [job] = await db.select({ status: jobsTable.status, agencyId: jobsTable.agencyId, publishTarget: jobsTable.publishTarget }).from(jobsTable).where(eq(jobsTable.id, jobId));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
-  const isPublic = job.status === "open" || job.status === "published";
-  if (!isPublic) {
+  const isPublishedStatus = job.status === "open" || job.status === "published";
+  const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
+  if (!isPublishedStatus) {
     if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
     const userAgencyId = getTenantAgencyId(req);
     if (req.user.roleName !== "admin" && userAgencyId !== job.agencyId) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
+  } else if (!req.user && !isPublicTarget) {
+    res.status(404).json({ error: "Job not found" }); return;
   }
   const questions = await db.select().from(jobScreeningQuestionsTable)
     .where(eq(jobScreeningQuestionsTable.jobId, jobId))

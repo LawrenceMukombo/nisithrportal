@@ -1,5 +1,5 @@
 import express, { Router, type IRouter } from "express";
-import { eq, and, inArray, asc } from "drizzle-orm";
+import { eq, and, inArray, asc, gt, desc } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -15,6 +15,7 @@ import {
   candidateDiversityTable,
   candidateSkillsTable,
   jobsTable,
+  notificationsTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -901,6 +902,102 @@ router.get("/jobs/:id/di-report", authMiddleware, requireRole("admin", "hr_offic
     genderIdentity,
     ethnicity,
   });
+});
+
+// Stale thresholds (days) per DB status — must stay in sync with workflowStages.ts
+const STALE_THRESHOLDS: Record<string, number> = {
+  applied:    3,
+  screening:  7,
+  interview:  10,
+  offer:      5,
+  hired:      7,
+  onboarding: 14,
+};
+const TERMINAL_STATUSES_SET = new Set(["rejected", "withdrawn"]);
+
+// POST /applications/check-stalled — scan all active applications and create
+// in-app notifications for HR officers when any are stuck beyond their stage threshold.
+// Deduplicates: skips applications that already have an `application_stalled`
+// notification created within the last 24 hours.
+router.post("/applications/check-stalled", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
+
+  // Fetch non-terminal applications for this agency with their status history
+  const apps = await db
+    .select({
+      id:        applicationsTable.id,
+      status:    applicationsTable.status,
+      createdAt: applicationsTable.createdAt,
+      jobId:     applicationsTable.jobId,
+    })
+    .from(applicationsTable)
+    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(eq(jobsTable.agencyId, agencyId));
+
+  const activeApps = apps.filter((a) => !TERMINAL_STATUSES_SET.has(a.status ?? ""));
+  if (activeApps.length === 0) { res.json({ notified: 0 }); return; }
+
+  const appIds = activeApps.map((a) => a.id);
+  const histories = await db
+    .select()
+    .from(applicationStatusHistoryTable)
+    .where(inArray(applicationStatusHistoryTable.applicationId, appIds))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+
+  // Build a map: appId → latest statusHistory entry for its current status
+  const historyByApp = new Map<number, { changedAt: Date | null }>();
+  for (const h of histories) {
+    const app = activeApps.find((a) => a.id === h.applicationId);
+    if (!app || h.status !== (app.status ?? "")) continue;
+    const existing = historyByApp.get(h.applicationId);
+    const hTime = h.changedAt ? new Date(h.changedAt).getTime() : 0;
+    const eTime = existing?.changedAt ? new Date(existing.changedAt).getTime() : 0;
+    if (!existing || hTime > eTime) historyByApp.set(h.applicationId, h);
+  }
+
+  const now = Date.now();
+  const stalledApps = activeApps.filter((app) => {
+    const threshold = STALE_THRESHOLDS[app.status ?? ""] ?? 7;
+    const entry = historyByApp.get(app.id);
+    const entryTime = entry?.changedAt ? new Date(entry.changedAt).getTime() : (app.createdAt ? new Date(app.createdAt).getTime() : now);
+    const days = Math.max(0, Math.floor((now - entryTime) / (1000 * 60 * 60 * 24)));
+    return days >= threshold;
+  });
+
+  if (stalledApps.length === 0) { res.json({ notified: 0 }); return; }
+
+  // Deduplicate: find stalled app IDs that already have a notification in the last 24h
+  const cutoff = new Date(now - 24 * 60 * 60 * 1000);
+  const recentNotifs = await db
+    .select({ message: notificationsTable.message })
+    .from(notificationsTable)
+    .where(and(
+      eq(notificationsTable.type, "application_stalled"),
+      gt(notificationsTable.createdAt, cutoff)
+    ));
+
+  const recentlyNotifiedAppIds = new Set<number>();
+  for (const n of recentNotifs) {
+    const match = n.message.match(/application #(\d+)/i);
+    if (match) recentlyNotifiedAppIds.add(Number(match[1]));
+  }
+
+  const toNotify = stalledApps.filter((a) => !recentlyNotifiedAppIds.has(a.id));
+  if (toNotify.length === 0) { res.json({ notified: 0 }); return; }
+
+  let notifiedCount = 0;
+  for (const app of toNotify) {
+    const threshold = STALE_THRESHOLDS[app.status ?? ""] ?? 7;
+    const entry = historyByApp.get(app.id);
+    const entryTime = entry?.changedAt ? new Date(entry.changedAt).getTime() : (app.createdAt ? new Date(app.createdAt).getTime() : now);
+    const days = Math.max(0, Math.floor((now - entryTime) / (1000 * 60 * 60 * 24)));
+    const message = `Application #${app.id} has been in "${app.status}" for ${days} day${days !== 1 ? "s" : ""} (threshold: ${threshold}d). Please review.`;
+    await notifyHrOfficers(agencyId, "application_stalled", message);
+    notifiedCount++;
+  }
+
+  res.json({ notified: notifiedCount });
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   GitBranch,
@@ -325,6 +325,7 @@ function StageCard({
   jobMap,
   avgDaysInStage,
   isSlowest,
+  staleCount,
   searchQuery,
 }: {
   stage: typeof WORKFLOW_STAGES[number];
@@ -335,6 +336,7 @@ function StageCard({
   jobMap: Map<number, Job>;
   avgDaysInStage: number;
   isSlowest: boolean;
+  staleCount: number;
   searchQuery: string;
 }) {
   const [, setLocation] = useLocation();
@@ -360,9 +362,20 @@ function StageCard({
             <p className="text-xs text-muted-foreground mt-0.5">{stage.timeframe}</p>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
-            <Badge variant="secondary" className="tabular-nums">
-              {searchQuery ? `${apps.length}/${totalCount}` : apps.length}
-            </Badge>
+            <div className="flex items-center gap-1">
+              {staleCount > 0 && (
+                <Badge
+                  className="tabular-nums bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-100"
+                  data-testid={`stale-badge-${stage.id}`}
+                  title={`${staleCount} application${staleCount !== 1 ? "s" : ""} stuck ≥${stage.staleDaysThreshold} days`}
+                >
+                  ⚠ {staleCount} stalled
+                </Badge>
+              )}
+              <Badge variant="secondary" className="tabular-nums">
+                {searchQuery ? `${apps.length}/${totalCount}` : apps.length}
+              </Badge>
+            </div>
             <span
               className={`text-xs font-semibold tabular-nums ${isSlowest && totalCount > 0 ? "text-orange-500" : "text-muted-foreground"}`}
               data-testid={`avg-days-${stage.id}`}
@@ -376,6 +389,14 @@ function StageCard({
           <div className="flex items-center gap-1.5 mt-1 rounded-md bg-orange-50 dark:bg-orange-950/20 px-2 py-1 border border-orange-200 dark:border-orange-900/40">
             <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
             <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Slowest stage — possible bottleneck</p>
+          </div>
+        )}
+        {staleCount > 0 && (
+          <div className="flex items-center gap-1.5 mt-1 rounded-md bg-amber-50 dark:bg-amber-950/20 px-2 py-1 border border-amber-200 dark:border-amber-900/40" data-testid={`stale-banner-${stage.id}`}>
+            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+            <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+              {staleCount} {staleCount === 1 ? "application" : "applications"} stuck ≥{stage.staleDaysThreshold}d — needs attention
+            </p>
           </div>
         )}
         {SHARED_STATUS_STAGES.has(stage.id) && (
@@ -403,15 +424,18 @@ function StageCard({
               const job = jobMap.get(app.jobId);
               const name = candidate?.name ?? `Candidate #${app.candidateId}`;
               const position = job?.title ?? `Job #${app.jobId}`;
+              const days = daysInStage(app, stage.status);
+              const isStale = days >= stage.staleDaysThreshold;
               return (
                 <div
                   key={app.id}
                   role="link"
                   tabIndex={0}
-                  className="flex items-center justify-between p-2 rounded-md hover:bg-muted/60 cursor-pointer transition-colors group focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                  className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors group focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${isStale ? "bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100/70 dark:hover:bg-amber-900/30" : "hover:bg-muted/60"}`}
                   onClick={() => setLocation(`/applications/${app.id}`)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setLocation(`/applications/${app.id}`); }}
                   data-testid={`pipeline-app-${app.id}`}
+                  data-stale={isStale ? "true" : undefined}
                 >
                   <div className="flex-1 min-w-0">
                     {app.candidateId ? (
@@ -429,8 +453,17 @@ function StageCard({
                     <p className="text-xs text-muted-foreground truncate">{position}</p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    <Clock className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground" title="Days in this stage">{daysInStage(app, stage.status)}d</span>
+                    {isStale ? (
+                      <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" aria-label="Stalled" />
+                    ) : (
+                      <Clock className="h-3 w-3 text-muted-foreground" />
+                    )}
+                    <span
+                      className={`text-xs font-semibold tabular-nums ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+                      title={isStale ? `Stalled — ${days} days (threshold: ${stage.staleDaysThreshold}d)` : "Days in this stage"}
+                    >
+                      {days}d
+                    </span>
                     <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>
@@ -504,13 +537,22 @@ export default function RecruitmentWorkflowPage() {
   const stageAvgDays = WORKFLOW_STAGES.map((stage) => {
     const allApps = stageApps(stage);
     const filtered = allApps.filter(matchesSearch);
+    const staleCount = allApps.filter((a) => daysInStage(a, stage.status) >= stage.staleDaysThreshold).length;
     return {
       stage,
       apps: filtered,
       totalCount: allApps.length,
       avg: avgDays(allApps, stage.status),
+      staleCount,
     };
   });
+
+  const totalStalled = stageAvgDays.reduce((sum, s) => sum + s.staleCount, 0);
+
+  useEffect(() => {
+    if (isLoading || applications.length === 0) return;
+    fetch("/api/applications/check-stalled", { method: "POST", credentials: "include" }).catch(() => {});
+  }, [isLoading]);
 
   const populatedStages = stageAvgDays.filter((s) => s.totalCount > 0);
   const slowestEntry = populatedStages.length > 0
@@ -681,8 +723,22 @@ export default function RecruitmentWorkflowPage() {
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-64 w-full" />)}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {stageAvgDays.map(({ stage, apps, totalCount, avg }) => {
+            <>
+            {totalStalled > 0 && (
+              <div className="flex items-start gap-2 mb-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900/40 px-4 py-3" data-testid="stalled-summary-banner">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                    {totalStalled} stalled application{totalStalled !== 1 ? "s" : ""} across the pipeline
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                    These applications have exceeded their stage threshold and require attention. HR managers have been notified.
+                  </p>
+                </div>
+              </div>
+            )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {stageAvgDays.map(({ stage, apps, totalCount, avg, staleCount }) => {
                 const isSlowest = slowestEntry?.stage.id === stage.id && totalCount > 0;
                 return (
                   <StageCard
@@ -695,11 +751,13 @@ export default function RecruitmentWorkflowPage() {
                     jobMap={jobMap}
                     avgDaysInStage={avg}
                     isSlowest={isSlowest}
+                    staleCount={staleCount}
                     searchQuery={search}
                   />
                 );
               })}
             </div>
+            </>
           )}
         </div>
 

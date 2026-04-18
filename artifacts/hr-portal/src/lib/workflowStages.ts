@@ -19,6 +19,8 @@ export interface WorkflowStage {
   description: string;
   timeframe: string;
   color: string;
+  /** Days before an application in this stage is considered stalled. */
+  staleDaysThreshold: number;
 }
 
 /**
@@ -42,6 +44,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "Your application has been received and is queued for review by HR.",
     timeframe: "1–2 business days",
     color: "blue",
+    staleDaysThreshold: 3,
   },
   {
     id: "screening",
@@ -51,6 +54,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "HR is reviewing your CV and qualifications against the role requirements.",
     timeframe: "2–3 business days",
     color: "yellow",
+    staleDaysThreshold: 7,
   },
   {
     id: "assessment",
@@ -60,6 +64,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "Shortlisted candidates may be asked to complete a written or skills-based assessment.",
     timeframe: "3–5 business days",
     color: "orange",
+    staleDaysThreshold: 7,
   },
   {
     id: "interview",
@@ -69,6 +74,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "You have been invited to interview with the hiring panel.",
     timeframe: "1–2 weeks",
     color: "purple",
+    staleDaysThreshold: 10,
   },
   {
     id: "evaluation",
@@ -78,6 +84,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "The panel is reviewing interview performance and contacting references.",
     timeframe: "3–5 business days",
     color: "indigo",
+    staleDaysThreshold: 10,
   },
   {
     id: "offer",
@@ -87,6 +94,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "A formal job offer has been extended. Please review and respond within the given timeframe.",
     timeframe: "2–5 business days",
     color: "green",
+    staleDaysThreshold: 5,
   },
   {
     id: "background_check",
@@ -96,6 +104,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "Pre-employment background and reference verification is underway.",
     timeframe: "3–7 business days",
     color: "teal",
+    staleDaysThreshold: 7,
   },
   {
     id: "onboarding",
@@ -105,6 +114,7 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: "Welcome to the team! Completing first-day paperwork and orientation steps.",
     timeframe: "1–2 weeks",
     color: "emerald",
+    staleDaysThreshold: 14,
   },
 ];
 

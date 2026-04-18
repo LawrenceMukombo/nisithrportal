@@ -117,7 +117,7 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                       </Badge>
                     );
                   }
-                  if (j.salaryVisibility === "on_request") {
+                  if (j.salaryVisibility === "internal") {
                     return <Badge variant="outline" className="text-xs py-0">Salary on request</Badge>;
                   }
                   return null;

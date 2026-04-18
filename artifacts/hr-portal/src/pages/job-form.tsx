@@ -66,7 +66,7 @@ const CURRENCIES = ["PGK", "USD", "AUD"];
 
 const SALARY_VISIBILITY_OPTS = [
   { value: "public", label: "Show salary range publicly" },
-  { value: "on_request", label: "Salary on request" },
+  { value: "internal", label: "Show to internal staff only" },
   { value: "hidden", label: "Do not display salary" },
 ];
 
@@ -513,6 +513,7 @@ export default function JobFormPage() {
   const [softSkills, setSoftSkills] = useState<string[]>([]);
   const [certifications, setCertifications] = useState<string[]>([]);
   const [requiredDocuments, setRequiredDocuments] = useState<string[]>([]);
+  const [customDocInput, setCustomDocInput] = useState("");
 
   const { data: departments } = useGetDepartments(undefined, { query: { queryKey: getGetDepartmentsQueryKey() } });
   const { data: existingJob } = useGetJob(jobId, {
@@ -1117,7 +1118,7 @@ export default function JobFormPage() {
 
                   <div className="space-y-3">
                     <p className="text-sm font-medium">Required Documents</p>
-                    <p className="text-xs text-muted-foreground">Select documents applicants must submit with their application.</p>
+                    <p className="text-xs text-muted-foreground">Select or add documents applicants must submit with their application.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {REQUIRED_DOCS_OPTIONS.map(doc => (
                         <div key={doc} className="flex items-center gap-2">
@@ -1133,6 +1134,46 @@ export default function JobFormPage() {
                           <Label htmlFor={`doc-${doc}`} className="text-sm font-normal cursor-pointer">{doc}</Label>
                         </div>
                       ))}
+                    </div>
+                    {requiredDocuments.filter(d => !REQUIRED_DOCS_OPTIONS.includes(d)).length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {requiredDocuments.filter(d => !REQUIRED_DOCS_OPTIONS.includes(d)).map(d => (
+                          <span key={d} className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-md">
+                            {d}
+                            <button type="button" onClick={() => setRequiredDocuments(prev => prev.filter(x => x !== d))} className="text-muted-foreground hover:text-foreground">×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <Input
+                        placeholder="Add custom document requirement…"
+                        value={customDocInput}
+                        onChange={e => setCustomDocInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const trimmed = customDocInput.trim();
+                            if (trimmed && !requiredDocuments.includes(trimmed)) {
+                              setRequiredDocuments(prev => [...prev, trimmed]);
+                            }
+                            setCustomDocInput("");
+                          }
+                        }}
+                        className="h-8 text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const trimmed = customDocInput.trim();
+                          if (trimmed && !requiredDocuments.includes(trimmed)) {
+                            setRequiredDocuments(prev => [...prev, trimmed]);
+                          }
+                          setCustomDocInput("");
+                        }}
+                      >Add</Button>
                     </div>
                   </div>
 

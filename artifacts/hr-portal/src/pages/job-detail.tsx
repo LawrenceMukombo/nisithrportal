@@ -348,7 +348,7 @@ export default function JobDetailPage() {
                   {job.salaryMax ? ` – ${job.salaryMax.toLocaleString()}` : "+"} per annum
                 </div>
               )}
-              {job.salaryVisibility === "on_request" && (
+              {job.salaryVisibility === "internal" && (
                 <p className="text-sm text-muted-foreground italic">Salary on request</p>
               )}
             </div>

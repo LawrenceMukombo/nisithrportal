@@ -8,13 +8,6 @@
       "when": 1776518502500,
       "tag": "0000_real_doctor_faustus",
       "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1776518600000,
-      "tag": "0001_t31_job_extensions",
-      "breakpoints": true
     }
   ]
 }

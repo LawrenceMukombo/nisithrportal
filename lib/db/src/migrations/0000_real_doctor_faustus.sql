@@ -58,6 +58,9 @@ CREATE TABLE "jobs" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"reference_number" text,
+	"country" text,
+	"province" text,
+	"office_site" text,
 	"location" text,
 	"employment_type" text,
 	"work_arrangement" text,
@@ -79,7 +82,9 @@ CREATE TABLE "jobs" (
 	"opening_date" date,
 	"required_documents" jsonb,
 	"max_applicants" integer,
-	"is_featured" boolean
+	"is_featured" boolean,
+	"publish_target" text,
+	"auto_expire" boolean
 );
 --> statement-breakpoint
 CREATE TABLE "candidate_diversity" (
@@ -242,6 +247,9 @@ CREATE TABLE "job_screening_questions" (
 	"question_type" text DEFAULT 'short_answer' NOT NULL,
 	"options" jsonb,
 	"required" boolean DEFAULT true NOT NULL,
+	"is_mandatory_filter" boolean DEFAULT false NOT NULL,
+	"auto_reject" boolean DEFAULT false NOT NULL,
+	"auto_reject_value" text,
 	"display_order" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );

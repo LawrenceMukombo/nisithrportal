@@ -680,6 +680,26 @@ router.patch("/applications/:id", authMiddleware, async (req, res): Promise<void
     .orderBy(asc(applicationStatusHistoryTable.changedAt));
 
   res.json({ ...application, statusHistory });
+
+  // Notify the responsible HR officer (job poster) about the withdrawal.
+  // If the job has no assigned poster, fall back to all HR officers in the agency.
+  try {
+    const [job] = await db
+      .select({ agencyId: jobsTable.agencyId, title: jobsTable.title, createdBy: jobsTable.createdBy })
+      .from(jobsTable)
+      .where(eq(jobsTable.id, existing.jobId));
+    if (job?.agencyId != null) {
+      const candidateName = candidate.name ?? candidate.email;
+      const message = `${candidateName} has withdrawn their application for "${job.title}".`;
+      if (job.createdBy != null) {
+        await createNotification({ userId: job.createdBy, type: "application_withdrawn", message });
+      } else {
+        await notifyHrOfficers(job.agencyId, "application_withdrawn", message);
+      }
+    }
+  } catch (err) {
+    console.error("[applications] Withdrawal HR notification failed:", err);
+  }
 });
 
 router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {

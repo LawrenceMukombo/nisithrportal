@@ -1258,16 +1258,21 @@ export function ApplyWizard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, jobId]);
 
-  // Save draft to localStorage whenever form values change
+  // Save draft to localStorage — only when the dialog is open
   const saveDraftLocally = useCallback(() => {
+    if (!open) return;
     const values = form.getValues();
     localStorage.setItem(DRAFT_KEY(jobId), JSON.stringify({ values, step: currentStep }));
-  }, [form, jobId, currentStep]);
+  }, [open, form, jobId, currentStep]);
 
-  // Auto-save on step change
+  // Auto-save when navigating steps (only while the dialog is open)
+  const prevOpenRef = useRef(false);
   useEffect(() => {
+    // Skip the save triggered purely by the dialog opening — load, don't overwrite
+    if (!open) { prevOpenRef.current = false; return; }
+    if (!prevOpenRef.current) { prevOpenRef.current = true; return; }
     saveDraftLocally();
-  }, [currentStep, saveDraftLocally]);
+  }, [open, currentStep, saveDraftLocally]);
 
   const handleSaveDraft = async () => {
     setSaving(true);

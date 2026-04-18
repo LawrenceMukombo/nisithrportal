@@ -51,18 +51,27 @@ function daysSince(dateStr: string | null | undefined): number {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
+type StatusHistoryItem = NonNullable<Application["statusHistory"]>[number];
+
+function sortedHistory(history: Application["statusHistory"]): StatusHistoryItem[] {
+  return (history ?? [])
+    .slice()
+    .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+}
+
+function lastEntryForStatus(history: Application["statusHistory"], status: string): StatusHistoryItem | undefined {
+  return [...sortedHistory(history)].reverse().find((h) => h.status === status);
+}
+
 /**
  * Days a single application has been in its current stage.
  * Uses the most-recent statusHistory entry for that status,
  * falling back to createdAt when history is absent.
  */
 function daysInStage(app: Application, stageStatus: string): number {
-  const history = (app.statusHistory ?? [])
-    .slice()
-    .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
-  const lastEntry = [...history].reverse().find((h) => h.status === stageStatus);
-  if (lastEntry) {
-    return Math.max(0, Math.floor((Date.now() - new Date(lastEntry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
+  const entry = lastEntryForStatus(app.statusHistory, stageStatus);
+  if (entry) {
+    return Math.max(0, Math.floor((Date.now() - new Date(entry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
   }
   return daysSince(app.createdAt);
 }
@@ -77,13 +86,9 @@ function avgDays(apps: Application[], stageStatus?: string): number {
   const now = Date.now();
   const total = apps.reduce((sum, a) => {
     if (stageStatus) {
-      const history = (a.statusHistory ?? [])
-        .slice()
-        .sort((x, y) => new Date(x.changedAt).getTime() - new Date(y.changedAt).getTime());
-      const lastEntry = [...history].reverse().find((h) => h.status === stageStatus);
-      if (lastEntry) {
-        const days = Math.max(0, Math.floor((now - new Date(lastEntry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
-        return sum + days;
+      const entry = lastEntryForStatus(a.statusHistory, stageStatus);
+      if (entry) {
+        return sum + Math.max(0, Math.floor((now - new Date(entry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
       }
     }
     return sum + daysSince(a.createdAt);
@@ -154,11 +159,7 @@ function buildTrendData(applications: Application[]): TrendPoint[] {
   const now = Date.now();
   const weeks: TrendPoint[] = [];
 
-  const sortedHistories = applications.map((app) => ({
-    sorted: (app.statusHistory ?? [])
-      .slice()
-      .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime()),
-  }));
+  const sortedHistories = applications.map((app) => ({ sorted: sortedHistory(app.statusHistory) }));
 
   for (let w = NUM_WEEKS - 1; w >= 0; w--) {
     const weekStart = getWeekMonday(w);

@@ -1,14 +1,19 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useLocation } from "wouter";
-import { UserPlus } from "lucide-react";
+import { Info, UserPlus } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+
+function isGovEmail(email: string): boolean {
+  const domain = email.split("@")[1] ?? "";
+  return domain.endsWith(".gov.pg") || domain === "gov.pg";
+}
 
 const schema = z.object({
   name: z.string().min(2, "Full name is required"),
@@ -27,6 +32,9 @@ export default function ApplicantRegisterPage() {
     resolver: zodResolver(schema),
     defaultValues: { name: "", email: "", password: "" },
   });
+
+  const emailValue = useWatch({ control: form.control, name: "email" });
+  const showGovWarning = isGovEmail(emailValue ?? "");
 
   const onSubmit = async (values: FormValues) => {
     setIsPending(true);
@@ -98,6 +106,21 @@ export default function ApplicantRegisterPage() {
                         <Input type="email" placeholder="you@example.com" data-testid="input-email" {...field} />
                       </FormControl>
                       <FormMessage />
+                      {showGovWarning && (
+                        <div
+                          className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                          data-testid="gov-email-warning"
+                        >
+                          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span>
+                            Government email addresses (@gov.pg) are for staff only. If you are NISIT staff, please{" "}
+                            <Link href="/login">
+                              <span className="font-medium underline cursor-pointer">sign in directly</span>
+                            </Link>{" "}
+                            with your assigned account.
+                          </span>
+                        </div>
+                      )}
                     </FormItem>
                   )}
                 />

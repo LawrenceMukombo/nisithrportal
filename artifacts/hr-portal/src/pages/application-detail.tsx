@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown } from "lucide-react";
 import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
@@ -276,6 +276,35 @@ export default function ApplicationDetailPage() {
   const canUpdateStatus = isAdmin || isHR || isHiringManager;
   const canEvaluate = isAdmin || isHR || isHiringManager;
 
+  const [offerLetterLoading, setOfferLetterLoading] = useState(false);
+
+  async function downloadOfferLetter() {
+    if (!appId) return;
+    setOfferLetterLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/pdf/offer-letter/${appId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to generate offer letter", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `offer-letter-${appId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Failed to generate offer letter", variant: "destructive" });
+    } finally {
+      setOfferLetterLoading(false);
+    }
+  }
+
   if (isLoading) {
     return <AppLayout><div className="p-6"><Skeleton className="h-64 w-full" /></div></AppLayout>;
   }
@@ -287,7 +316,7 @@ export default function ApplicationDetailPage() {
   return (
     <AppLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => setLocation("/applications")} data-testid="button-back">
             <ArrowLeft className="h-4 w-4 mr-1" /> Back to Applications
           </Button>
@@ -295,6 +324,21 @@ export default function ApplicationDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setLocation(`/candidates/${app.candidateId}`)} data-testid="button-view-candidate-profile">
               <User className="h-4 w-4 mr-1" />
               {candidate?.name ? `${candidate.name}'s Profile` : "Candidate Profile"}
+            </Button>
+          )}
+          {app.status === "hired" && canUpdateStatus && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadOfferLetter}
+              disabled={offerLetterLoading}
+              data-testid="button-generate-offer-letter"
+              className="border-green-600 text-green-700 hover:bg-green-50 dark:text-green-400 dark:border-green-500 dark:hover:bg-green-950"
+            >
+              {offerLetterLoading
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating...</>
+                : <><FileDown className="h-3.5 w-3.5 mr-1.5" />Generate Offer Letter</>
+              }
             </Button>
           )}
         </div>

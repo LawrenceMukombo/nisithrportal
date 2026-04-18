@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileDown, Loader2 } from "lucide-react";
 import { useGetContract, useUpdateContract, getGetContractQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/auth-context";
+import { getToken } from "@/lib/api-config";
 import { useQueryClient } from "@tanstack/react-query";
 
 function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: number; currentEndDate?: string | null; onClose: () => void }) {
@@ -122,7 +123,35 @@ export default function ContractDetailPage() {
   const [, setLocation] = useLocation();
   const [showRenew, setShowRenew] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
+  const [contractPdfLoading, setContractPdfLoading] = useState(false);
   const { canManageContracts } = useRole();
+  const { toast } = useToast();
+
+  async function downloadContractPdf(contractId: number) {
+    setContractPdfLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/pdf/contract/${contractId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to generate contract PDF", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contract-${contractId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Failed to generate contract PDF", variant: "destructive" });
+    } finally {
+      setContractPdfLoading(false);
+    }
+  }
 
   const contractId = match ? parseInt(params!.id) : 0;
 
@@ -150,7 +179,7 @@ export default function ContractDetailPage() {
 
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold" data-testid="heading-contract">Contract #{contract.id}</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant={contract.status === "active" ? "default" : contract.status === "expired" ? "destructive" : "outline"}>
               {contract.status}
             </Badge>
@@ -163,6 +192,19 @@ export default function ContractDetailPage() {
                 )}
                 <Button size="sm" variant="outline" onClick={() => setShowStatus(true)} data-testid="button-update-status">
                   Update Status
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadContractPdf(contract.id)}
+                  disabled={contractPdfLoading}
+                  data-testid="button-generate-contract-pdf"
+                  className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"
+                >
+                  {contractPdfLoading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Generating...</>
+                    : <><FileDown className="h-3.5 w-3.5 mr-1" />Generate Contract</>
+                  }
                 </Button>
               </>
             )}

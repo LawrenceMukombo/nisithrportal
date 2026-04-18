@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { DRAFT_KEY_PREFIX, DRAFT_KEY } from "@/lib/draftKeys";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -183,9 +184,6 @@ const STEPS: StepDef[] = [
   { id: "declarations", label: "References & Declarations", shortLabel: "Declarations", icon: CheckSquare, fields: ["referees", "expectedSalary", "currentSalary", "noticePeriod", "declarationAgreed", "backgroundCheckConsent", "conflictOfInterest", "criminalRecord", "dataPrivacyConsent"] },
   { id: "diversity", label: "Diversity & Inclusion (Optional)", shortLabel: "D&I", icon: Heart, fields: ["diOptIn", "disabilityStatus", "genderIdentity", "ethnicity"] },
 ];
-
-export const DRAFT_KEY_PREFIX = "apply_draft_";
-const DRAFT_KEY = (jobId: number) => `${DRAFT_KEY_PREFIX}${jobId}`;
 
 // ─── Helper: Upload a file ─────────────────────────────────────────────────────
 

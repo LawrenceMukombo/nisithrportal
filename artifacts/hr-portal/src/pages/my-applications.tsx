@@ -20,7 +20,7 @@ import {
 import { Link } from "wouter";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2 } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
-import { DRAFT_KEY_PREFIX } from "@/components/apply-wizard";
+import { DRAFT_KEY_PREFIX } from "@/lib/draftKeys";
 
 const STATUS_CONFIG: Record<string, {
   label: string;

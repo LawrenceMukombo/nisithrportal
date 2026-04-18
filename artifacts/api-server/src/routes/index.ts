@@ -16,6 +16,7 @@ import usersRouter from "./users";
 import storageRouter from "./storage";
 import notificationsRouter from "./notifications";
 import integrationsRouter from "./integrations";
+import pdfRouter from "./pdf";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(aiRouter);
 router.use(storageRouter);
 router.use(notificationsRouter);
 router.use(integrationsRouter);
+router.use(pdfRouter);
 
 export default router;

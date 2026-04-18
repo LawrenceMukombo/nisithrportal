@@ -292,7 +292,7 @@ function StageCard({
 
   const top5 = apps.slice(0, 5);
   const pct = totalActive > 0 ? Math.round((totalCount / totalActive) * 100) : 0;
-  const moreHref = `/applications?status=${stage.status}`;
+  const moreHref = `/applications?status=${stage.status}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ""}`;
 
   return (
     <Card
@@ -584,12 +584,15 @@ export default function RecruitmentWorkflowPage() {
               )}
             </div>
           </div>
-          {search && !isLoading && (
-            <p className="text-xs text-muted-foreground mb-3">
-              Showing results for <span className="font-medium text-foreground">"{search}"</span>
-              {" "}— {stageAvgDays.reduce((sum, s) => sum + s.apps.length, 0)} match{stageAvgDays.reduce((sum, s) => sum + s.apps.length, 0) !== 1 ? "es" : ""} across all stages
-            </p>
-          )}
+          {search && !isLoading && (() => {
+            const totalMatches = stageAvgDays.reduce((sum, s) => sum + s.apps.length, 0);
+            return (
+              <p className="text-xs text-muted-foreground mb-3">
+                Showing results for <span className="font-medium text-foreground">"{search}"</span>
+                {" "}— {totalMatches} match{totalMatches !== 1 ? "es" : ""} across all stages
+              </p>
+            );
+          })()}
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-64 w-full" />)}

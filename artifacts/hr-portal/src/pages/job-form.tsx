@@ -31,9 +31,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { ScreeningQuestion } from "@/components/apply-wizard";
 import { getToken } from "@/lib/api-config";
 
-// ──────────────────────────────────────────────────────────
 // Constants
-// ──────────────────────────────────────────────────────────
 const PNG_PROVINCES = [
   "National Capital District", "Central", "Gulf", "Western", "Oro (Northern)",
   "Milne Bay", "Morobe", "Madang", "Eastern Highlands", "Western Highlands",
@@ -108,9 +106,7 @@ const STEP_REQUIRED_FIELDS: (keyof FormValues)[][] = [
   [],
 ];
 
-// ──────────────────────────────────────────────────────────
 // Form schema
-// ──────────────────────────────────────────────────────────
 const schema = z.object({
   title: z.string().min(2, "Job title is required"),
   referenceNumber: z.string().optional(),
@@ -142,9 +138,7 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-// ──────────────────────────────────────────────────────────
 // Screening Questions Section
-// ──────────────────────────────────────────────────────────
 const QUESTION_TYPE_LABELS: Record<string, string> = {
   short_answer: "Short Answer",
   long_answer: "Long Answer",
@@ -374,9 +368,7 @@ function ScreeningQuestionsSection({ jobId, onQuestionsChange }: { jobId: number
   );
 }
 
-// ──────────────────────────────────────────────────────────
 // Tag Input
-// ──────────────────────────────────────────────────────────
 function TagInput({ values, onChange, placeholder, label, testId }: {
   values: string[];
   onChange: (v: string[]) => void;
@@ -422,9 +414,7 @@ function TagInput({ values, onChange, placeholder, label, testId }: {
   );
 }
 
-// ──────────────────────────────────────────────────────────
 // Step Indicator
-// ──────────────────────────────────────────────────────────
 function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick: (i: number) => void }) {
   return (
     <div className="flex items-center gap-0 overflow-x-auto">
@@ -459,9 +449,7 @@ function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onSt
   );
 }
 
-// ──────────────────────────────────────────────────────────
 // Review helpers
-// ──────────────────────────────────────────────────────────
 function ReviewSection({ label, onEdit, children }: { label: string; onEdit: () => void; children: React.ReactNode }) {
   return (
     <div className="space-y-2 pb-3">
@@ -485,9 +473,7 @@ function ReviewRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
-// ──────────────────────────────────────────────────────────
 // Main Page
-// ──────────────────────────────────────────────────────────
 export default function JobFormPage() {
   const [matchNew] = useRoute("/jobs/new");
   const [matchEdit, paramsEdit] = useRoute("/jobs/:id/edit");

@@ -234,6 +234,64 @@ router.get("/applications/track", async (req, res): Promise<void> => {
   });
 });
 
+router.patch("/applications/:id", authMiddleware, async (req, res): Promise<void> => {
+  const id = parseIntParam(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid application id" });
+    return;
+  }
+
+  const { status } = req.body as { status?: string };
+  if (status !== "withdrawn") {
+    res.status(400).json({ error: "Only withdrawal is permitted via this endpoint" });
+    return;
+  }
+
+  const userEmail = req.user?.email;
+  if (!userEmail) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+
+  const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, existing.candidateId));
+  if (!candidate || candidate.email.toLowerCase() !== userEmail.toLowerCase()) {
+    res.status(403).json({ error: "You can only withdraw your own applications" });
+    return;
+  }
+
+  const terminalStatuses = ["rejected", "withdrawn", "hired"];
+  if (terminalStatuses.includes(existing.status)) {
+    res.status(422).json({ error: "This application cannot be withdrawn" });
+    return;
+  }
+
+  const [application] = await db
+    .update(applicationsTable)
+    .set({ status: "withdrawn" })
+    .where(eq(applicationsTable.id, id))
+    .returning();
+
+  await db.insert(applicationStatusHistoryTable).values({
+    applicationId: application.id,
+    status: "withdrawn",
+    note: null,
+  });
+
+  const statusHistory = await db
+    .select()
+    .from(applicationStatusHistoryTable)
+    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+
+  res.json({ ...application, statusHistory });
+});
+
 router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const params = GetApplicationParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {

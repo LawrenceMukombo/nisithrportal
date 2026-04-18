@@ -1,9 +1,22 @@
 import { useState } from "react";
-import { useGetMyApplications, useGetJobs } from "@workspace/api-client-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useGetMyApplications, useGetJobs, getGetMyApplicationsQueryKey } from "@workspace/api-client-react";
+import { getToken } from "@/lib/api-config";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
@@ -23,14 +36,40 @@ const STATUS_CONFIG: Record<string, {
   withdrawn: { label: "Withdrawn", variant: "outline", icon: XCircle, color: "text-gray-400" },
 };
 
+const TERMINAL_STATUSES = ["rejected", "withdrawn", "hired"];
+
 export default function MyApplicationsPage() {
   const [filter, setFilter] = useState<string>("all");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [withdrawDialogId, setWithdrawDialogId] = useState<number | null>(null);
 
+  const queryClient = useQueryClient();
   const { data: allApplications = [], isLoading } = useGetMyApplications();
   const { data: jobs = [] } = useGetJobs({});
 
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
+
+  const withdrawMutation = useMutation({
+    mutationFn: async (applicationId: number) => {
+      const token = getToken();
+      const res = await fetch(`/api/applications/${applicationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ status: "withdrawn" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Failed to withdraw application");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetMyApplicationsQueryKey() });
+    },
+  });
 
   const myApplications = allApplications.filter((app) => {
     if (filter !== "all" && app.status !== filter) return false;
@@ -53,6 +92,13 @@ export default function MyApplicationsPage() {
         next.add(id);
       }
       return next;
+    });
+  };
+
+  const handleWithdrawConfirm = () => {
+    if (withdrawDialogId == null) return;
+    withdrawMutation.mutate(withdrawDialogId, {
+      onSettled: () => setWithdrawDialogId(null),
     });
   };
 
@@ -131,6 +177,7 @@ export default function MyApplicationsPage() {
               const config = STATUS_CONFIG[app.status] ?? { label: app.status, variant: "outline" as const, icon: Clock, color: "" };
               const Icon = config.icon;
               const isExpanded = expandedIds.has(app.id);
+              const isTerminal = TERMINAL_STATUSES.includes(app.status);
 
               return (
                 <Card key={app.id} className="hover:shadow-md transition-shadow" data-testid="card-application">
@@ -163,10 +210,20 @@ export default function MyApplicationsPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
-                        {isExpanded ? "Hide recruitment journey" : "Show recruitment journey"}
-                      </span>
+                    <div className="mt-3 pt-3 border-t flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {!isTerminal && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setWithdrawDialogId(app.id)}
+                            data-testid={`btn-withdraw-${app.id}`}
+                          >
+                            Withdraw
+                          </Button>
+                        )}
+                      </div>
                       <button
                         onClick={() => toggleTimeline(app.id)}
                         aria-expanded={isExpanded}
@@ -194,6 +251,31 @@ export default function MyApplicationsPage() {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={withdrawDialogId != null}
+        onOpenChange={(open) => { if (!open) setWithdrawDialogId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Withdraw this application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action is irreversible. Once withdrawn, your application will be removed from the recruitment process and cannot be reinstated.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={withdrawMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleWithdrawConfirm}
+              disabled={withdrawMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="btn-confirm-withdraw"
+            >
+              {withdrawMutation.isPending ? "Withdrawing…" : "Yes, withdraw"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

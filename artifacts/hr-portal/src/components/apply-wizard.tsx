@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getToken } from "@/lib/api-config";
+import { getToken, decodeToken } from "@/lib/api-config";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1276,10 +1276,10 @@ export function ApplyWizard({
     const token = getToken();
     if (values.candidateEmail && token) {
       try {
-        await fetch("/api/applications/draft", {
+        await fetch(`/api/applications/draft/${jobId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ candidateEmail: values.candidateEmail, jobId, draftData: values, currentStep }),
+          body: JSON.stringify({ candidateEmail: values.candidateEmail, draftData: values, currentStep }),
         });
       } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
     }
@@ -1553,7 +1553,27 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
   const [hasDraft, setHasDraft] = useState(false);
 
   useEffect(() => {
-    setHasDraft(!!localStorage.getItem(DRAFT_KEY(jobId)));
+    // Check localStorage first
+    const localDraft = !!localStorage.getItem(DRAFT_KEY(jobId));
+
+    // Also check server draft for authenticated users
+    const token = getToken();
+    if (token) {
+      const payload = decodeToken(token);
+      const email = payload?.email;
+      if (email) {
+        fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(email)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then(res => (res.ok ? res.json() : null))
+          .then((draft: { draftData?: unknown } | null) => {
+            setHasDraft(localDraft || !!(draft?.draftData));
+          })
+          .catch(() => setHasDraft(localDraft));
+        return;
+      }
+    }
+    setHasDraft(localDraft);
   }, [jobId]);
 
   if (!hasDraft) return null;

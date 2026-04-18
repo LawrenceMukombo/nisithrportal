@@ -233,13 +233,14 @@ async function assertDraftAccess(
   return true;
 }
 
-// Draft save endpoint (POST /applications/draft) — requires auth to protect PII
-router.post("/applications/draft", authMiddleware, async (req, res): Promise<void> => {
-  const { candidateEmail, jobId, draftData, currentStep } = req.body as {
-    candidateEmail?: string; jobId?: number; draftData?: unknown; currentStep?: number;
+// Draft save endpoint (POST /applications/draft/:jobId) — requires auth to protect PII
+router.post("/applications/draft/:jobId", authMiddleware, async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.jobId as string ?? "");
+  const { candidateEmail, draftData, currentStep } = req.body as {
+    candidateEmail?: string; draftData?: unknown; currentStep?: number;
   };
-  if (!candidateEmail || !jobId || !draftData) {
-    res.status(400).json({ error: "candidateEmail, jobId, and draftData required" });
+  if (!candidateEmail || isNaN(jobId) || !draftData) {
+    res.status(400).json({ error: "candidateEmail and draftData required" });
     return;
   }
   const user = req.user!;

@@ -1,33 +1,18 @@
 import { useRoute, useLocation, Link } from "wouter";
 import { ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2 } from "lucide-react";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
-import { useGetJob, useCreateApplication, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
+import { useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { AppLayout } from "@/layouts/app-layout";
 import { useAuth, useRole } from "@/contexts/auth-context";
-
-const appSchema = z.object({
-  fullName: z.string().min(2, "Full name required"),
-  email: z.string().email("Valid email required"),
-  phone: z.string().optional(),
-  cvUrl: z.string().optional(),
-  coverLetter: z.string().optional(),
-});
-type AppForm = z.infer<typeof appSchema>;
+import { ApplyWizard, DraftBanner, type ScreeningQuestion } from "@/components/apply-wizard";
 
 const STATUS_COLORS: Record<string, string> = {
   applied: "bg-blue-100 text-blue-700",
@@ -39,174 +24,16 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-gray-100 text-gray-600",
 };
 
-async function uploadCvFile(file: File, jobId: number): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("jobId", String(jobId));
-
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(err.error ?? "Failed to upload CV");
-  }
-  const { url } = await res.json() as { url: string };
-  return url;
-}
-
-function ApplyDialog({ jobId }: { jobId: number }) {
-  const [open, setOpen] = useState(false);
-  const [submitted, setSubmitted] = useState<{ id: number; email: string } | null>(null);
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const { toast } = useToast();
-
-  const form = useForm<AppForm>({
-    resolver: zodResolver(appSchema),
-    defaultValues: { fullName: "", email: "", phone: "", cvUrl: "", coverLetter: "" },
-  });
-
-  const createApp = useCreateApplication();
-
-  const onSubmit = async (values: AppForm) => {
-    try {
-      let cvUrl = values.cvUrl || undefined;
-
-      if (cvFile) {
-        setUploading(true);
-        try {
-          cvUrl = await uploadCvFile(cvFile, jobId);
-        } catch {
-          toast({ title: "CV upload failed", description: "Could not upload your CV. Please try again.", variant: "destructive" });
-          setUploading(false);
-          return;
-        }
-        setUploading(false);
-      }
-
-      const result = await createApp.mutateAsync({
-        data: {
-          jobId,
-          candidateName: values.fullName,
-          candidateEmail: values.email,
-          candidatePhone: values.phone || undefined,
-          cvUrl,
-          coverLetter: values.coverLetter || undefined,
-        }
-      });
-      setSubmitted({ id: (result as { id: number }).id, email: values.email });
-      form.reset();
-      setCvFile(null);
-    } catch {
-      toast({ title: "Submission failed", description: "Please try again.", variant: "destructive" });
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSubmitted(null); }}>
-      <DialogTrigger asChild>
-        <Button size="lg" data-testid="button-apply-now">
-          <Send className="h-4 w-4 mr-2" /> Apply Now
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{submitted ? "Application Submitted" : "Submit Application"}</DialogTitle>
-        </DialogHeader>
-        {submitted && (
-          <div className="space-y-4 py-2" data-testid="apply-success">
-            <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center space-y-2">
-              <p className="text-green-700 font-semibold text-sm">Your application was received!</p>
-              <p className="text-xs text-muted-foreground">Save your reference number to track your application status.</p>
-              <div className="bg-white border rounded-md px-4 py-2 mt-2 font-mono text-lg font-bold tracking-widest text-primary" data-testid="apply-reference">
-                REF-{String(submitted.id).padStart(6, "0")}
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              Use your email <strong>{submitted.email}</strong> and the reference number above at{" "}
-              <Link href="/track-application" className="text-primary underline">Track Application</Link>{" "}
-              to check your status.
-            </p>
-            <Button className="w-full" onClick={() => { setOpen(false); setSubmitted(null); }}>Close</Button>
-          </div>
-        )}
-        {!submitted && (
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField control={form.control} name="fullName" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Full Name</FormLabel>
-                <FormControl><Input placeholder="Your full name" data-testid="input-apply-name" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="email" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email</FormLabel>
-                <FormControl><Input type="email" placeholder="your@email.com" data-testid="input-apply-email" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="phone" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Phone (optional)</FormLabel>
-                <FormControl><Input placeholder="+675..." data-testid="input-apply-phone" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormItem>
-              <FormLabel>CV / Résumé Upload (optional)</FormLabel>
-              <FormControl>
-                <div className="space-y-2">
-                  <Input
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    className="cursor-pointer"
-                    data-testid="input-apply-cv-url"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) { setCvFile(null); return; }
-                      if (file.size > 10 * 1024 * 1024) {
-                        toast({ title: "File too large", description: "CV must be under 10 MB", variant: "destructive" });
-                        e.target.value = "";
-                        setCvFile(null);
-                        return;
-                      }
-                      setCvFile(file);
-                    }}
-                  />
-                  {cvFile && (
-                    <p className="text-xs text-green-600">
-                      {uploading ? "Uploading CV..." : `CV selected: ${cvFile.name}`}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground">Supported: PDF, DOC, DOCX — max 10 MB</p>
-                </div>
-              </FormControl>
-            </FormItem>
-            <FormField control={form.control} name="coverLetter" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Cover Letter (optional)</FormLabel>
-                <FormControl><Textarea placeholder="Tell us why you're a great fit..." rows={4} data-testid="input-cover-letter" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={createApp.isPending || uploading}
-              data-testid="button-submit-application"
-            >
-              {uploading ? "Uploading CV..." : createApp.isPending ? "Submitting..." : "Submit Application"}
-            </Button>
-          </form>
-        </Form>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+function useScreeningQuestions(jobId: number, enabled: boolean) {
+  const [questions, setQuestions] = useState<ScreeningQuestion[]>([]);
+  useEffect(() => {
+    if (!enabled || !jobId) return;
+    fetch(`/api/jobs/${jobId}/screening-questions`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setQuestions)
+      .catch(() => setQuestions([]));
+  }, [jobId, enabled]);
+  return questions;
 }
 
 type RankedCandidate = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
@@ -267,7 +94,6 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
           <p className="text-sm text-muted-foreground py-4 text-center">No applications yet for this position.</p>
         ) : (
           <div className="space-y-4">
-            {/* Workflow stage summary bar */}
             <div className="overflow-x-auto pb-1">
               <div className="flex gap-1 min-w-max">
                 {WORKFLOW_STAGES.map((stage) => {
@@ -296,7 +122,6 @@ function ApplicationPipelineCard({ jobId }: { jobId: number }) {
               </div>
             </div>
             <Separator />
-            {/* Applications table */}
             <div className="space-y-1">
               {applications.slice(0, 20).map((app) => (
                 <Link key={app.id} href={`/applications/${app.id}`}>
@@ -364,12 +189,15 @@ export default function JobDetailPage() {
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
   const { isAdmin, isHR, isHiringManager } = useRole();
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const jobId = match ? parseInt(params!.id) : 0;
   const { data: job, isLoading } = useGetJob(jobId, {
     query: { enabled: !!jobId, queryKey: getGetJobQueryKey(jobId) }
   });
 
+  const isPublished = job?.status === "published";
+  const screeningQuestions = useScreeningQuestions(jobId, isPublished);
   const canViewPipeline = isAuthenticated && (isAdmin || isHR || isHiringManager);
 
   if (isLoading) {
@@ -415,9 +243,18 @@ export default function JobDetailPage() {
             </div>
             <div className="flex items-center gap-3">
               <Badge variant={job.status === "published" ? "default" : "secondary"}>{job.status}</Badge>
-              {job.status === "published" && <ApplyDialog jobId={job.id} />}
+              {isPublished && (
+                <Button size="lg" onClick={() => setWizardOpen(true)} data-testid="button-apply-now">
+                  <Send className="h-4 w-4 mr-2" /> Apply Now
+                </Button>
+              )}
             </div>
           </div>
+
+          {/* Draft resume banner */}
+          {isPublished && (
+            <DraftBanner jobId={jobId} onResume={() => setWizardOpen(true)} />
+          )}
 
           <Separator />
 
@@ -432,6 +269,15 @@ export default function JobDetailPage() {
 
           {canViewPipeline && <ApplicationPipelineCard jobId={job.id} />}
         </div>
+
+        {/* Apply Wizard */}
+        <ApplyWizard
+          jobId={job.id}
+          jobTitle={job.title}
+          screeningQuestions={screeningQuestions}
+          open={wizardOpen}
+          onOpenChange={setWizardOpen}
+        />
       </div>
     </AppLayout>
   );

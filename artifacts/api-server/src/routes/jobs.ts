@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
-import { db, jobsTable, departmentsTable } from "@workspace/db";
+import { eq, and, inArray, asc } from "drizzle-orm";
+import { z } from "zod/v4";
+import { db, jobsTable, departmentsTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
   GetJobsQueryParams,
   CreateJobBody,
@@ -176,6 +177,55 @@ router.patch("/jobs/:id/close", authMiddleware, requireRole("admin", "hr_officer
   if (!assertTenantAccess(res, existing.agencyId, getTenantAgencyId(req))) return;
   const [job] = await db.update(jobsTable).set({ status: "closed" }).where(eq(jobsTable.id, params.data.id)).returning();
   res.json(job);
+});
+
+// Screening questions management
+const ScreeningQuestionBody = z.object({
+  question: z.string().min(1),
+  questionType: z.enum(["short_answer", "yes_no", "multiple_choice", "long_answer"]).default("short_answer"),
+  options: z.array(z.string()).optional(),
+  required: z.boolean().default(true),
+  displayOrder: z.number().int().optional(),
+});
+
+router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.id ?? "");
+  if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
+  const questions = await db.select().from(jobScreeningQuestionsTable)
+    .where(eq(jobScreeningQuestionsTable.jobId, jobId))
+    .orderBy(asc(jobScreeningQuestionsTable.displayOrder));
+  res.json(questions);
+});
+
+router.post("/jobs/:id/screening-questions", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.id ?? "");
+  if (isNaN(jobId)) { res.status(400).json({ error: "Invalid job id" }); return; }
+  const parsed = ScreeningQuestionBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  // Ensure job belongs to same agency
+  const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
+  if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+  if (!assertTenantAccess(res, job.agencyId, getTenantAgencyId(req))) return;
+  const [q] = await db.insert(jobScreeningQuestionsTable).values({
+    jobId,
+    question: parsed.data.question,
+    questionType: parsed.data.questionType,
+    options: parsed.data.options ?? null,
+    required: parsed.data.required,
+    displayOrder: parsed.data.displayOrder ?? 0,
+  }).returning();
+  res.status(201).json(q);
+});
+
+router.delete("/jobs/:id/screening-questions/:qid", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.id ?? "");
+  const qid = parseInt(req.params.qid ?? "");
+  if (isNaN(jobId) || isNaN(qid)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [q] = await db.select({ id: jobScreeningQuestionsTable.id, jobId: jobScreeningQuestionsTable.jobId })
+    .from(jobScreeningQuestionsTable).where(eq(jobScreeningQuestionsTable.id, qid));
+  if (!q || q.jobId !== jobId) { res.status(404).json({ error: "Question not found" }); return; }
+  await db.delete(jobScreeningQuestionsTable).where(eq(jobScreeningQuestionsTable.id, qid));
+  res.json({ deleted: true });
 });
 
 export default router;

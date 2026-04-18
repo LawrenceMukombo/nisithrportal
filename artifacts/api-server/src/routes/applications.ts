@@ -1,6 +1,20 @@
 import { Router, type IRouter } from "express";
 import { eq, and, inArray, asc } from "drizzle-orm";
-import { db, applicationsTable, applicationStatusHistoryTable, candidatesTable, jobsTable } from "@workspace/db";
+import { z } from "zod/v4";
+import {
+  db,
+  applicationsTable,
+  applicationStatusHistoryTable,
+  applicationDocumentsTable,
+  applicationDraftTable,
+  candidatesTable,
+  candidateEducationTable,
+  candidateExperienceTable,
+  candidateLanguagesTable,
+  candidateRefereesTable,
+  candidateDiversityTable,
+  jobsTable,
+} from "@workspace/db";
 import {
   GetApplicationsQueryParams,
   CreateApplicationBody,
@@ -15,6 +29,103 @@ import { autoParseCvBackground } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency } from "../lib/objectAcl";
 const router: IRouter = Router();
+
+// Convert empty strings to null (for optional DB fields where empty string ≠ null)
+const orNull = (v: string | null | undefined): string | null =>
+  v === "" || v == null ? null : v;
+
+// Extended application body — superset of CreateApplicationBody with all wizard fields
+const ExtendedApplicationBody = z.object({
+  jobId: z.number().int(),
+  // Personal info (Step 1)
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  otherNames: z.string().optional(),
+  gender: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  nationality: z.string().optional(),
+  nationalId: z.string().optional(),
+  maritalStatus: z.string().optional(),
+  // Contact info (Step 2)
+  candidateEmail: z.string().email(),
+  candidatePhone: z.string().optional(),
+  alternativePhone: z.string().optional(),
+  physicalAddress: z.string().optional(),
+  city: z.string().optional(),
+  province: z.string().optional(),
+  district: z.string().optional(),
+  postalAddress: z.string().optional(),
+  // Position & availability (Step 3)
+  preferredLocation: z.string().optional(),
+  availability: z.string().optional(),
+  relocate: z.boolean().optional(),
+  workType: z.string().optional(),
+  // Education (Step 4) — array
+  education: z.array(z.object({
+    institution: z.string(),
+    level: z.string().optional(),
+    qualification: z.string().optional(),
+    fieldOfStudy: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    current: z.boolean().optional(),
+    certifications: z.string().optional(),
+  })).optional(),
+  // Work experience (Step 4) — array
+  experience: z.array(z.object({
+    employer: z.string(),
+    jobTitle: z.string().optional(),
+    responsibilities: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    current: z.boolean().optional(),
+    reasonForLeaving: z.string().optional(),
+    keyAchievements: z.string().optional(),
+  })).optional(),
+  // Skills (Step 5)
+  technicalSkills: z.array(z.string()).optional(),
+  softSkills: z.array(z.string()).optional(),
+  languages: z.array(z.object({ language: z.string(), proficiency: z.string().optional() })).optional(),
+  computerLiteracy: z.string().optional(),
+  certificationsLicenses: z.string().optional(),
+  personalStatement: z.string().optional(),
+  coverLetter: z.string().optional(),
+  // Documents (Step 6)
+  cvUrl: z.string().optional(),
+  documents: z.array(z.object({
+    documentType: z.string(),
+    url: z.string(),
+    fileName: z.string().optional(),
+  })).optional(),
+  // Screening answers (Step 7)
+  screeningAnswers: z.array(z.object({
+    questionId: z.number().int(),
+    answer: z.string().optional(),
+  })).optional(),
+  // References & compensation (Step 8)
+  referees: z.array(z.object({
+    name: z.string(),
+    relationship: z.string().optional(),
+    organisation: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+  })).optional(),
+  expectedSalary: z.string().optional(),
+  currentSalary: z.string().optional(),
+  noticePeriod: z.string().optional(),
+  // Declarations (Step 8)
+  declarationAgreed: z.boolean().optional(),
+  backgroundCheckConsent: z.boolean().optional(),
+  conflictOfInterest: z.boolean().optional(),
+  criminalRecord: z.boolean().optional(),
+  dataPrivacyConsent: z.boolean().optional(),
+  // D&I (optional)
+  diversityInfo: z.object({
+    disabilityStatus: z.string().optional(),
+    genderIdentity: z.string().optional(),
+    ethnicity: z.string().optional(),
+  }).optional(),
+});
 
 const INTERNAL_OBJECT_PREFIX = "/api/storage/objects/";
 
@@ -96,13 +207,78 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
   res.json(apps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
-router.post("/applications", async (req, res): Promise<void> => {
-  const parsed = CreateApplicationBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+// Draft save endpoint (POST /applications/draft)
+router.post("/applications/draft", async (req, res): Promise<void> => {
+  const { candidateEmail, jobId, draftData, currentStep } = req.body as {
+    candidateEmail?: string; jobId?: number; draftData?: unknown; currentStep?: number;
+  };
+  if (!candidateEmail || !jobId || !draftData) {
+    res.status(400).json({ error: "candidateEmail, jobId, and draftData required" });
     return;
   }
-  const { jobId, candidateName, candidateEmail, candidatePhone, cvUrl: rawCvUrl, coverLetter } = parsed.data;
+  // Upsert draft
+  const existing = await db.select({ id: applicationDraftTable.id })
+    .from(applicationDraftTable)
+    .where(and(eq(applicationDraftTable.candidateEmail, candidateEmail), eq(applicationDraftTable.jobId, jobId)));
+  if (existing.length > 0) {
+    await db.update(applicationDraftTable)
+      .set({ draftData: draftData as Record<string, unknown>, currentStep: currentStep ?? 1 })
+      .where(and(eq(applicationDraftTable.candidateEmail, candidateEmail), eq(applicationDraftTable.jobId, jobId)));
+  } else {
+    await db.insert(applicationDraftTable).values({
+      candidateEmail,
+      jobId,
+      draftData: draftData as Record<string, unknown>,
+      currentStep: currentStep ?? 1,
+    });
+  }
+  res.json({ saved: true });
+});
+
+// Draft load endpoint (GET /applications/draft/:jobId?email=...)
+router.get("/applications/draft/:jobId", async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.jobId ?? "");
+  const email = typeof req.query.email === "string" ? req.query.email : "";
+  if (!email || isNaN(jobId)) {
+    res.status(400).json({ error: "email and jobId required" });
+    return;
+  }
+  const [draft] = await db.select().from(applicationDraftTable)
+    .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
+  res.json(draft ?? null);
+});
+
+// Delete draft (used after successful submission)
+router.delete("/applications/draft/:jobId", async (req, res): Promise<void> => {
+  const jobId = parseInt(req.params.jobId ?? "");
+  const email = typeof req.query.email === "string" ? req.query.email : "";
+  if (!email || isNaN(jobId)) {
+    res.status(400).json({ error: "email and jobId required" }); return;
+  }
+  await db.delete(applicationDraftTable)
+    .where(and(eq(applicationDraftTable.candidateEmail, email), eq(applicationDraftTable.jobId, jobId)));
+  res.json({ deleted: true });
+});
+
+router.post("/applications", async (req, res): Promise<void> => {
+  // Try the extended body first; fall back to basic body for backward compat
+  const extended = ExtendedApplicationBody.safeParse(req.body);
+  const basic = extended.success ? null : CreateApplicationBody.safeParse(req.body);
+  if (!extended.success && !basic?.success) {
+    res.status(400).json({ error: extended.error.message });
+    return;
+  }
+  const data = extended.success ? extended.data : basic!.data;
+  const jobId = data.jobId;
+  const candidateEmail = data.candidateEmail;
+  const candidatePhone = data.candidatePhone;
+  const rawCvUrl = data.cvUrl;
+  const coverLetter = extended.success
+    ? (extended.data.coverLetter ?? undefined)
+    : ((data as { coverLetter?: string }).coverLetter ?? undefined);
+  const candidateName = extended.success
+    ? `${extended.data.firstName} ${extended.data.lastName}`.trim()
+    : (data as { candidateName?: string }).candidateName ?? candidateEmail;
 
   const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate, agencyId: jobsTable.agencyId })
     .from(jobsTable).where(eq(jobsTable.id, jobId));
@@ -133,6 +309,8 @@ router.post("/applications", async (req, res): Promise<void> => {
     }
   }
 
+  const ext = extended.success ? extended.data : null;
+
   let [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.email, candidateEmail));
   if (!candidate) {
     [candidate] = await db.insert(candidatesTable).values({
@@ -140,12 +318,41 @@ router.post("/applications", async (req, res): Promise<void> => {
       email: candidateEmail,
       phone: candidatePhone ?? null,
       cvUrl: cvUrl ?? null,
+      // Extended personal fields from wizard
+      ...(ext ? {
+        otherNames: orNull(ext.otherNames),
+        gender: orNull(ext.gender),
+        dateOfBirth: orNull(ext.dateOfBirth),
+        nationality: orNull(ext.nationality),
+        nationalId: orNull(ext.nationalId),
+        maritalStatus: orNull(ext.maritalStatus),
+        alternativePhone: orNull(ext.alternativePhone),
+        physicalAddress: orNull(ext.physicalAddress),
+        city: orNull(ext.city),
+        province: orNull(ext.province),
+        district: orNull(ext.district),
+        postalAddress: orNull(ext.postalAddress),
+      } : {}),
     }).returning();
   } else {
-    // Update candidate record with the latest CV URL and contact details for repeat applicants
-    const updates: Record<string, string | null> = {};
+    // Update candidate record with the latest info for repeat applicants
+    const updates: Record<string, unknown> = {};
     if (cvUrl) updates.cvUrl = cvUrl;
     if (candidatePhone && !candidate.phone) updates.phone = candidatePhone;
+    if (ext) {
+      const d = (v: string | null | undefined) => orNull(v);
+      if (d(ext.gender)) updates.gender = d(ext.gender);
+      if (d(ext.dateOfBirth)) updates.dateOfBirth = d(ext.dateOfBirth);
+      if (d(ext.nationality)) updates.nationality = d(ext.nationality);
+      if (d(ext.nationalId)) updates.nationalId = d(ext.nationalId);
+      if (d(ext.maritalStatus)) updates.maritalStatus = d(ext.maritalStatus);
+      if (d(ext.alternativePhone)) updates.alternativePhone = d(ext.alternativePhone);
+      if (d(ext.physicalAddress)) updates.physicalAddress = d(ext.physicalAddress);
+      if (d(ext.city)) updates.city = d(ext.city);
+      if (d(ext.province)) updates.province = d(ext.province);
+      if (d(ext.district)) updates.district = d(ext.district);
+      if (d(ext.postalAddress)) updates.postalAddress = d(ext.postalAddress);
+    }
     if (Object.keys(updates).length > 0) {
       [candidate] = await db.update(candidatesTable)
         .set(updates)
@@ -159,12 +366,96 @@ router.post("/applications", async (req, res): Promise<void> => {
     candidateId: candidate.id,
     status: "applied",
     coverLetter: coverLetter ?? null,
+    ...(ext ? {
+      preferredLocation: orNull(ext.preferredLocation),
+      availability: orNull(ext.availability),
+      relocate: ext.relocate ?? null,
+      workType: orNull(ext.workType),
+      technicalSkills: ext.technicalSkills?.length ? ext.technicalSkills : null,
+      softSkills: ext.softSkills?.length ? ext.softSkills : null,
+      computerLiteracy: orNull(ext.computerLiteracy),
+      certificationsLicenses: orNull(ext.certificationsLicenses),
+      personalStatement: orNull(ext.personalStatement),
+      expectedSalary: orNull(ext.expectedSalary),
+      currentSalary: orNull(ext.currentSalary),
+      noticePeriod: orNull(ext.noticePeriod),
+      declarationAgreed: ext.declarationAgreed ?? null,
+      backgroundCheckConsent: ext.backgroundCheckConsent ?? null,
+      conflictOfInterest: ext.conflictOfInterest ?? null,
+      criminalRecord: ext.criminalRecord ?? null,
+      dataPrivacyConsent: ext.dataPrivacyConsent ?? null,
+    } : {}),
   }).returning();
 
   await db.insert(applicationStatusHistoryTable).values({
     applicationId: application.id,
     status: "applied",
   });
+
+  // Save extended sub-records (education, experience, languages, referees, docs, diversity)
+  if (ext) {
+    const promises: Promise<unknown>[] = [];
+    if (ext.education?.length) {
+      promises.push(db.insert(candidateEducationTable).values(
+        ext.education.map(e => ({
+          candidateId: candidate.id,
+          institution: e.institution,
+          level: orNull(e.level),
+          qualification: orNull(e.qualification),
+          fieldOfStudy: orNull(e.fieldOfStudy),
+          startDate: orNull(e.startDate),
+          endDate: orNull(e.endDate),
+          current: e.current ?? false,
+          certifications: orNull(e.certifications),
+        }))
+      ));
+    }
+    if (ext.experience?.length) {
+      promises.push(db.insert(candidateExperienceTable).values(
+        ext.experience.map(e => ({
+          candidateId: candidate.id,
+          employer: e.employer,
+          jobTitle: orNull(e.jobTitle),
+          responsibilities: orNull(e.responsibilities),
+          startDate: orNull(e.startDate),
+          endDate: orNull(e.endDate),
+          current: e.current ?? false,
+          reasonForLeaving: orNull(e.reasonForLeaving),
+          keyAchievements: orNull(e.keyAchievements),
+        }))
+      ));
+    }
+    if (ext.languages?.length) {
+      promises.push(db.insert(candidateLanguagesTable).values(
+        ext.languages.map(l => ({ candidateId: candidate.id, language: l.language, proficiency: l.proficiency ?? null }))
+      ));
+    }
+    if (ext.referees?.length) {
+      promises.push(db.insert(candidateRefereesTable).values(
+        ext.referees.map(r => ({ applicationId: application.id, ...r }))
+      ));
+    }
+    if (ext.documents?.length) {
+      promises.push(db.insert(applicationDocumentsTable).values(
+        ext.documents.map(d => ({ applicationId: application.id, documentType: d.documentType, url: d.url, fileName: d.fileName ?? null }))
+      ));
+    }
+    if (ext.diversityInfo && Object.values(ext.diversityInfo).some(Boolean)) {
+      promises.push(db.insert(candidateDiversityTable).values({
+        candidateId: candidate.id,
+        disabilityStatus: ext.diversityInfo.disabilityStatus ?? null,
+        genderIdentity: ext.diversityInfo.genderIdentity ?? null,
+        ethnicity: ext.diversityInfo.ethnicity ?? null,
+      }));
+    }
+    await Promise.allSettled(promises);
+
+    // Clear draft after successful submission
+    try {
+      await db.delete(applicationDraftTable)
+        .where(and(eq(applicationDraftTable.candidateEmail, candidateEmail), eq(applicationDraftTable.jobId, jobId)));
+    } catch { /* ignore */ }
+  }
 
   res.status(201).json({ ...application, statusHistory: [{ id: 0, applicationId: application.id, status: "applied", changedAt: application.createdAt, note: null }] });
 

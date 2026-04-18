@@ -35,8 +35,17 @@ Core tables (all in `lib/db/src/schema/`):
 - `departments` — departments within an agency
 - `positions` — position definitions with filled/total counts
 - `jobs` — job vacancies (draft/published/closed)
-- `candidates` — applicant records with parsed CV data
-- `applications` — job applications with pipeline status
+- `candidates` — applicant records (extended with personal/contact/demographic fields)
+- `candidate_education` — education history per candidate
+- `candidate_experience` — work experience history per candidate
+- `candidate_languages` — languages spoken per candidate
+- `candidate_diversity` — voluntary D&I data per candidate
+- `candidate_referees` — referees linked to an application
+- `applications` — job applications (extended with position/compensation/skills/declaration fields)
+- `application_documents` — uploaded document references per application
+- `application_draft` — save/resume draft per candidate+job
+- `job_screening_questions` — custom screening questions per job
+- `application_screening_answers` — candidate answers to screening questions
 - `employees` — staff records
 - `contracts` — employment contracts with expiry tracking
 - `ai_scores` — AI candidate scoring results
@@ -53,8 +62,11 @@ All routes under `/api/`:
 - `GET/POST /positions` — position management
 - `GET/POST /jobs` + publish/close — job vacancy management
 - `GET/POST /candidates` — candidate management
-- `GET/POST /applications` + status update — application tracking
+- `GET /candidates/:id/profile` — full candidate profile with all sub-records (education, experience, languages, diversity, referees, applications)
+- `GET/POST /applications` — application tracking (extended: POST accepts 9-step wizard body with all extended fields)
+- `GET/POST/DELETE /applications/draft` — save/resume draft application
 - `GET /applications/my` — returns only the authenticated user's own applications (scoped by email → candidate lookup)
+- `GET/POST/DELETE /jobs/:id/screening-questions` — manage custom screening questions per job
 - `GET/POST /employees` — employee records
 - `GET/POST /contracts` — contract lifecycle management
 - `GET /ai-scores` — AI scoring results

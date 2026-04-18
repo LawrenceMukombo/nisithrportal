@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { jobsTable } from "./jobs";
@@ -12,6 +12,28 @@ export const applicationsTable = pgTable("applications", {
   score: numeric("score", { precision: 5, scale: 2 }),
   notes: text("notes"),
   coverLetter: text("cover_letter"),
+  // Position & availability
+  preferredLocation: text("preferred_location"),
+  availability: text("availability"),
+  relocate: boolean("relocate"),
+  workType: text("work_type"),
+  // Compensation
+  expectedSalary: text("expected_salary"),
+  currentSalary: text("current_salary"),
+  noticePeriod: text("notice_period"),
+  // Personal statement
+  personalStatement: text("personal_statement"),
+  // Skills (stored as JSON arrays for simplicity)
+  technicalSkills: jsonb("technical_skills"),
+  softSkills: jsonb("soft_skills"),
+  computerLiteracy: text("computer_literacy"),
+  certificationsLicenses: text("certifications_licenses"),
+  // Declarations (all required on final submit)
+  declarationAgreed: boolean("declaration_agreed"),
+  backgroundCheckConsent: boolean("background_check_consent"),
+  conflictOfInterest: boolean("conflict_of_interest"),
+  criminalRecord: boolean("criminal_record"),
+  dataPrivacyConsent: boolean("data_privacy_consent"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -24,6 +46,42 @@ export const applicationStatusHistoryTable = pgTable("application_status_history
   changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
   note: text("note"),
 });
+
+// Document uploads per application
+export const applicationDocumentsTable = pgTable("application_documents", {
+  id: serial("id").primaryKey(),
+  applicationId: integer("application_id").notNull().references(() => applicationsTable.id, { onDelete: "cascade" }),
+  documentType: text("document_type").notNull(),
+  url: text("url").notNull(),
+  fileName: text("file_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type ApplicationDocument = typeof applicationDocumentsTable.$inferSelect;
+
+// Draft applications (save & resume)
+export const applicationDraftTable = pgTable("application_draft", {
+  id: serial("id").primaryKey(),
+  candidateEmail: text("candidate_email").notNull(),
+  jobId: integer("job_id").notNull().references(() => jobsTable.id, { onDelete: "cascade" }),
+  draftData: jsonb("draft_data").notNull(),
+  currentStep: integer("current_step").notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type ApplicationDraft = typeof applicationDraftTable.$inferSelect;
+
+// Candidate referees (linked to an application)
+export const candidateRefereesTable = pgTable("candidate_referees", {
+  id: serial("id").primaryKey(),
+  applicationId: integer("application_id").notNull().references(() => applicationsTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  relationship: text("relationship"),
+  organisation: text("organisation"),
+  email: text("email"),
+  phone: text("phone"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type CandidateReferee = typeof candidateRefereesTable.$inferSelect;
 
 export const insertApplicationSchema = createInsertSchema(applicationsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;

@@ -701,6 +701,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /candidates/{id}/profile:
+    get:
+      operationId: getCandidateProfile
+      tags: [candidates]
+      summary: Get full candidate profile with sub-records (education, experience, languages, diversity, referees)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full candidate profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandidateProfile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # APPLICATIONS
   /applications/track:
     get:
@@ -1981,6 +2008,30 @@ components:
           type: ["string", "null"]
         parsedData:
           nullable: true
+        otherNames:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        nationality:
+          type: ["string", "null"]
+        nationalId:
+          type: ["string", "null"]
+        maritalStatus:
+          type: ["string", "null"]
+        alternativePhone:
+          type: ["string", "null"]
+        physicalAddress:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        province:
+          type: ["string", "null"]
+        district:
+          type: ["string", "null"]
+        postalAddress:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -1989,6 +2040,170 @@ components:
         - id
         - name
         - email
+
+    CandidateEducationEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        candidateId:
+          type: integer
+        institution:
+          type: string
+        level:
+          type: ["string", "null"]
+        qualification:
+          type: ["string", "null"]
+        fieldOfStudy:
+          type: ["string", "null"]
+        startDate:
+          type: ["string", "null"]
+        endDate:
+          type: ["string", "null"]
+        current:
+          type: ["boolean", "null"]
+        certifications:
+          type: ["string", "null"]
+      required:
+        - id
+        - candidateId
+        - institution
+
+    CandidateExperienceEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        candidateId:
+          type: integer
+        employer:
+          type: string
+        jobTitle:
+          type: ["string", "null"]
+        responsibilities:
+          type: ["string", "null"]
+        startDate:
+          type: ["string", "null"]
+        endDate:
+          type: ["string", "null"]
+        current:
+          type: ["boolean", "null"]
+        reasonForLeaving:
+          type: ["string", "null"]
+        keyAchievements:
+          type: ["string", "null"]
+      required:
+        - id
+        - candidateId
+        - employer
+
+    CandidateLanguageEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        candidateId:
+          type: integer
+        language:
+          type: string
+        proficiency:
+          type: ["string", "null"]
+      required:
+        - id
+        - candidateId
+        - language
+
+    CandidateDiversityEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        candidateId:
+          type: integer
+        disabilityStatus:
+          type: ["string", "null"]
+        genderIdentity:
+          type: ["string", "null"]
+        ethnicity:
+          type: ["string", "null"]
+      required:
+        - id
+        - candidateId
+
+    CandidateRefereeEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicationId:
+          type: integer
+        name:
+          type: string
+        relationship:
+          type: ["string", "null"]
+        organisation:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+      required:
+        - id
+        - applicationId
+        - name
+
+    CandidateProfileApplication:
+      type: object
+      properties:
+        id:
+          type: integer
+        jobId:
+          type: integer
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - jobId
+        - status
+
+    CandidateProfile:
+      allOf:
+        - $ref: "#/components/schemas/Candidate"
+        - type: object
+          properties:
+            education:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateEducationEntry"
+            experience:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateExperienceEntry"
+            languages:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateLanguageEntry"
+            diversity:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateDiversityEntry"
+            referees:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateRefereeEntry"
+            applications:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateProfileApplication"
+          required:
+            - education
+            - experience
+            - languages
+            - diversity
+            - referees
+            - applications
 
     CreateCandidateRequest:
       type: object

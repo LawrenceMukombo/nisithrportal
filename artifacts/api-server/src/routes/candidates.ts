@@ -1,6 +1,16 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray, and } from "drizzle-orm";
-import { db, candidatesTable, applicationsTable, jobsTable } from "@workspace/db";
+import {
+  db,
+  candidatesTable,
+  applicationsTable,
+  jobsTable,
+  candidateEducationTable,
+  candidateExperienceTable,
+  candidateLanguagesTable,
+  candidateDiversityTable,
+  candidateRefereesTable,
+} from "@workspace/db";
 import {
   CreateCandidateBody,
   GetCandidateParams,
@@ -121,6 +131,61 @@ router.patch("/candidates/:id", authMiddleware, requireRole("admin", "hr_officer
     return;
   }
   res.json(candidate);
+});
+
+// GET /candidates/:id/profile — full profile for HR view (sub-records)
+router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const params = GetCandidateParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid candidate id" });
+    return;
+  }
+  const candidateId = params.data.id;
+  const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, candidateId));
+  if (!candidate) {
+    res.status(404).json({ error: "Candidate not found" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const [match] = await db
+      .select({ candidateId: applicationsTable.candidateId })
+      .from(applicationsTable)
+      .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+      .where(and(eq(applicationsTable.candidateId, candidateId), eq(jobsTable.agencyId, agencyId)))
+      .limit(1);
+    if (!match) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+  }
+
+  // Fetch all sub-records in parallel
+  const [education, experience, languages, diversity, referees, applications] = await Promise.all([
+    db.select().from(candidateEducationTable).where(eq(candidateEducationTable.candidateId, candidateId)),
+    db.select().from(candidateExperienceTable).where(eq(candidateExperienceTable.candidateId, candidateId)),
+    db.select().from(candidateLanguagesTable).where(eq(candidateLanguagesTable.candidateId, candidateId)),
+    db.select().from(candidateDiversityTable).where(eq(candidateDiversityTable.candidateId, candidateId)),
+    db
+      .select({
+        id: candidateRefereesTable.id,
+        applicationId: candidateRefereesTable.applicationId,
+        name: candidateRefereesTable.name,
+        relationship: candidateRefereesTable.relationship,
+        organisation: candidateRefereesTable.organisation,
+        email: candidateRefereesTable.email,
+        phone: candidateRefereesTable.phone,
+      })
+      .from(candidateRefereesTable)
+      .innerJoin(applicationsTable, eq(candidateRefereesTable.applicationId, applicationsTable.id))
+      .where(eq(applicationsTable.candidateId, candidateId)),
+    db
+      .select({ id: applicationsTable.id, jobId: applicationsTable.jobId, status: applicationsTable.status, createdAt: applicationsTable.createdAt })
+      .from(applicationsTable)
+      .where(eq(applicationsTable.candidateId, candidateId)),
+  ]);
+
+  res.json({ ...candidate, education, experience, languages, diversity, referees, applications });
 });
 
 export default router;

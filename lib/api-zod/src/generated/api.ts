@@ -377,6 +377,18 @@ export const GetCandidatesResponseItem = zod.object({
   phone: zod.string().nullish(),
   cvUrl: zod.string().nullish(),
   parsedData: zod.unknown().nullish(),
+  otherNames: zod.string().nullish(),
+  gender: zod.string().nullish(),
+  dateOfBirth: zod.string().nullish(),
+  nationality: zod.string().nullish(),
+  nationalId: zod.string().nullish(),
+  maritalStatus: zod.string().nullish(),
+  alternativePhone: zod.string().nullish(),
+  physicalAddress: zod.string().nullish(),
+  city: zod.string().nullish(),
+  province: zod.string().nullish(),
+  district: zod.string().nullish(),
+  postalAddress: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -406,6 +418,18 @@ export const GetCandidateResponse = zod.object({
   phone: zod.string().nullish(),
   cvUrl: zod.string().nullish(),
   parsedData: zod.unknown().nullish(),
+  otherNames: zod.string().nullish(),
+  gender: zod.string().nullish(),
+  dateOfBirth: zod.string().nullish(),
+  nationality: zod.string().nullish(),
+  nationalId: zod.string().nullish(),
+  maritalStatus: zod.string().nullish(),
+  alternativePhone: zod.string().nullish(),
+  physicalAddress: zod.string().nullish(),
+  city: zod.string().nullish(),
+  province: zod.string().nullish(),
+  district: zod.string().nullish(),
+  postalAddress: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -432,9 +456,120 @@ export const UpdateCandidateResponse = zod.object({
   phone: zod.string().nullish(),
   cvUrl: zod.string().nullish(),
   parsedData: zod.unknown().nullish(),
+  otherNames: zod.string().nullish(),
+  gender: zod.string().nullish(),
+  dateOfBirth: zod.string().nullish(),
+  nationality: zod.string().nullish(),
+  nationalId: zod.string().nullish(),
+  maritalStatus: zod.string().nullish(),
+  alternativePhone: zod.string().nullish(),
+  physicalAddress: zod.string().nullish(),
+  city: zod.string().nullish(),
+  province: zod.string().nullish(),
+  district: zod.string().nullish(),
+  postalAddress: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
+
+/**
+ * @summary Get full candidate profile with sub-records (education, experience, languages, diversity, referees)
+ */
+export const GetCandidateProfileParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCandidateProfileResponse = zod
+  .object({
+    id: zod.number(),
+    name: zod.string(),
+    email: zod.string(),
+    phone: zod.string().nullish(),
+    cvUrl: zod.string().nullish(),
+    parsedData: zod.unknown().nullish(),
+    otherNames: zod.string().nullish(),
+    gender: zod.string().nullish(),
+    dateOfBirth: zod.string().nullish(),
+    nationality: zod.string().nullish(),
+    nationalId: zod.string().nullish(),
+    maritalStatus: zod.string().nullish(),
+    alternativePhone: zod.string().nullish(),
+    physicalAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    province: zod.string().nullish(),
+    district: zod.string().nullish(),
+    postalAddress: zod.string().nullish(),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+  })
+  .and(
+    zod.object({
+      education: zod.array(
+        zod.object({
+          id: zod.number(),
+          candidateId: zod.number(),
+          institution: zod.string(),
+          level: zod.string().nullish(),
+          qualification: zod.string().nullish(),
+          fieldOfStudy: zod.string().nullish(),
+          startDate: zod.string().nullish(),
+          endDate: zod.string().nullish(),
+          current: zod.boolean().nullish(),
+          certifications: zod.string().nullish(),
+        }),
+      ),
+      experience: zod.array(
+        zod.object({
+          id: zod.number(),
+          candidateId: zod.number(),
+          employer: zod.string(),
+          jobTitle: zod.string().nullish(),
+          responsibilities: zod.string().nullish(),
+          startDate: zod.string().nullish(),
+          endDate: zod.string().nullish(),
+          current: zod.boolean().nullish(),
+          reasonForLeaving: zod.string().nullish(),
+          keyAchievements: zod.string().nullish(),
+        }),
+      ),
+      languages: zod.array(
+        zod.object({
+          id: zod.number(),
+          candidateId: zod.number(),
+          language: zod.string(),
+          proficiency: zod.string().nullish(),
+        }),
+      ),
+      diversity: zod.array(
+        zod.object({
+          id: zod.number(),
+          candidateId: zod.number(),
+          disabilityStatus: zod.string().nullish(),
+          genderIdentity: zod.string().nullish(),
+          ethnicity: zod.string().nullish(),
+        }),
+      ),
+      referees: zod.array(
+        zod.object({
+          id: zod.number(),
+          applicationId: zod.number(),
+          name: zod.string(),
+          relationship: zod.string().nullish(),
+          organisation: zod.string().nullish(),
+          email: zod.string().nullish(),
+          phone: zod.string().nullish(),
+        }),
+      ),
+      applications: zod.array(
+        zod.object({
+          id: zod.number(),
+          jobId: zod.number(),
+          status: zod.string(),
+          createdAt: zod.string().optional(),
+        }),
+      ),
+    }),
+  );
 
 /**
  * @summary Look up an application status by email and reference ID (public, no auth required)

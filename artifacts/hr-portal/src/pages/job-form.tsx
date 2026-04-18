@@ -10,10 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, HelpCircle, Plus, Trash2, Loader2 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
+import type { ScreeningQuestion } from "@/components/apply-wizard";
 
 const schema = z.object({
   title: z.string().min(2, "Title required"),
@@ -21,8 +23,171 @@ const schema = z.object({
   description: z.string().min(1, "Description required"),
   closingDate: z.string().optional(),
 });
-
 type FormValues = z.infer<typeof schema>;
+
+const QUESTION_TYPE_LABELS: Record<string, string> = {
+  short_answer: "Short Answer",
+  long_answer: "Long Answer",
+  yes_no: "Yes / No",
+  multiple_choice: "Multiple Choice",
+};
+
+type NewQuestion = { question: string; questionType: string; options: string; required: boolean };
+
+function ScreeningQuestionsSection({ jobId }: { jobId: number }) {
+  const { toast } = useToast();
+  const [questions, setQuestions] = useState<ScreeningQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [newQ, setNewQ] = useState<NewQuestion>({ question: "", questionType: "short_answer", options: "", required: true });
+
+  const fetchQuestions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/screening-questions`);
+      if (res.ok) setQuestions(await res.json() as ScreeningQuestion[]);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [jobId]);
+
+  useEffect(() => { void fetchQuestions(); }, [fetchQuestions]);
+
+  const handleAdd = async () => {
+    if (!newQ.question.trim()) {
+      toast({ title: "Question text required", variant: "destructive" }); return;
+    }
+    setSaving(true);
+    try {
+      const options = newQ.questionType === "multiple_choice"
+        ? newQ.options.split(",").map(s => s.trim()).filter(Boolean)
+        : undefined;
+      const res = await fetch(`/api/jobs/${jobId}/screening-questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: newQ.question, questionType: newQ.questionType, options, required: newQ.required }),
+      });
+      if (!res.ok) { toast({ title: "Failed to add question", variant: "destructive" }); return; }
+      setNewQ({ question: "", questionType: "short_answer", options: "", required: true });
+      await fetchQuestions();
+      toast({ title: "Screening question added" });
+    } catch { toast({ title: "Failed to add question", variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (qid: number) => {
+    setDeletingId(qid);
+    try {
+      await fetch(`/api/jobs/${jobId}/screening-questions/${qid}`, { method: "DELETE" });
+      await fetchQuestions();
+      toast({ title: "Question removed" });
+    } catch { toast({ title: "Failed to remove question", variant: "destructive" }); }
+    finally { setDeletingId(null); }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <HelpCircle className="h-4 w-4 text-primary" />
+          <CardTitle className="text-base">Screening Questions</CardTitle>
+          <Badge variant="outline">{questions.length}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Add questions candidates must answer when applying for this position.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+          </div>
+        ) : (
+          <>
+            {questions.length === 0 && (
+              <p className="text-sm text-muted-foreground py-2">No screening questions yet.</p>
+            )}
+            <div className="space-y-2">
+              {questions.map((q, i) => (
+                <div key={q.id} className="flex items-start gap-3 p-3 rounded-md bg-muted/50 border">
+                  <span className="text-xs text-muted-foreground font-mono w-5 flex-shrink-0 mt-0.5">{i + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{q.question}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary" className="text-xs">{QUESTION_TYPE_LABELS[q.questionType] ?? q.questionType}</Badge>
+                      {q.required && <Badge variant="outline" className="text-xs text-red-600">Required</Badge>}
+                    </div>
+                    {q.options && Array.isArray(q.options) && (q.options as string[]).length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">Options: {(q.options as string[]).join(", ")}</p>
+                    )}
+                  </div>
+                  <Button
+                    type="button" size="sm" variant="ghost" className="text-destructive h-7 px-2 flex-shrink-0"
+                    onClick={() => handleDelete(q.id)}
+                    disabled={deletingId === q.id}
+                  >
+                    {deletingId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add new question */}
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/20">
+              <p className="text-sm font-medium">Add Question</p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Question Text</label>
+                <Input
+                  placeholder="e.g. Do you hold a valid PNG driver's licence?"
+                  value={newQ.question}
+                  onChange={e => setNewQ(p => ({ ...p, question: e.target.value }))}
+                  data-testid="input-screening-question"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+                  <Select value={newQ.questionType} onValueChange={v => setNewQ(p => ({ ...p, questionType: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short_answer">Short Answer</SelectItem>
+                      <SelectItem value="long_answer">Long Answer</SelectItem>
+                      <SelectItem value="yes_no">Yes / No</SelectItem>
+                      <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Required?</label>
+                  <Select value={newQ.required ? "yes" : "no"} onValueChange={v => setNewQ(p => ({ ...p, required: v === "yes" }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Required</SelectItem>
+                      <SelectItem value="no">Optional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {newQ.questionType === "multiple_choice" && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Options (comma separated)</label>
+                  <Input
+                    placeholder="Option A, Option B, Option C"
+                    value={newQ.options}
+                    onChange={e => setNewQ(p => ({ ...p, options: e.target.value }))}
+                  />
+                </div>
+              )}
+              <Button type="button" size="sm" onClick={handleAdd} disabled={saving}>
+                {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+                Add Question
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function JobFormPage() {
   const [matchNew] = useRoute("/jobs/new");
@@ -160,6 +325,9 @@ export default function JobFormPage() {
             </Form>
           </CardContent>
         </Card>
+
+        {/* Screening Questions (only available in edit mode when job has an ID) */}
+        {isEdit && jobId > 0 && <ScreeningQuestionsSection jobId={jobId} />}
       </div>
     </AppLayout>
   );

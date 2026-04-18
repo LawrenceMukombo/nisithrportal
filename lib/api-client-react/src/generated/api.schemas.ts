@@ -129,9 +129,122 @@ export interface Candidate {
   /** @nullable */
   cvUrl?: string | null;
   parsedData?: unknown | null;
+  /** @nullable */
+  otherNames?: string | null;
+  /** @nullable */
+  gender?: string | null;
+  /** @nullable */
+  dateOfBirth?: string | null;
+  /** @nullable */
+  nationality?: string | null;
+  /** @nullable */
+  nationalId?: string | null;
+  /** @nullable */
+  maritalStatus?: string | null;
+  /** @nullable */
+  alternativePhone?: string | null;
+  /** @nullable */
+  physicalAddress?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  province?: string | null;
+  /** @nullable */
+  district?: string | null;
+  /** @nullable */
+  postalAddress?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface CandidateEducationEntry {
+  id: number;
+  candidateId: number;
+  institution: string;
+  /** @nullable */
+  level?: string | null;
+  /** @nullable */
+  qualification?: string | null;
+  /** @nullable */
+  fieldOfStudy?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  current?: boolean | null;
+  /** @nullable */
+  certifications?: string | null;
+}
+
+export interface CandidateExperienceEntry {
+  id: number;
+  candidateId: number;
+  employer: string;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  responsibilities?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  current?: boolean | null;
+  /** @nullable */
+  reasonForLeaving?: string | null;
+  /** @nullable */
+  keyAchievements?: string | null;
+}
+
+export interface CandidateLanguageEntry {
+  id: number;
+  candidateId: number;
+  language: string;
+  /** @nullable */
+  proficiency?: string | null;
+}
+
+export interface CandidateDiversityEntry {
+  id: number;
+  candidateId: number;
+  /** @nullable */
+  disabilityStatus?: string | null;
+  /** @nullable */
+  genderIdentity?: string | null;
+  /** @nullable */
+  ethnicity?: string | null;
+}
+
+export interface CandidateRefereeEntry {
+  id: number;
+  applicationId: number;
+  name: string;
+  /** @nullable */
+  relationship?: string | null;
+  /** @nullable */
+  organisation?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+}
+
+export interface CandidateProfileApplication {
+  id: number;
+  jobId: number;
+  status: string;
+  createdAt?: string;
+}
+
+export type CandidateProfile = Candidate & {
+  education: CandidateEducationEntry[];
+  experience: CandidateExperienceEntry[];
+  languages: CandidateLanguageEntry[];
+  diversity: CandidateDiversityEntry[];
+  referees: CandidateRefereeEntry[];
+  applications: CandidateProfileApplication[];
+};
 
 export interface CreateCandidateRequest {
   name: string;

@@ -24,6 +24,7 @@ import type {
   ApplicationTrackResult,
   AuthResponse,
   Candidate,
+  CandidateProfile,
   ConfirmUpload200,
   ConfirmUploadBody,
   Contract,
@@ -2446,6 +2447,93 @@ export const useUpdateCandidate = <
 > => {
   return useMutation(getUpdateCandidateMutationOptions(options));
 };
+
+/**
+ * @summary Get full candidate profile with sub-records (education, experience, languages, diversity, referees)
+ */
+export const getGetCandidateProfileUrl = (id: number) => {
+  return `/api/candidates/${id}/profile`;
+};
+
+export const getCandidateProfile = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CandidateProfile> => {
+  return customFetch<CandidateProfile>(getGetCandidateProfileUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCandidateProfileQueryKey = (id: number) => {
+  return [`/api/candidates/${id}/profile`] as const;
+};
+
+export const getGetCandidateProfileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCandidateProfile>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCandidateProfile>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCandidateProfileQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCandidateProfile>>
+  > = ({ signal }) => getCandidateProfile(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCandidateProfile>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCandidateProfileQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCandidateProfile>>
+>;
+export type GetCandidateProfileQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get full candidate profile with sub-records (education, experience, languages, diversity, referees)
+ */
+
+export function useGetCandidateProfile<
+  TData = Awaited<ReturnType<typeof getCandidateProfile>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCandidateProfile>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCandidateProfileQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Look up an application status by email and reference ID (public, no auth required)

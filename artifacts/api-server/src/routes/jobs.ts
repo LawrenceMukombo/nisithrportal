@@ -17,6 +17,13 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
+const STAFF_ROLES = ["admin", "hr_officer", "manager"] as const;
+function isInternalStaff(user: { roleName?: string } | undefined | null): boolean {
+  return user?.roleName != null && (STAFF_ROLES as readonly string[]).includes(user.roleName);
+}
+
+const PUBLIC_TARGET_FILTER = or(isNull(jobsTable.publishTarget), inArray(jobsTable.publishTarget, ["public", "both"]))!;
+
 router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   const query = GetJobsQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -25,6 +32,7 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   }
   const conditions = [];
   const isAuthenticated = req.user != null;
+  const isStaff = isInternalStaff(req.user);
 
   if (req.user?.agencyId != null) {
     conditions.push(eq(jobsTable.agencyId, req.user.agencyId));
@@ -32,7 +40,10 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
 
   if (!isAuthenticated) {
     conditions.push(inArray(jobsTable.status, ["open", "published"]));
-    conditions.push(or(isNull(jobsTable.publishTarget), inArray(jobsTable.publishTarget, ["public", "both"]))!);
+    conditions.push(PUBLIC_TARGET_FILTER);
+  } else if (!isStaff) {
+    conditions.push(PUBLIC_TARGET_FILTER);
+    if (query.data.status != null) conditions.push(eq(jobsTable.status, query.data.status));
   } else if (query.data.status != null) {
     conditions.push(eq(jobsTable.status, query.data.status));
   }
@@ -125,13 +136,14 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   const isOwnAgency = req.user?.agencyId != null && job.agencyId === req.user.agencyId;
   const isPublished = job.status === "published" || job.status === "open";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
+  const isStaff = isInternalStaff(req.user);
 
   if (!isPublished && !isOwnAgency) {
     res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
-  if (isPublished && !req.user && !isPublicTarget) {
-    res.status(404).json({ error: "Job not found" });
+  if (isPublished && !isPublicTarget && !isStaff) {
+    res.status(req.user ? 403 : 404).json({ error: "Job not found" });
     return;
   }
   res.json(job);
@@ -243,8 +255,8 @@ router.get("/jobs/:id/screening-questions", optionalAuth, async (req, res): Prom
     if (req.user.roleName !== "admin" && userAgencyId !== job.agencyId) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-  } else if (!req.user && !isPublicTarget) {
-    res.status(404).json({ error: "Job not found" }); return;
+  } else if (!isPublicTarget && !isInternalStaff(req.user)) {
+    res.status(req.user ? 403 : 404).json({ error: "Job not found" }); return;
   }
   const questions = await db.select().from(jobScreeningQuestionsTable)
     .where(eq(jobScreeningQuestionsTable.jobId, jobId))

@@ -51,9 +51,27 @@ function daysSince(dateStr: string | null | undefined): number {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
-function avgDays(apps: Application[]): number {
+/**
+ * Compute avg days applications have been in their current stage using
+ * exact stage-entry timestamps from statusHistory. Falls back to createdAt
+ * for applications that have no history (shouldn't happen for new data).
+ */
+function avgDays(apps: Application[], stageStatus?: string): number {
   if (apps.length === 0) return 0;
-  const total = apps.reduce((sum, a) => sum + daysSince(a.createdAt), 0);
+  const now = Date.now();
+  const total = apps.reduce((sum, a) => {
+    if (stageStatus) {
+      const history = (a.statusHistory ?? [])
+        .slice()
+        .sort((x, y) => new Date(x.changedAt).getTime() - new Date(y.changedAt).getTime());
+      const lastEntry = [...history].reverse().find((h) => h.status === stageStatus);
+      if (lastEntry) {
+        const days = Math.max(0, Math.floor((now - new Date(lastEntry.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
+        return sum + days;
+      }
+    }
+    return sum + daysSince(a.createdAt);
+  }, 0);
   return Math.round(total / apps.length);
 }
 
@@ -106,42 +124,56 @@ type TrendPoint = {
 };
 
 /**
- * Builds 8-week trend data from applications.
+ * Builds 8-week trend data from applications using exact stage-entry timestamps.
  *
- * For each calendar week (Mon–Sun), we look at applications whose `updatedAt`
- * falls in that week and compute the average time in pipeline (updatedAt - createdAt)
- * per status. This proxies "how quickly were applications moving through each
- * stage in a given week?" — letting managers see if bottlenecks improve or worsen.
+ * For each calendar week (Mon–Sun) and each pipeline stage status, we collect
+ * every stage interval (entry → exit) whose exit time falls within that week.
+ * The "exit" is the next history entry's changedAt, or now for the current stage.
+ * We then average the exact time each application spent in that stage.
+ *
+ * This replaces the old updatedAt - createdAt proxy with precise per-stage durations.
  */
 function buildTrendData(applications: Application[]): TrendPoint[] {
   const NUM_WEEKS = 8;
+  const now = Date.now();
   const weeks: TrendPoint[] = [];
 
   for (let w = NUM_WEEKS - 1; w >= 0; w--) {
     const weekStart = getWeekMonday(w);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekStartMs = weekStart.getTime();
+    const weekEndMs = weekEnd.getTime();
 
     const point: TrendPoint = {
       week: formatWeekLabel(weekStart),
-      weekStart: weekStart.getTime(),
+      weekStart: weekStartMs,
     };
 
     for (const { status } of TREND_STATUSES) {
-      const appsInWeek = applications.filter((app) => {
-        if ((app.status ?? "applied") !== status) return false;
-        const updated = app.updatedAt ? new Date(app.updatedAt).getTime() : null;
-        const created = app.createdAt ? new Date(app.createdAt).getTime() : null;
-        if (!updated || !created) return false;
-        return updated >= weekStart.getTime() && updated < weekEnd.getTime();
-      });
+      const durations: number[] = [];
 
-      if (appsInWeek.length > 0) {
-        const totalDays = appsInWeek.reduce((sum, app) => {
-          const ms = new Date(app.updatedAt!).getTime() - new Date(app.createdAt!).getTime();
-          return sum + Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-        }, 0);
-        point[status] = Math.round(totalDays / appsInWeek.length);
+      for (const app of applications) {
+        const history = (app.statusHistory ?? [])
+          .slice()
+          .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+
+        for (let i = 0; i < history.length; i++) {
+          if (history[i].status !== status) continue;
+          const entryMs = new Date(history[i].changedAt).getTime();
+          const exitMs = i + 1 < history.length
+            ? new Date(history[i + 1].changedAt).getTime()
+            : now;
+
+          if (exitMs >= weekStartMs && exitMs < weekEndMs) {
+            const days = Math.max(0, Math.floor((exitMs - entryMs) / (1000 * 60 * 60 * 24)));
+            durations.push(days);
+          }
+        }
+      }
+
+      if (durations.length > 0) {
+        point[status] = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
       }
     }
 
@@ -196,7 +228,7 @@ function PipelineTrendChart({ applications, isLoading }: { applications: Applica
           </Button>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Avg. days each application had been in the pipeline when last updated, grouped by stage and week — lower is faster, rising lines signal a worsening bottleneck
+          Avg. days applications spent in each stage, grouped by week they exited that stage — lower is faster, rising lines signal a worsening bottleneck
         </p>
       </CardHeader>
       <CardContent className="pt-0">
@@ -233,7 +265,7 @@ function PipelineTrendChart({ applications, isLoading }: { applications: Applica
                 }}
                 formatter={(value: number, name: string) => {
                   const entry = TREND_STATUSES.find((s) => s.status === name);
-                  return [`${value}d pipeline age (avg)`, entry?.label ?? name];
+                  return [`${value}d avg in stage`, entry?.label ?? name];
                 }}
               />
               <Legend
@@ -457,7 +489,7 @@ export default function RecruitmentWorkflowPage() {
       stage,
       apps: filtered,
       totalCount: allApps.length,
-      avg: avgDays(allApps),
+      avg: avgDays(allApps, stage.status),
     };
   });
 

@@ -5,6 +5,7 @@ import {
   Clock,
   ArrowRight,
   TrendingUp,
+  AlertTriangle,
 } from "lucide-react";
 import {
   useGetApplications,
@@ -45,12 +46,16 @@ function StageCard({
   totalActive,
   candidateMap,
   jobMap,
+  avgDaysInStage,
+  isSlowest,
 }: {
   stage: typeof WORKFLOW_STAGES[number];
   apps: Application[];
   totalActive: number;
   candidateMap: Map<number, Candidate>;
   jobMap: Map<number, Job>;
+  avgDaysInStage: number;
+  isSlowest: boolean;
 }) {
   const colors = STAGE_COLOR_MAP[stage.color];
   const Icon = stage.icon;
@@ -59,7 +64,10 @@ function StageCard({
   const pct = totalActive > 0 ? Math.round((apps.length / totalActive) * 100) : 0;
 
   return (
-    <Card className="flex flex-col" data-testid={`stage-card-${stage.id}`}>
+    <Card
+      className={`flex flex-col ${isSlowest ? "ring-2 ring-orange-400/70 ring-offset-1" : ""}`}
+      data-testid={`stage-card-${stage.id}`}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
           <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${colors.bg}`}>
@@ -69,10 +77,27 @@ function StageCard({
             <CardTitle className="text-sm font-semibold leading-tight">{stage.label}</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">{stage.timeframe}</p>
           </div>
-          <Badge variant="secondary" className="shrink-0 tabular-nums">
-            {apps.length}
-          </Badge>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge variant="secondary" className="tabular-nums">
+              {apps.length}
+            </Badge>
+            {apps.length > 0 && (
+              <span
+                className={`text-xs font-semibold tabular-nums ${isSlowest ? "text-orange-500" : "text-muted-foreground"}`}
+                data-testid={`avg-days-${stage.id}`}
+                title="Average days applications have been in this stage"
+              >
+                avg {avgDaysInStage}d
+              </span>
+            )}
+          </div>
         </div>
+        {isSlowest && apps.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-1 rounded-md bg-orange-50 dark:bg-orange-950/20 px-2 py-1 border border-orange-200 dark:border-orange-900/40">
+            <AlertTriangle className="h-3 w-3 text-orange-500 shrink-0" />
+            <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Slowest stage — possible bottleneck</p>
+          </div>
+        )}
         {SHARED_STATUS_STAGES.has(stage.id) && (
           <p className="text-xs text-muted-foreground/70 italic mt-1">
             Count shared with paired stage at same status
@@ -169,6 +194,17 @@ export default function RecruitmentWorkflowPage() {
 
   const activeStageCount = WORKFLOW_STAGES.filter((s) => (byStatus[s.status]?.length ?? 0) > 0).length;
 
+  const stageAvgDays = WORKFLOW_STAGES.map((stage) => ({
+    stage,
+    apps: stageApps(stage),
+    avg: avgDays(stageApps(stage)),
+  }));
+
+  const populatedStages = stageAvgDays.filter((s) => s.apps.length > 0);
+  const slowestEntry = populatedStages.length > 0
+    ? populatedStages.reduce((a, b) => (a.avg >= b.avg ? a : b))
+    : null;
+
   return (
     <AppLayout>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -189,7 +225,7 @@ export default function RecruitmentWorkflowPage() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
             <Card className="bg-primary/5 border-primary/20">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -230,6 +266,32 @@ export default function RecruitmentWorkflowPage() {
                 <p className="text-xs text-muted-foreground mt-1">of {WORKFLOW_STAGES.filter((s) => s.status != null).length} trackable stages</p>
               </CardContent>
             </Card>
+            <Card
+              className={`${slowestEntry ? "bg-orange-50 border-orange-200 dark:bg-orange-950/20 dark:border-orange-900/30" : ""}`}
+              data-testid="slowest-stage-card"
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className={`h-4 w-4 ${slowestEntry ? "text-orange-500" : "text-muted-foreground"}`} />
+                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Slowest Stage</span>
+                </div>
+                {slowestEntry ? (
+                  <>
+                    <p className="text-xl font-bold text-orange-600 dark:text-orange-400 leading-tight truncate" title={slowestEntry.stage.label}>
+                      {slowestEntry.stage.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      avg <span className="font-semibold text-orange-500">{slowestEntry.avg}d</span> · {slowestEntry.apps.length} candidate{slowestEntry.apps.length !== 1 ? "s" : ""}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xl font-bold text-muted-foreground">—</p>
+                    <p className="text-xs text-muted-foreground mt-1">no active candidates</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -244,16 +306,23 @@ export default function RecruitmentWorkflowPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {WORKFLOW_STAGES.map((stage) => (
-                <StageCard
-                  key={stage.id}
-                  stage={stage}
-                  apps={stageApps(stage)}
-                  totalActive={totalActive}
-                  candidateMap={candidateMap}
-                  jobMap={jobMap}
-                />
-              ))}
+              {WORKFLOW_STAGES.map((stage) => {
+                const apps = stageApps(stage);
+                const avg = avgDays(apps);
+                const isSlowest = slowestEntry?.stage.id === stage.id && apps.length > 0;
+                return (
+                  <StageCard
+                    key={stage.id}
+                    stage={stage}
+                    apps={apps}
+                    totalActive={totalActive}
+                    candidateMap={candidateMap}
+                    jobMap={jobMap}
+                    avgDaysInStage={avg}
+                    isSlowest={isSlowest}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

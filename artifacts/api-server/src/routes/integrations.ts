@@ -269,25 +269,68 @@ router.get("/integration-config/:id/logs", authMiddleware, requireRole("admin"),
 });
 
 // ─── AI: Suggest field mappings ────────────────────────────────────────────────
+// Accepts either:
+//   (a) { internalFields: string[], externalFields: string[] }  — new flexible format
+//   (b) { connectorType: string, externalSchema: string }       — legacy format (auto-resolved)
+// Both forms can be combined: connectorType drives internalFields if not supplied explicitly.
+
+const SuggestMappingSchema = z.object({
+  internalFields: z.array(z.string()).optional(),
+  externalFields: z.array(z.string()).optional(),
+  connectorType: z.string().optional(),
+  externalSchema: z.string().optional(),
+}).refine(d => {
+  const hasNew = (d.internalFields && d.internalFields.length > 0) ||
+                 (d.externalFields && d.externalFields.length > 0);
+  const hasLegacy = d.connectorType || d.externalSchema;
+  return hasNew || hasLegacy;
+}, { message: "Provide internalFields + externalFields, or connectorType + externalSchema" });
 
 router.post("/integration/ai/suggest-mapping", authMiddleware, requireRole("admin"), async (req, res) => {
-  const { connectorType, externalSchema } = req.body as { connectorType: string; externalSchema: string };
+  const parse = SuggestMappingSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: parse.error.flatten() });
+    return;
+  }
 
-  const connector = getConnector(connectorType);
-  if (!connector) {
-    res.status(400).json({ error: `Unknown connector type: ${connectorType}` });
+  const { internalFields, externalFields, connectorType, externalSchema } = parse.data;
+
+  // Resolve internal fields: explicit array wins, then fall back to connector catalog
+  let resolvedInternalFields: string[] = internalFields ?? [];
+  let connectorLabel = "HR System";
+
+  if (resolvedInternalFields.length === 0 && connectorType) {
+    const connector = getConnector(connectorType);
+    if (!connector) {
+      res.status(400).json({ error: `Unknown connector type: ${connectorType}` });
+      return;
+    }
+    resolvedInternalFields = connector.fields.map(f => `${f.key} (${f.type}): ${f.label}${f.description ? ` — ${f.description}` : ""}`);
+    connectorLabel = connector.label;
+  }
+
+  // Resolve external fields: explicit array wins, then fall back to raw schema text
+  let resolvedExternalDesc = "";
+  if (externalFields && externalFields.length > 0) {
+    resolvedExternalDesc = externalFields.join(", ");
+  } else if (externalSchema) {
+    resolvedExternalDesc = externalSchema;
+  }
+
+  if (!resolvedInternalFields.length || !resolvedExternalDesc) {
+    res.status(400).json({ error: "Could not resolve internal or external fields from the provided inputs" });
     return;
   }
 
   const prompt = `You are a system integration specialist for a Papua New Guinea government HR system.
 
-The HR system has these internal fields for the ${connector.label} integration:
-${connector.fields.map(f => `- ${f.key} (${f.type}): ${f.label}${f.description ? ` — ${f.description}` : ""}`).join("\n")}
+The HR system (${connectorLabel}) has these internal fields:
+${resolvedInternalFields.map(f => `- ${f}`).join("\n")}
 
-The external system schema/fields provided by the admin are:
-${externalSchema}
+The external system's fields/schema provided are:
+${resolvedExternalDesc}
 
-Suggest the best field mappings from the external system to the HR system internal fields.
+Suggest the best field mappings from the external system fields to the HR system's internal fields.
 Return a JSON object like:
 {
   "mappings": {
@@ -296,7 +339,7 @@ Return a JSON object like:
   "notes": "Brief explanation of mapping decisions and any caveats."
 }
 
-Only include mappings where you are reasonably confident. Skip if unsure.`;
+Only include mappings where you are reasonably confident. Skip uncertain mappings.`;
 
   try {
     const completion = await openai.chat.completions.create({

@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Plus, Puzzle, Play, Trash2, ChevronDown, ChevronRight, Loader2, Sparkles, CheckCircle2, XCircle, Clock, Eye, EyeOff } from "lucide-react";
+import {
+  Plus, Puzzle, Play, Trash2, ChevronDown, ChevronRight, Loader2,
+  Sparkles, CheckCircle2, XCircle, Clock, Eye, EyeOff, Pencil, TestTube2, X,
+} from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,8 +40,13 @@ interface IntegrationConfig {
   name: string;
   description: string | null;
   endpointUrl: string | null;
+  method: string;
   apiKeyRef: string | null;
+  authType: string;
+  authHeaderName: string | null;
+  headers: Record<string, string> | null;
   fieldMappings: Record<string, string> | null;
+  responseMapping: Record<string, string> | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -49,6 +57,8 @@ interface IntegrationLog {
   status: string;
   durationMs: number | null;
   errorMessage: string | null;
+  requestPayload: Record<string, unknown> | null;
+  responsePayload: Record<string, unknown> | null;
   createdAt: string;
   triggeredBy: string | null;
 }
@@ -81,30 +91,580 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? res.statusText);
+    const rawErr = (err as { error?: unknown }).error;
+    const msg = typeof rawErr === "string"
+      ? rawErr
+      : rawErr != null
+        ? JSON.stringify(rawErr)
+        : res.statusText;
+    throw new Error(msg);
   }
   return res.json() as Promise<T>;
 }
 
+function safeJsonParse(str: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(str);
+    return typeof v === "object" && v !== null ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function JsonEditorField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  testId?: string;
+}) {
+  const isValid = value.trim() === "" || safeJsonParse(value) !== null;
+  return (
+    <div className="space-y-1.5">
+      <Label className="flex items-center gap-1">
+        {label}
+        {value.trim() !== "" && (
+          <span className={`text-xs ml-auto font-normal ${isValid ? "text-emerald-600" : "text-red-600"}`}>
+            {isValid ? "valid JSON" : "invalid JSON"}
+          </span>
+        )}
+      </Label>
+      <Textarea
+        className="font-mono text-xs h-24 resize-none"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder ?? '{\n  "key": "value"\n}'}
+        data-testid={testId}
+      />
+    </div>
+  );
+}
+
 function LogRow({ log }: { log: IntegrationLog }) {
+  const [showDetail, setShowDetail] = useState(false);
   const statusIcon = log.status === "success"
-    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-    : <XCircle className="h-3.5 w-3.5 text-red-600" />;
+    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+    : <XCircle className="h-3.5 w-3.5 text-red-600 shrink-0" />;
 
   return (
-    <div className="flex items-center gap-3 py-1.5 text-xs border-b border-border last:border-0">
-      {statusIcon}
-      <span className={log.status === "success" ? "text-emerald-700 font-medium" : "text-red-700 font-medium"}>
-        {log.status}
-      </span>
-      {log.durationMs && (
-        <span className="text-muted-foreground flex items-center gap-0.5">
-          <Clock className="h-3 w-3" /> {log.durationMs}ms
+    <div className="border-b border-border last:border-0">
+      <div className="flex items-center gap-3 py-1.5 text-xs cursor-pointer" onClick={() => setShowDetail(!showDetail)}>
+        {statusIcon}
+        <span className={log.status === "success" ? "text-emerald-700 font-medium" : "text-red-700 font-medium"}>
+          {log.status}
         </span>
+        {log.durationMs != null && (
+          <span className="text-muted-foreground flex items-center gap-0.5">
+            <Clock className="h-3 w-3" /> {log.durationMs}ms
+          </span>
+        )}
+        {log.errorMessage && <span className="text-red-600 truncate max-w-xs">{log.errorMessage}</span>}
+        <span className="ml-auto text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</span>
+        {(log.requestPayload || log.responsePayload) && (
+          <span className="text-muted-foreground text-xs">{showDetail ? "▲" : "▼"}</span>
+        )}
+      </div>
+      {showDetail && (log.requestPayload || log.responsePayload) && (
+        <div className="pb-2 pl-5 space-y-1.5">
+          {log.requestPayload && (
+            <pre className="text-xs bg-muted/40 rounded p-2 overflow-auto max-h-28 font-mono">
+              {JSON.stringify(log.requestPayload, null, 2)}
+            </pre>
+          )}
+          {log.responsePayload && (
+            <pre className="text-xs bg-emerald-50 rounded p-2 overflow-auto max-h-28 font-mono border border-emerald-200">
+              {JSON.stringify(log.responsePayload, null, 2)}
+            </pre>
+          )}
+        </div>
       )}
-      {log.errorMessage && <span className="text-red-600 truncate max-w-xs">{log.errorMessage}</span>}
-      <span className="ml-auto text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</span>
     </div>
+  );
+}
+
+function TestPanel({
+  config,
+  onClose,
+}: {
+  config: IntegrationConfig;
+  onClose: () => void;
+}) {
+  const [payload, setPayload] = useState(() =>
+    JSON.stringify(config.fieldMappings && Object.keys(config.fieldMappings).length > 0
+      ? config.fieldMappings
+      : {}, null, 2)
+  );
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const parsedPayload = safeJsonParse(payload);
+  const isValidPayload = payload.trim() === "" || parsedPayload !== null;
+
+  const handleRun = async () => {
+    setIsRunning(true);
+    setResult(null);
+    try {
+      const body = {
+        configId: config.id,
+        payload: parsedPayload ?? {},
+      };
+      const res = await apiFetch<Record<string, unknown>>(
+        `/api/integration/${config.integrationType}/execute`,
+        { method: "POST", body: JSON.stringify(body) }
+      );
+      setResult(res);
+      const r = res as { success?: boolean; status?: number };
+      if (r.success) {
+        toast({ title: `Test succeeded (HTTP ${r.status ?? "?"})` });
+      } else {
+        toast({ title: `Test returned HTTP ${r.status ?? "?"}`, variant: "destructive" });
+      }
+      qc.invalidateQueries({ queryKey: ["integration-logs", config.id] });
+    } catch (e) {
+      toast({ title: `Test failed: ${(e as Error).message}`, variant: "destructive" });
+      setResult({ error: (e as Error).message });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <TestTube2 className="h-4 w-4 text-primary" />
+          Test Integration
+        </div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Enter a sample JSON payload to send through this integration. The response will be shown below.
+      </p>
+      <div className="space-y-1.5">
+        <Label className="flex items-center gap-1 text-xs">
+          Sample Payload (JSON)
+          {payload.trim() !== "" && (
+            <span className={`ml-auto font-normal ${isValidPayload ? "text-emerald-600" : "text-red-600"}`}>
+              {isValidPayload ? "valid JSON" : "invalid JSON"}
+            </span>
+          )}
+        </Label>
+        <Textarea
+          className="font-mono text-xs h-28 resize-none"
+          value={payload}
+          onChange={e => setPayload(e.target.value)}
+          placeholder='{\n  "employeeId": "E001"\n}'
+          data-testid="textarea-test-payload"
+        />
+      </div>
+      <Button
+        size="sm"
+        className="gap-2 w-full"
+        onClick={handleRun}
+        disabled={isRunning || !config.endpointUrl || !isValidPayload}
+        title={!config.endpointUrl ? "Set an endpoint URL first" : undefined}
+        data-testid="button-run-test"
+      >
+        {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+        {isRunning ? "Running..." : "Run Test"}
+      </Button>
+      {!config.endpointUrl && (
+        <p className="text-xs text-amber-600">Set an endpoint URL on this integration before testing.</p>
+      )}
+      {result !== null && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium">Response:</p>
+          <pre className="text-xs bg-background rounded border p-2 overflow-auto max-h-40 font-mono">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface IntegrationFormState {
+  name: string;
+  description: string;
+  endpointUrl: string;
+  method: string;
+  apiKeyRef: string;
+  authType: string;
+  authHeaderName: string;
+  headersJson: string;
+  fieldMappingsJson: string;
+  responseMappingJson: string;
+  enabled: boolean;
+}
+
+function emptyForm(defaults?: Partial<IntegrationFormState>): IntegrationFormState {
+  return {
+    name: "",
+    description: "",
+    endpointUrl: "",
+    method: "POST",
+    apiKeyRef: "",
+    authType: "bearer",
+    authHeaderName: "",
+    headersJson: "{}",
+    fieldMappingsJson: "{}",
+    responseMappingJson: "{}",
+    enabled: true,
+    ...defaults,
+  };
+}
+
+function configToForm(c: IntegrationConfig): IntegrationFormState {
+  return {
+    name: c.name,
+    description: c.description ?? "",
+    endpointUrl: c.endpointUrl ?? "",
+    method: c.method ?? "POST",
+    apiKeyRef: c.apiKeyRef ?? "",
+    authType: c.authType ?? "bearer",
+    authHeaderName: c.authHeaderName ?? "",
+    headersJson: JSON.stringify(c.headers ?? {}, null, 2),
+    fieldMappingsJson: JSON.stringify(c.fieldMappings ?? {}, null, 2),
+    responseMappingJson: JSON.stringify(c.responseMapping ?? {}, null, 2),
+    enabled: c.enabled,
+  };
+}
+
+function IntegrationForm({
+  form,
+  setForm,
+  connector,
+  onAiMap,
+  isAiLoading,
+  aiMappings,
+  aiNotes,
+  externalSchema,
+  setExternalSchema,
+}: {
+  form: IntegrationFormState;
+  setForm: (f: IntegrationFormState) => void;
+  connector: ConnectorCatalogItem | undefined;
+  onAiMap: () => void;
+  isAiLoading: boolean;
+  aiMappings: Record<string, string> | null;
+  aiNotes: string;
+  externalSchema: string;
+  setExternalSchema: (v: string) => void;
+}) {
+  const set = (key: keyof IntegrationFormState) => (val: string | boolean) =>
+    setForm({ ...form, [key]: val });
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Display Name *</Label>
+          <Input
+            value={form.name}
+            onChange={e => set("name")(e.target.value)}
+            placeholder="e.g. IFMIS Production"
+            data-testid="input-integration-name"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Description</Label>
+          <Input
+            value={form.description}
+            onChange={e => set("description")(e.target.value)}
+            placeholder="Short description (optional)"
+            data-testid="input-integration-description"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-1.5 md:col-span-2">
+          <Label>Endpoint URL</Label>
+          <Input
+            value={form.endpointUrl}
+            onChange={e => set("endpointUrl")(e.target.value)}
+            placeholder="https://api.example.gov.pg/v1/endpoint"
+            data-testid="input-integration-endpoint"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>HTTP Method</Label>
+          <Select value={form.method} onValueChange={set("method")}>
+            <SelectTrigger data-testid="select-integration-method">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["GET", "POST", "PUT", "PATCH", "DELETE"].map(m => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <Label>Auth Type</Label>
+          <Select value={form.authType} onValueChange={set("authType")}>
+            <SelectTrigger data-testid="select-integration-authtype">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bearer">Bearer Token</SelectItem>
+              <SelectItem value="api_key">API Key (query)</SelectItem>
+              <SelectItem value="header">Custom Header</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {form.authType === "header" && (
+          <div className="space-y-1.5">
+            <Label>Auth Header Name</Label>
+            <Input
+              value={form.authHeaderName}
+              onChange={e => set("authHeaderName")(e.target.value)}
+              placeholder="X-Api-Key"
+              data-testid="input-integration-authheader"
+            />
+          </div>
+        )}
+        <div className={`space-y-1.5 ${form.authType === "header" ? "" : "md:col-span-2"}`}>
+          <Label>API Key / Token</Label>
+          <Input
+            type="password"
+            value={form.apiKeyRef}
+            onChange={e => set("apiKeyRef")(e.target.value)}
+            placeholder="Paste API key or bearer token"
+            data-testid="input-integration-apikey"
+          />
+        </div>
+      </div>
+
+      <JsonEditorField
+        label="Custom Headers (JSON)"
+        value={form.headersJson}
+        onChange={set("headersJson")}
+        placeholder={'{\n  "Accept": "application/json"\n}'}
+        testId="textarea-integration-headers"
+      />
+
+      <JsonEditorField
+        label="Field Mapping (JSON)"
+        value={form.fieldMappingsJson}
+        onChange={set("fieldMappingsJson")}
+        placeholder={'{\n  "internal_field": "external_field"\n}'}
+        testId="textarea-integration-fieldmappings"
+      />
+
+      <JsonEditorField
+        label="Response Mapping (JSON)"
+        value={form.responseMappingJson}
+        onChange={set("responseMappingJson")}
+        placeholder={'{\n  "response_key": "internal_key"\n}'}
+        testId="textarea-integration-responsemapping"
+      />
+
+      {connector && (
+        <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-violet-500" />
+            <p className="text-sm font-semibold">AI Field Mapping Assistant</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Paste the external system's field names or schema. The AI will suggest field mappings and populate the Field Mapping editor.
+          </p>
+          <div className="space-y-1.5">
+            <Label className="text-xs">External System Fields / Schema</Label>
+            <Textarea
+              className="font-mono text-xs h-24 resize-none"
+              placeholder={`e.g. employeeNumber, fullName, birthDate, department, position\n\nor paste a JSON schema...`}
+              value={externalSchema}
+              onChange={e => setExternalSchema(e.target.value)}
+              data-testid="textarea-external-schema"
+            />
+          </div>
+          {connector.fields.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Internal System Fields (HR Portal):</p>
+              <div className="flex flex-wrap gap-1">
+                {connector.fields.map(f => (
+                  <Badge key={f.key} variant="secondary" className="text-xs font-mono" title={f.description}>
+                    {f.key}{f.required && <span className="text-red-500 ml-0.5">*</span>}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={onAiMap}
+            disabled={isAiLoading || !externalSchema.trim()}
+            data-testid="button-ai-suggest-mapping"
+          >
+            {isAiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-violet-500" />}
+            Auto Map with AI
+          </Button>
+
+          {aiMappings && Object.keys(aiMappings).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-emerald-700">Mappings applied to Field Mapping editor above:</p>
+              <div className="rounded border bg-background p-2 space-y-1">
+                {Object.entries(aiMappings).map(([internal, external]) => (
+                  <div key={internal} className="flex items-center gap-2 text-xs font-mono">
+                    <span className="text-primary font-semibold">{internal}</span>
+                    <span className="text-muted-foreground">←</span>
+                    <span className="text-emerald-700">{external}</span>
+                  </div>
+                ))}
+              </div>
+              {aiNotes && <p className="text-xs text-muted-foreground italic">{aiNotes}</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={form.enabled}
+          onCheckedChange={v => set("enabled")(v)}
+          data-testid="switch-integration-enabled-form"
+        />
+        <Label>Enabled</Label>
+      </div>
+    </div>
+  );
+}
+
+function EditIntegrationDialog({
+  config,
+  catalog,
+  onUpdated,
+  onClose,
+}: {
+  config: IntegrationConfig;
+  catalog: ConnectorCatalogItem[];
+  onUpdated: () => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<IntegrationFormState>(() => configToForm(config));
+  const [externalSchema, setExternalSchema] = useState("");
+  const [aiMappings, setAiMappings] = useState<Record<string, string> | null>(null);
+  const [aiNotes, setAiNotes] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const { toast } = useToast();
+
+  const connector = catalog.find(c => c.type === config.integrationType);
+
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      const body: Record<string, unknown> = {
+        name: form.name,
+        method: form.method,
+        authType: form.authType,
+        enabled: form.enabled,
+      };
+      if (form.description) body.description = form.description;
+      if (form.endpointUrl) body.endpointUrl = form.endpointUrl;
+      if (form.apiKeyRef) body.apiKeyRef = form.apiKeyRef;
+      if (form.authHeaderName) body.authHeaderName = form.authHeaderName;
+      const headers = safeJsonParse(form.headersJson);
+      if (headers) body.headers = headers;
+      const fieldMappings = safeJsonParse(form.fieldMappingsJson);
+      if (fieldMappings) body.fieldMappings = fieldMappings;
+      const responseMapping = safeJsonParse(form.responseMappingJson);
+      if (responseMapping) body.responseMapping = responseMapping;
+      return apiFetch(`/api/integration-config/${config.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Integration updated" });
+      onUpdated();
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: `Failed: ${e.message}`, variant: "destructive" }),
+  });
+
+  const handleAiMap = async () => {
+    if (!externalSchema.trim()) {
+      toast({ title: "Enter external field names first", variant: "destructive" });
+      return;
+    }
+    setIsAiLoading(true);
+    try {
+      const internalFields = connector?.fields.map(f => f.key) ?? [];
+      const externalFields = externalSchema
+        .split(/[\n,]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const result = await apiFetch<{ mappings: Record<string, string>; notes: string }>(
+        "/api/integration/ai/suggest-mapping",
+        {
+          method: "POST",
+          body: JSON.stringify({ internalFields, externalFields, connectorType: config.integrationType }),
+        }
+      );
+      setAiMappings(result.mappings);
+      setAiNotes(result.notes);
+      setForm(f => ({ ...f, fieldMappingsJson: JSON.stringify(result.mappings, null, 2) }));
+      toast({ title: "AI field mappings applied" });
+    } catch (e) {
+      toast({ title: `AI suggestion failed: ${(e as Error).message}`, variant: "destructive" });
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  return (
+    <Card className="border-primary/30 shadow-lg">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Edit Integration</CardTitle>
+            <CardDescription className="text-xs">{config.integrationType} · ID {config.id}</CardDescription>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <IntegrationForm
+          form={form}
+          setForm={setForm}
+          connector={connector}
+          onAiMap={handleAiMap}
+          isAiLoading={isAiLoading}
+          aiMappings={aiMappings}
+          aiNotes={aiNotes}
+          externalSchema={externalSchema}
+          setExternalSchema={setExternalSchema}
+        />
+        <div className="flex gap-3 justify-end">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => updateMutation.mutate()}
+            disabled={!form.name || updateMutation.isPending}
+            data-testid="button-update-integration"
+          >
+            {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Save Changes
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -112,14 +672,18 @@ function IntegrationConfigCard({
   config,
   catalog,
   onDeleted,
+  onUpdated,
 }: {
   config: IntegrationConfig;
   catalog: ConnectorCatalogItem[];
   onDeleted: () => void;
+  onUpdated: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -149,23 +713,16 @@ function IntegrationConfigCard({
     },
   });
 
-  const executeMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/integration/${config.integrationType}/execute`, {
-        method: "POST",
-        body: JSON.stringify({ configId: config.id, payload: {} }),
-      }),
-    onSuccess: (result) => {
-      const r = result as { success: boolean; status: number };
-      if (r.success) {
-        toast({ title: `Integration executed successfully (HTTP ${r.status})` });
-      } else {
-        toast({ title: `Integration returned HTTP ${r.status}`, variant: "destructive" });
-      }
-      qc.invalidateQueries({ queryKey: ["integration-logs", config.id] });
-    },
-    onError: (e: Error) => toast({ title: `Execution failed: ${e.message}`, variant: "destructive" }),
-  });
+  if (isEditing) {
+    return (
+      <EditIntegrationDialog
+        config={config}
+        catalog={catalog}
+        onUpdated={() => { qc.invalidateQueries({ queryKey: ["integration-configs"] }); onUpdated(); }}
+        onClose={() => setIsEditing(false)}
+      />
+    );
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -181,6 +738,7 @@ function IntegrationConfigCard({
                     {CATEGORY_LABELS[connector.category] ?? connector.category}
                   </Badge>
                 )}
+                <Badge variant="outline" className="text-xs font-mono">{config.method ?? "POST"}</Badge>
                 <Badge variant="outline" className="text-xs">{config.integrationType}</Badge>
               </div>
               <CardDescription className="mt-0.5 text-xs">{connector?.label ?? config.integrationType}</CardDescription>
@@ -196,13 +754,21 @@ function IntegrationConfigCard({
               size="sm"
               variant="outline"
               className="h-8 gap-1.5"
-              onClick={() => executeMutation.mutate()}
-              disabled={!config.enabled || !config.endpointUrl || executeMutation.isPending}
-              title={!config.endpointUrl ? "Set an endpoint URL first" : "Run integration"}
-              data-testid={`button-run-integration-${config.id}`}
+              onClick={() => { setIsTesting(!isTesting); setExpanded(true); }}
+              data-testid={`button-test-integration-${config.id}`}
             >
-              {executeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              Run
+              <TestTube2 className="h-3.5 w-3.5" />
+              Test
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setIsEditing(true)}
+              title="Edit integration"
+              data-testid={`button-edit-integration-${config.id}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="icon"
@@ -220,13 +786,25 @@ function IntegrationConfigCard({
       {expanded && (
         <CardContent className="pt-0 space-y-4">
           <Separator />
+
+          {isTesting && (
+            <TestPanel config={config} onClose={() => setIsTesting(false)} />
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">Endpoint URL</p>
               <p className="font-mono text-xs break-all">{config.endpointUrl || <span className="text-muted-foreground italic">Not set</span>}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">API Key Ref</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Auth</p>
+              <p className="text-xs">
+                <span className="font-mono bg-muted px-1 rounded">{config.authType ?? "bearer"}</span>
+                {config.authHeaderName && <span className="ml-1 text-muted-foreground">({config.authHeaderName})</span>}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">API Key / Token</p>
               <div className="flex items-center gap-2">
                 <p className="font-mono text-xs">{showApiKey ? (config.apiKeyRef || "—") : (config.apiKeyRef ? "••••••••" : "—")}</p>
                 {config.apiKeyRef && (
@@ -236,7 +814,18 @@ function IntegrationConfigCard({
                 )}
               </div>
             </div>
+            {config.headers && Object.keys(config.headers).length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Custom Headers</p>
+                <div className="flex flex-wrap gap-1">
+                  {Object.keys(config.headers).map(k => (
+                    <Badge key={k} variant="secondary" className="text-xs font-mono">{k}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
           {config.fieldMappings && Object.keys(config.fieldMappings).length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Field Mappings</p>
@@ -251,6 +840,22 @@ function IntegrationConfigCard({
               </div>
             </div>
           )}
+
+          {config.responseMapping && Object.keys(config.responseMapping).length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Response Mapping</p>
+              <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+                {Object.entries(config.responseMapping).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2 text-xs font-mono">
+                    <span className="text-emerald-700">{k}</span>
+                    <span className="text-muted-foreground">→</span>
+                    <span>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Button
             variant="ghost"
             size="sm"
@@ -288,9 +893,7 @@ function NewIntegrationDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [selectedType, setSelectedType] = useState("");
-  const [name, setName] = useState("");
-  const [endpointUrl, setEndpointUrl] = useState("");
-  const [apiKeyRef, setApiKeyRef] = useState("");
+  const [form, setForm] = useState<IntegrationFormState>(emptyForm());
   const [externalSchema, setExternalSchema] = useState("");
   const [aiMappings, setAiMappings] = useState<Record<string, string> | null>(null);
   const [aiNotes, setAiNotes] = useState("");
@@ -300,25 +903,31 @@ function NewIntegrationDialog({
   const selectedConnector = catalog.find(c => c.type === selectedType);
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiFetch("/api/integration-config", {
-        method: "POST",
-        body: JSON.stringify({
-          integrationType: selectedType,
-          name: name || selectedConnector?.label || selectedType,
-          endpointUrl,
-          apiKeyRef,
-          fieldMappings: aiMappings ?? {},
-          enabled: true,
-        }),
-      }),
+    mutationFn: () => {
+      const body: Record<string, unknown> = {
+        integrationType: selectedType,
+        name: form.name || selectedConnector?.label || selectedType,
+        method: form.method,
+        authType: form.authType,
+        enabled: form.enabled,
+      };
+      if (form.description) body.description = form.description;
+      if (form.endpointUrl) body.endpointUrl = form.endpointUrl;
+      if (form.apiKeyRef) body.apiKeyRef = form.apiKeyRef;
+      if (form.authHeaderName) body.authHeaderName = form.authHeaderName;
+      const headers = safeJsonParse(form.headersJson);
+      if (headers) body.headers = headers;
+      const fieldMappings = safeJsonParse(form.fieldMappingsJson);
+      if (fieldMappings) body.fieldMappings = fieldMappings;
+      const responseMapping = safeJsonParse(form.responseMappingJson);
+      if (responseMapping) body.responseMapping = responseMapping;
+      return apiFetch("/api/integration-config", { method: "POST", body: JSON.stringify(body) });
+    },
     onSuccess: () => {
       toast({ title: "Integration created successfully" });
       setOpen(false);
       setSelectedType("");
-      setName("");
-      setEndpointUrl("");
-      setApiKeyRef("");
+      setForm(emptyForm());
       setAiMappings(null);
       setAiNotes("");
       setExternalSchema("");
@@ -327,23 +936,30 @@ function NewIntegrationDialog({
     onError: (e: Error) => toast({ title: `Failed: ${e.message}`, variant: "destructive" }),
   });
 
-  const handleAiSuggest = async () => {
+  const handleAiMap = async () => {
     if (!selectedType || !externalSchema.trim()) {
-      toast({ title: "Select a connector type and enter the external schema first", variant: "destructive" });
+      toast({ title: "Select a connector and enter external field names first", variant: "destructive" });
       return;
     }
     setIsAiLoading(true);
     try {
+      const internalFields = selectedConnector?.fields.map(f => f.key) ?? [];
+      const externalFields = externalSchema
+        .split(/[\n,]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
       const result = await apiFetch<{ mappings: Record<string, string>; notes: string }>(
         "/api/integration/ai/suggest-mapping",
         {
           method: "POST",
-          body: JSON.stringify({ connectorType: selectedType, externalSchema }),
+          body: JSON.stringify({ internalFields, externalFields, connectorType: selectedType }),
         }
       );
       setAiMappings(result.mappings);
       setAiNotes(result.notes);
-      toast({ title: "AI field mappings generated" });
+      setForm(f => ({ ...f, fieldMappingsJson: JSON.stringify(result.mappings, null, 2) }));
+      toast({ title: "AI field mappings applied to editor" });
     } catch (e) {
       toast({ title: `AI suggestion failed: ${(e as Error).message}`, variant: "destructive" });
     } finally {
@@ -362,131 +978,51 @@ function NewIntegrationDialog({
   return (
     <Card className="border-primary/30 shadow-lg">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Create New Integration</CardTitle>
-        <CardDescription>Connect to a government system or external service</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Create New Integration</CardTitle>
+            <CardDescription>Connect to a government system or external service</CardDescription>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setOpen(false)}><X className="h-4 w-4" /></Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Integration Type *</Label>
-            <Select value={selectedType} onValueChange={setSelectedType}>
-              <SelectTrigger data-testid="select-integration-type">
-                <SelectValue placeholder="Select a connector..." />
-              </SelectTrigger>
-              <SelectContent>
-                {catalog.map(c => (
-                  <SelectItem key={c.type} value={c.type}>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`text-xs ${CATEGORY_COLORS[c.category] ?? ""}`}>
-                        {CATEGORY_LABELS[c.category] ?? c.category}
-                      </Badge>
-                      {c.label}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedConnector && (
-              <p className="text-xs text-muted-foreground mt-1">{selectedConnector.description}</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label>Display Name *</Label>
-            <Input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder={selectedConnector?.label ?? "e.g. IFMIS Production"}
-              data-testid="input-integration-name"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Endpoint URL</Label>
-            <Input
-              value={endpointUrl}
-              onChange={e => setEndpointUrl(e.target.value)}
-              placeholder="https://api.example.gov.pg/v1/endpoint"
-              data-testid="input-integration-endpoint"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>API Key / Auth Token</Label>
-            <Input
-              type="password"
-              value={apiKeyRef}
-              onChange={e => setApiKeyRef(e.target.value)}
-              placeholder="Paste API key or token"
-              data-testid="input-integration-apikey"
-            />
-          </div>
-        </div>
-
-        {selectedConnector && (
-          <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-violet-500" />
-              <p className="text-sm font-semibold">AI Field Mapping Assistant</p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Paste the external system's field names or schema below, and our AI will suggest the best field mappings automatically.
-            </p>
-            <div className="space-y-1.5">
-              <Label className="text-xs">External System Schema / Field Names</Label>
-              <Textarea
-                className="font-mono text-xs h-24 resize-none"
-                placeholder={`e.g.\nemployeeNumber, fullName, birthDate, department, position, grade\n\nor paste a JSON schema...`}
-                value={externalSchema}
-                onChange={e => setExternalSchema(e.target.value)}
-                data-testid="textarea-external-schema"
-              />
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={handleAiSuggest}
-              disabled={isAiLoading || !selectedType || !externalSchema.trim()}
-              data-testid="button-ai-suggest-mapping"
-            >
-              {isAiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-violet-500" />}
-              Suggest Mappings with AI
-            </Button>
-
-            {aiMappings && Object.keys(aiMappings).length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium">Suggested Mappings:</p>
-                <div className="rounded border bg-background p-2 space-y-1">
-                  {Object.entries(aiMappings).map(([internal, external]) => (
-                    <div key={internal} className="flex items-center gap-2 text-xs font-mono">
-                      <span className="text-primary font-semibold">{internal}</span>
-                      <span className="text-muted-foreground">←</span>
-                      <span className="text-emerald-700">{external}</span>
-                    </div>
-                  ))}
-                </div>
-                {aiNotes && (
-                  <p className="text-xs text-muted-foreground italic">{aiNotes}</p>
-                )}
-              </div>
-            )}
-
-            {selectedConnector.fields.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">Available Internal Fields:</p>
-                <div className="flex flex-wrap gap-1">
-                  {selectedConnector.fields.map(f => (
-                    <Badge key={f.key} variant="secondary" className="text-xs font-mono" title={f.description}>
-                      {f.key}
-                      {f.required && <span className="text-red-500 ml-0.5">*</span>}
+        <div className="space-y-1.5">
+          <Label>Integration Type *</Label>
+          <Select value={selectedType} onValueChange={v => { setSelectedType(v); setForm(emptyForm()); }}>
+            <SelectTrigger data-testid="select-integration-type">
+              <SelectValue placeholder="Select a connector..." />
+            </SelectTrigger>
+            <SelectContent>
+              {catalog.map(c => (
+                <SelectItem key={c.type} value={c.type}>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={`text-xs ${CATEGORY_COLORS[c.category] ?? ""}`}>
+                      {CATEGORY_LABELS[c.category] ?? c.category}
                     </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                    {c.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedConnector && (
+            <p className="text-xs text-muted-foreground">{selectedConnector.description}</p>
+          )}
+        </div>
+
+        {selectedType && (
+          <IntegrationForm
+            form={form}
+            setForm={setForm}
+            connector={selectedConnector}
+            onAiMap={handleAiMap}
+            isAiLoading={isAiLoading}
+            aiMappings={aiMappings}
+            aiNotes={aiNotes}
+            externalSchema={externalSchema}
+            setExternalSchema={setExternalSchema}
+          />
         )}
 
         <div className="flex gap-3 justify-end">
@@ -509,7 +1045,6 @@ function NewIntegrationDialog({
 
 export default function IntegrationBuilderPage() {
   const qc = useQueryClient();
-  const { toast } = useToast();
 
   const catalogQuery = useQuery({
     queryKey: ["integration-catalog"],
@@ -610,6 +1145,7 @@ export default function IntegrationBuilderPage() {
                 config={cfg}
                 catalog={catalog}
                 onDeleted={() => qc.invalidateQueries({ queryKey: ["integration-configs"] })}
+                onUpdated={() => qc.invalidateQueries({ queryKey: ["integration-configs"] })}
               />
             ))}
           </div>

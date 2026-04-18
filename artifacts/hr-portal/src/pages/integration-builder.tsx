@@ -765,7 +765,10 @@ function IntegrationConfigCard({
         method: "PUT",
         body: JSON.stringify({ enabled }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["integration-configs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["integration-configs"] });
+      qc.invalidateQueries({ queryKey: ["integration-stats"] });
+    },
   });
 
   const deleteMutation = useMutation({

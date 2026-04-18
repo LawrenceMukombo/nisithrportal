@@ -40,7 +40,8 @@ The project is structured as a pnpm workspace monorepo.
 - **API Modules**: Comprehensive set of RESTful APIs covering authentication, agency/department/position management, job vacancies, candidates, applications, employees, contracts, AI services, and integrations. All response fields are camelCase.
 - **Notification System**: In-app notifications are triggered by application status changes and contract expiry alerts.
 - **Integration Builder**: Admin-only interface for configuring connections to external PNG government systems (e.g., IFMIS, Identity Verification) with AI-powered field mapping suggestions.
-- **Database Schema**: Centralized `lib/db/src/schema/` defines tables for agencies, roles, users, departments, positions, jobs, candidates (with detailed sub-records like education, experience), applications, employees, contracts, AI scores, notifications, and integration configurations/logs.
+- **Applicant Password Reset**: Applicants can reset their password via a time-limited email link. Flow: `POST /api/auth/reset-request` (sends link) → `GET /api/auth/verify-reset-token` (validates on page load) → `POST /api/auth/reset-password` (updates password). Only applicant accounts can use this flow. SMTP is optional (configure `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`; falls back to console logging). Reset URLs are built from `APP_BASE_URL` env var.
+- **Database Schema**: Centralized `lib/db/src/schema/` defines tables for agencies, roles, users, departments, positions, jobs, candidates (with detailed sub-records like education, experience), applications, employees, contracts, AI scores, notifications, integration configurations/logs, and password reset tokens.
 - **Seeding**: Automatic server seeding provides initial default roles, NISIT agency data, departments, job vacancies, candidate profiles, applications, employees, and contracts, with idempotency guards to prevent duplicate data.
 
 ## External Dependencies

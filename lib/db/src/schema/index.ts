@@ -12,3 +12,4 @@ export * from "./employees";
 export * from "./ai_scores";
 export * from "./notifications";
 export * from "./integrations";
+export * from "./password_reset_tokens";

@@ -29,6 +29,8 @@ import TrackApplicationPage from "@/pages/track-application";
 import ShortlistedPage from "@/pages/shortlisted";
 import RecruitmentWorkflowPage from "@/pages/recruitment-workflow";
 import IntegrationBuilderPage from "@/pages/integration-builder";
+import ResetRequestPage from "@/pages/reset-request";
+import ResetPasswordPage from "@/pages/reset-password";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,6 +92,8 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RedirectToLogin} />
       <Route path="/applicant-register" component={ApplicantRegisterPage} />
+      <Route path="/reset-request" component={ResetRequestPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
         {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}

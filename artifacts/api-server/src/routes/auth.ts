@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
-import { db, usersTable, agenciesTable, rolesTable } from "@workspace/db";
+import crypto from "crypto";
+import { eq, and, gt } from "drizzle-orm";
+import { db, usersTable, agenciesTable, rolesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
 import { isStaffDomain } from "../lib/emailDomain";
+import { sendPasswordResetEmail } from "../lib/email";
 
 const router: IRouter = Router();
 
@@ -141,6 +143,137 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
     status: user.status,
     createdAt: user.createdAt.toISOString(),
   });
+});
+
+router.post("/auth/reset-request", async (req, res): Promise<void> => {
+  const { email } = req.body ?? {};
+  if (typeof email !== "string" || !email.includes("@")) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+
+  const users = await db
+    .select({ id: usersTable.id, roleId: usersTable.roleId })
+    .from(usersTable)
+    .where(eq(usersTable.email, email));
+
+  if (users.length > 0) {
+    const user = users[0];
+
+    const roles = await db.select({ name: rolesTable.name }).from(rolesTable).where(eq(rolesTable.id, user.roleId!));
+    const roleName = roles[0]?.name ?? null;
+
+    if (roleName === "applicant") {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await db.insert(passwordResetTokensTable).values({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+
+      const baseUrl =
+        process.env.APP_BASE_URL ??
+        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+      if (!baseUrl) {
+        console.error("[ResetRequest] APP_BASE_URL is not set; cannot construct reset link. Set APP_BASE_URL to the frontend origin.");
+        res.json({ message: "If that email belongs to an applicant account, a reset link has been sent." });
+        return;
+      }
+      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+      await sendPasswordResetEmail(email, resetUrl);
+    }
+  }
+
+  res.json({ message: "If that email belongs to an applicant account, a reset link has been sent." });
+});
+
+router.get("/auth/verify-reset-token", async (req, res): Promise<void> => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  if (!token) {
+    res.status(400).json({ valid: false, error: "No token provided." });
+    return;
+  }
+
+  const now = new Date();
+  const records = await db
+    .select({ id: passwordResetTokensTable.id })
+    .from(passwordResetTokensTable)
+    .where(
+      and(
+        eq(passwordResetTokensTable.token, token),
+        eq(passwordResetTokensTable.used, false),
+        gt(passwordResetTokensTable.expiresAt, now),
+      ),
+    );
+
+  if (records.length === 0) {
+    res.status(400).json({ valid: false, error: "This reset link is invalid or has expired." });
+    return;
+  }
+
+  res.json({ valid: true });
+});
+
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  const { token, password } = req.body ?? {};
+
+  if (typeof token !== "string" || !token) {
+    res.status(400).json({ error: "Reset token is required." });
+    return;
+  }
+  if (typeof password !== "string" || password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters." });
+    return;
+  }
+
+  const now = new Date();
+  const records = await db
+    .select()
+    .from(passwordResetTokensTable)
+    .where(
+      and(
+        eq(passwordResetTokensTable.token, token),
+        eq(passwordResetTokensTable.used, false),
+        gt(passwordResetTokensTable.expiresAt, now),
+      ),
+    );
+
+  if (records.length === 0) {
+    res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    return;
+  }
+
+  const record = records[0];
+
+  const users = await db
+    .select({ id: usersTable.id, roleId: usersTable.roleId })
+    .from(usersTable)
+    .where(eq(usersTable.id, record.userId));
+
+  if (users.length === 0) {
+    res.status(400).json({ error: "Account not found." });
+    return;
+  }
+
+  const user = users[0];
+
+  const roles = await db.select({ name: rolesTable.name }).from(rolesTable).where(eq(rolesTable.id, user.roleId!));
+  const roleName = roles[0]?.name ?? null;
+
+  if (roleName !== "applicant") {
+    res.status(403).json({ error: "Password reset is only available for applicant accounts." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, user.id));
+  await db.update(passwordResetTokensTable).set({ used: true }).where(eq(passwordResetTokensTable.id, record.id));
+
+  res.json({ message: "Password updated successfully. You can now sign in." });
 });
 
 export default router;

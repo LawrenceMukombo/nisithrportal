@@ -110,7 +110,10 @@ export default function LoginPage() {
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="justify-center">
+          <CardFooter className="flex-col gap-2 items-center">
+            <a href="/reset-request" className="text-sm text-primary font-medium hover:underline" data-testid="link-forgot-password">
+              Forgot password?
+            </a>
             <p className="text-sm text-muted-foreground">
               Don't have an account?{" "}
               <a href="/applicant-register" className="text-primary font-medium hover:underline">

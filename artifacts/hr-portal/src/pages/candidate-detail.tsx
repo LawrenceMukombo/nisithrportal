@@ -7,8 +7,10 @@ import {
 import {
   useGetCandidateProfile,
   useGetAiScores,
+  useGetJobs,
   getGetCandidateProfileQueryKey,
   getGetAiScoresQueryKey,
+  getGetJobsQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +66,9 @@ export default function CandidateDetailPage() {
 
   const { data: aiScores } = useGetAiScores(undefined, { query: { queryKey: getGetAiScoresQueryKey() } });
   const candidateScores = aiScores?.filter((s) => s.candidateId === candidateId);
+
+  const { data: jobs = [] } = useGetJobs(undefined, { query: { queryKey: getGetJobsQueryKey() } });
+  const jobMap = new Map(jobs.map((j) => [j.id, j]));
 
   if (isLoading) {
     return (
@@ -285,6 +290,7 @@ export default function CandidateDetailPage() {
                     const score = candidateScores?.find((s) => s.jobId === app.jobId);
                     const appDocuments = app.documents;
                     const appAnswers = app.screeningAnswers;
+                    const job = jobMap.get(app.jobId);
                     return (
                       <div key={app.id} className="py-2.5 space-y-2" data-testid={`row-application-${app.id}`}>
                         <div className="flex items-center justify-between">
@@ -294,9 +300,14 @@ export default function CandidateDetailPage() {
                                 Application #{app.id} <ChevronRight className="h-3 w-3" />
                               </span>
                             </Link>
-                            <p className="text-xs text-muted-foreground">
-                              Job #{app.jobId}{app.createdAt ? ` · ${new Date(app.createdAt).toLocaleDateString()}` : ""}
-                            </p>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+                              <Link href={`/jobs/${app.jobId}`}>
+                                <span className="hover:underline cursor-pointer" data-testid={`job-title-${app.id}`}>
+                                  {job?.title ?? `Job #${app.jobId}`}
+                                </span>
+                              </Link>
+                              {app.createdAt && <span>· {new Date(app.createdAt).toLocaleDateString()}</span>}
+                            </div>
                           </div>
                           <div className="flex items-center gap-3">
                             {score && (

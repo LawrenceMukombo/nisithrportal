@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq, asc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken } from "../middlewares/auth";
@@ -35,9 +35,11 @@ router.post("/auth/applicant-register", async (req, res): Promise<void> => {
     return;
   }
 
-  const [agency] = await db.select().from(agenciesTable).orderBy(asc(agenciesTable.id)).limit(1);
+  const NISIT_AGENCY_NAME = "PNG National Institute of Standards and Industrial Technology";
+  const agencies = await db.select().from(agenciesTable).where(eq(agenciesTable.name, NISIT_AGENCY_NAME));
+  const agency = agencies[0] ?? null;
   if (!agency) {
-    res.status(500).json({ error: "System not initialised — no agency found" });
+    res.status(500).json({ error: "System not initialised — NISIT agency not found" });
     return;
   }
 

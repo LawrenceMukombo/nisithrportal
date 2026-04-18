@@ -9,11 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-
-function isGovEmail(email: string): boolean {
-  const domain = email.split("@")[1] ?? "";
-  return domain.endsWith(".gov.pg") || domain === "gov.pg";
-}
+import { isStaffDomain } from "@/lib/emailDomain";
 
 const schema = z.object({
   name: z.string().min(2, "Full name is required"),
@@ -34,7 +30,7 @@ export default function ApplicantRegisterPage() {
   });
 
   const emailValue = useWatch({ control: form.control, name: "email" });
-  const showGovWarning = isGovEmail(emailValue ?? "");
+  const showGovWarning = isStaffDomain(emailValue ?? "");
 
   const onSubmit = async (values: FormValues) => {
     setIsPending(true);

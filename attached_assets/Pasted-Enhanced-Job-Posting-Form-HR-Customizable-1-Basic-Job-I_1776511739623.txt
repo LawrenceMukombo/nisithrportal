@@ -1,0 +1,139 @@
+Enhanced Job Posting Form (HR Customizable)
+1. Basic Job Information
+Job Title (required)
+Job Reference Number (auto-generated or manual)
+Department / Unit (dropdown)
+Location
+Country
+Province
+Office / Site
+Employment Type
+Full-time / Part-time / Contract / Temporary
+Work Arrangement
+Onsite / Remote / Hybrid
+2. Job Description & Content
+Job Summary (short overview)
+Detailed Job Description (rich text editor)
+Key Responsibilities (repeatable bullet fields)
+Key Deliverables / KPIs
+Reporting Line
+Reports to (position/title)
+3. Requirements & Qualifications
+Minimum Education Level
+Required Qualifications (multi-entry)
+Years of Experience
+Technical Skills (tag-based input)
+Soft Skills
+Certifications / Licenses
+Language Requirements
+4. Screening & Eligibility Criteria
+
+(This is critical for automation and AI ranking)
+
+Mandatory Requirements (Yes/No filters)
+e.g., “Minimum 5 years experience?”
+Custom Screening Questions
+Multiple choice / short answer / yes-no
+Disqualification Rules
+Auto-reject logic
+5. Compensation & Contract Details
+Salary Range (optional/public/private)
+Grade / Band
+Contract Type
+Contract Duration
+Start Date
+Benefits (multi-select)
+Housing, Transport, Insurance, etc.
+6. Application Settings
+Opening Date
+Closing Date
+Application Method
+Portal only / Email / External link
+Maximum Number of Applicants (optional)
+Allow Save & Continue (Yes/No)
+7. Documents Required from Applicants
+CV (required/optional toggle)
+Cover Letter
+Certificates
+ID Document
+Custom Document Uploads (configurable)
+8. Workflow & Approval Settings
+Approval Workflow
+Draft → Submitted → Approved → Published
+Hiring Manager Assignment
+HR Reviewer Assignment
+Interview Panel Setup
+9. Visibility & Publishing Options
+Publish To
+Public Portal
+Internal Portal
+Both
+Featured Job (Yes/No)
+Priority Level
+Auto-expire after closing date (Yes/No)
+10. AI & Smart Features (Forward-Looking)
+Auto-Generate Job Description (AI button)
+Skill Extraction from Description
+Suggested Screening Questions
+Bias Detection Warning (optional)
+Estimated Applicant Match Score Preview
+11. Analytics & Tracking (Backend Fields)
+Job Status (Draft, Open, Closed, Filled)
+Number of Applicants
+Time-to-fill tracking
+Source tracking (where applicants came from)
+UI/UX Improvements
+1. Multi-Step Wizard (Highly Recommended)
+
+Instead of one long form:
+
+Basic Info
+Description
+Requirements
+Screening
+Settings
+Review & Publish
+2. Smart Components
+Tag inputs for skills
+Repeatable sections (Add Responsibility)
+JSON editor for advanced users
+Drag-and-drop ordering
+3. Templates (Very Important)
+Save job as template
+Reuse for future postings
+Predefined templates by role (e.g., Analyst, Engineer)
+Example Improved Layout (Simplified)
+[ Step 1: Basic Info ]
+Job Title | Department | Location | Type
+
+[ Step 2: Description ]
+Summary | Responsibilities | Reporting Line
+
+[ Step 3: Requirements ]
+Education | Experience | Skills | Certifications
+
+[ Step 4: Screening ]
+Questions | Filters | Auto-reject rules
+
+[ Step 5: Settings ]
+Dates | Documents | Visibility
+
+[ Step 6: Review ]
+Preview | Publish
+Key Improvements Over Your Current Form
+Current Form	Improved Version
+Single page	Multi-step wizard
+Basic fields	Full HR lifecycle coverage
+No automation	AI-assisted inputs
+No structure	Structured, reusable data
+No screening	Built-in filtering logic
+Final Recommendation (Important)
+
+Start with:
+
+Basic + Description + Requirements + Dates
+Add Screening + Documents
+Then layer:
+Templates
+AI features
+Analytics

@@ -180,6 +180,12 @@ The React + Vite frontend (`artifacts/hr-portal/`) includes:
 
 ## Seeding
 
-On startup, the server automatically seeds: 5 default roles, the NISIT agency, and 8 departments if no agencies exist. Seed logic: `artifacts/api-server/src/lib/seed.ts`.
+On startup, the server automatically seeds in two phases:
+
+1. **Base data** (`seed.ts` → `seedInitialData`): 5 default roles, the NISIT agency ("PNG National Institute of Standards and Industrial Technology"), 8 departments, and 18 realistic job vacancy descriptions. Skips if agencies already exist.
+
+2. **Complete data** (`seed-data.ts` → `seedCompleteData`): 15 PNG candidate profiles (each with full personal info, 1–3 education/experience/skill/language entries), 12 positions, 21 applications to NISIT jobs (spread across 6 statuses with staggered status-history trails), 10 employees + contracts (mix of permanent/fixed_term), and screening questions on 4 jobs. Skips if `james.morea@gmail.com` already exists (idempotency marker).
+
+**Note:** Seed data is created for the NISIT agency (ID 1). In the development environment, multiple test agencies were created during testing; admin users in those agencies will not see the NISIT-scoped candidates/applications unless they belong to agency ID 1.
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

@@ -1,6 +1,7 @@
 import { eq, count } from "drizzle-orm";
 import { db, rolesTable, agenciesTable, departmentsTable, jobsTable } from "@workspace/db";
 import { logger } from "./logger";
+import { seedCompleteData } from "./seed-data";
 
 const DEFAULT_ROLES = [
   { name: "admin", permissions: { all: true } },
@@ -654,6 +655,7 @@ export async function seedInitialData(): Promise<void> {
     }
 
     await seedJobVacancies();
+    await seedCompleteData();
   } catch (err) {
     logger.error(err, "Seed failed (non-fatal)");
   }

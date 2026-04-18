@@ -11,6 +11,7 @@ import {
   candidateLanguagesTable,
   candidateDiversityTable,
   candidateRefereesTable,
+  candidateSkillsTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -163,7 +164,7 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
   }
 
   // Fetch all sub-records in parallel (diversity excluded — aggregate-only per privacy policy)
-  const [education, experience, languages, referees, applications] = await Promise.all([
+  const [education, experience, languages, referees, applications, skills] = await Promise.all([
     db.select().from(candidateEducationTable).where(eq(candidateEducationTable.candidateId, candidateId)),
     db.select().from(candidateExperienceTable).where(eq(candidateExperienceTable.candidateId, candidateId)),
     db.select().from(candidateLanguagesTable).where(eq(candidateLanguagesTable.candidateId, candidateId)),
@@ -197,6 +198,10 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
       })
       .from(applicationsTable)
       .where(eq(applicationsTable.candidateId, candidateId)),
+    db
+      .select({ id: candidateSkillsTable.id, skill: candidateSkillsTable.skill, skillType: candidateSkillsTable.skillType, applicationId: candidateSkillsTable.applicationId })
+      .from(candidateSkillsTable)
+      .where(eq(candidateSkillsTable.candidateId, candidateId)),
   ]);
 
   // Fetch documents and screening answers for all applications
@@ -245,7 +250,9 @@ router.get("/candidates/:id/profile", authMiddleware, requireRole("admin", "hr_o
   }));
 
   // Diversity data is stored for aggregate analytics only — never returned per-candidate
-  res.json({ ...candidate, education, experience, languages, referees, applications: applicationsEnriched });
+  const technicalSkills = skills.filter((s) => s.skillType === "technical");
+  const softSkills = skills.filter((s) => s.skillType === "soft");
+  res.json({ ...candidate, education, experience, languages, referees, applications: applicationsEnriched, technicalSkills, softSkills });
 });
 
 export default router;

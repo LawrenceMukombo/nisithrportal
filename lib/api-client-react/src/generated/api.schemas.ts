@@ -269,11 +269,46 @@ export interface CandidateRefereeEntry {
   phone?: string | null;
 }
 
+export interface CandidateProfileDocument {
+  id?: number;
+  applicationId?: number;
+  documentType?: string;
+  url?: string;
+  fileName?: string | null;
+}
+
+export interface CandidateProfileScreeningAnswer {
+  id?: number;
+  applicationId?: number;
+  questionId?: number;
+  question?: string | null;
+  questionType?: string | null;
+  answer?: string;
+}
+
+export interface CandidateSkill {
+  id?: number;
+  skill?: string;
+  /** technical | soft | other */
+  skillType?: string;
+  applicationId?: number | null;
+}
+
 export interface CandidateProfileApplication {
   id: number;
   jobId: number;
   status: string;
   createdAt?: string;
+  expectedSalary?: string | null;
+  currentSalary?: string | null;
+  noticePeriod?: string | null;
+  declarationAgreed?: boolean | null;
+  backgroundCheckConsent?: boolean | null;
+  conflictOfInterest?: boolean | null;
+  criminalRecord?: boolean | null;
+  dataPrivacyConsent?: boolean | null;
+  documents?: CandidateProfileDocument[];
+  screeningAnswers?: CandidateProfileScreeningAnswer[];
 }
 
 export type CandidateProfile = Candidate & {
@@ -282,6 +317,8 @@ export type CandidateProfile = Candidate & {
   languages: CandidateLanguageEntry[];
   referees: CandidateRefereeEntry[];
   applications: CandidateProfileApplication[];
+  technicalSkills: CandidateSkill[];
+  softSkills: CandidateSkill[];
 };
 
 export interface CreateCandidateRequest {

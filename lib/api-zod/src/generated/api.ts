@@ -652,6 +652,59 @@ export const GetCandidateProfileResponse = zod
           jobId: zod.number(),
           status: zod.string(),
           createdAt: zod.string().optional(),
+          expectedSalary: zod.string().nullish(),
+          currentSalary: zod.string().nullish(),
+          noticePeriod: zod.string().nullish(),
+          declarationAgreed: zod.boolean().nullish(),
+          backgroundCheckConsent: zod.boolean().nullish(),
+          conflictOfInterest: zod.boolean().nullish(),
+          criminalRecord: zod.boolean().nullish(),
+          dataPrivacyConsent: zod.boolean().nullish(),
+          documents: zod
+            .array(
+              zod.object({
+                id: zod.number().optional(),
+                applicationId: zod.number().optional(),
+                documentType: zod.string().optional(),
+                url: zod.string().optional(),
+                fileName: zod.string().nullish(),
+              }),
+            )
+            .optional(),
+          screeningAnswers: zod
+            .array(
+              zod.object({
+                id: zod.number().optional(),
+                applicationId: zod.number().optional(),
+                questionId: zod.number().optional(),
+                question: zod.string().nullish(),
+                questionType: zod.string().nullish(),
+                answer: zod.string().optional(),
+              }),
+            )
+            .optional(),
+        }),
+      ),
+      technicalSkills: zod.array(
+        zod.object({
+          id: zod.number().optional(),
+          skill: zod.string().optional(),
+          skillType: zod
+            .string()
+            .optional()
+            .describe("technical | soft | other"),
+          applicationId: zod.number().nullish(),
+        }),
+      ),
+      softSkills: zod.array(
+        zod.object({
+          id: zod.number().optional(),
+          skill: zod.string().optional(),
+          skillType: zod
+            .string()
+            .optional()
+            .describe("technical | soft | other"),
+          applicationId: zod.number().nullish(),
         }),
       ),
     }),

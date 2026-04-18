@@ -1,4 +1,4 @@
-import { pgTable, serial, text, jsonb, timestamp, date, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, jsonb, timestamp, date, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -83,3 +83,14 @@ export const candidateDiversityTable = pgTable("candidate_diversity", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type CandidateDiversity = typeof candidateDiversityTable.$inferSelect;
+
+// Skills (normalised — one row per skill per candidate)
+export const candidateSkillsTable = pgTable("candidate_skills", {
+  id: serial("id").primaryKey(),
+  candidateId: integer("candidate_id").notNull().references(() => candidatesTable.id, { onDelete: "cascade" }),
+  skill: text("skill").notNull(),
+  skillType: text("skill_type").notNull().default("technical"), // "technical" | "soft" | "other"
+  applicationId: integer("application_id"), // optional, linked to application when populated via wizard
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type CandidateSkill = typeof candidateSkillsTable.$inferSelect;

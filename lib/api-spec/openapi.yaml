@@ -2548,6 +2548,53 @@ components:
         - applicationId
         - name
 
+    CandidateProfileDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicationId:
+          type: integer
+        documentType:
+          type: string
+        url:
+          type: string
+        fileName:
+          type: string
+          nullable: true
+
+    CandidateProfileScreeningAnswer:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicationId:
+          type: integer
+        questionId:
+          type: integer
+        question:
+          type: string
+          nullable: true
+        questionType:
+          type: string
+          nullable: true
+        answer:
+          type: string
+
+    CandidateSkill:
+      type: object
+      properties:
+        id:
+          type: integer
+        skill:
+          type: string
+        skillType:
+          type: string
+          description: "technical | soft | other"
+        applicationId:
+          type: integer
+          nullable: true
+
     CandidateProfileApplication:
       type: object
       properties:
@@ -2559,6 +2606,38 @@ components:
           type: string
         createdAt:
           type: string
+        expectedSalary:
+          type: string
+          nullable: true
+        currentSalary:
+          type: string
+          nullable: true
+        noticePeriod:
+          type: string
+          nullable: true
+        declarationAgreed:
+          type: boolean
+          nullable: true
+        backgroundCheckConsent:
+          type: boolean
+          nullable: true
+        conflictOfInterest:
+          type: boolean
+          nullable: true
+        criminalRecord:
+          type: boolean
+          nullable: true
+        dataPrivacyConsent:
+          type: boolean
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateProfileDocument"
+        screeningAnswers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateProfileScreeningAnswer"
       required:
         - id
         - jobId
@@ -2589,12 +2668,22 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CandidateProfileApplication"
+            technicalSkills:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateSkill"
+            softSkills:
+              type: array
+              items:
+                $ref: "#/components/schemas/CandidateSkill"
           required:
             - education
             - experience
             - languages
             - referees
             - applications
+            - technicalSkills
+            - softSkills
 
     CreateCandidateRequest:
       type: object

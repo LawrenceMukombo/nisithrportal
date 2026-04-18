@@ -13,6 +13,7 @@ import {
   candidateLanguagesTable,
   candidateRefereesTable,
   candidateDiversityTable,
+  candidateSkillsTable,
   jobsTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
@@ -502,6 +503,16 @@ router.post("/applications", async (req, res): Promise<void> => {
             answer: String(a.answer),
           }))
       ));
+    }
+    // Persist skills to the canonical candidate_skills table (normalised, one row per skill)
+    const technicalSkillsList = ext.technicalSkills ?? [];
+    const softSkillsList = ext.softSkills ?? [];
+    const allSkillRows = [
+      ...technicalSkillsList.map(s => ({ candidateId: candidate.id, skill: s, skillType: "technical" as const, applicationId: application.id })),
+      ...softSkillsList.map(s => ({ candidateId: candidate.id, skill: s, skillType: "soft" as const, applicationId: application.id })),
+    ];
+    if (allSkillRows.length > 0) {
+      promises.push(db.insert(candidateSkillsTable).values(allSkillRows));
     }
     // Use Promise.all so sub-record failures surface as errors (not silently swallowed)
     await Promise.all(promises);

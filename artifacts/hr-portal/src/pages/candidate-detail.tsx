@@ -2,7 +2,7 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, Mail, Phone, Star, FileText, GraduationCap, Briefcase,
   Globe, User, MapPin, Calendar, Award, Users, ChevronRight,
-  DollarSign, ShieldCheck, HelpCircle, Paperclip,
+  DollarSign, ShieldCheck, Paperclip,
 } from "lucide-react";
 import {
   useGetCandidateProfile,
@@ -166,6 +166,26 @@ export default function CandidateDetailPage() {
               </SectionCard>
             )}
 
+            {profile.technicalSkills && profile.technicalSkills.length > 0 && (
+              <SectionCard icon={Award} title="Technical Skills">
+                <div className="flex flex-wrap gap-1.5">
+                  {profile.technicalSkills.map((s) => (
+                    <Badge key={s.id} variant="secondary" className="text-xs">{s.skill}</Badge>
+                  ))}
+                </div>
+              </SectionCard>
+            )}
+
+            {profile.softSkills && profile.softSkills.length > 0 && (
+              <SectionCard icon={Users} title="Soft Skills">
+                <div className="flex flex-wrap gap-1.5">
+                  {profile.softSkills.map((s) => (
+                    <Badge key={s.id} variant="outline" className="text-xs">{s.skill}</Badge>
+                  ))}
+                </div>
+              </SectionCard>
+            )}
+
             {skillsFromParsed.length > 0 && (
               <SectionCard icon={Award} title="AI-Parsed Skills">
                 <div className="flex flex-wrap gap-1.5">
@@ -263,8 +283,8 @@ export default function CandidateDetailPage() {
                 <div className="divide-y">
                   {profile.applications.map((app) => {
                     const score = candidateScores?.find((s) => s.jobId === app.jobId);
-                    const appDocuments = (app as unknown as Record<string, unknown>).documents as Array<{id: number; documentType: string; url: string; fileName?: string}> | undefined;
-                    const appAnswers = (app as unknown as Record<string, unknown>).screeningAnswers as Array<{id: number; questionId: number; question?: string; answer: string}> | undefined;
+                    const appDocuments = app.documents;
+                    const appAnswers = app.screeningAnswers;
                     return (
                       <div key={app.id} className="py-2.5 space-y-2" data-testid={`row-application-${app.id}`}>
                         <div className="flex items-center justify-between">
@@ -321,8 +341,8 @@ export default function CandidateDetailPage() {
 
             {/* Compensation & declarations from most recent application */}
             {(() => {
-              const sortedApps = [...(profile.applications ?? [])].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
-              const latest = sortedApps[0] as (typeof sortedApps[0] & { expectedSalary?: string | null; currentSalary?: string | null; noticePeriod?: string | null; declarationAgreed?: boolean | null; backgroundCheckConsent?: boolean | null; conflictOfInterest?: boolean | null; criminalRecord?: boolean | null; dataPrivacyConsent?: boolean | null; }) | undefined;
+              const sorted = [...(profile.applications ?? [])].sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+              const latest = sorted[0];
               if (!latest) return null;
               const hasCompensation = latest.expectedSalary || latest.currentSalary || latest.noticePeriod;
               const hasDeclarations = latest.declarationAgreed != null || latest.backgroundCheckConsent != null;
@@ -340,13 +360,13 @@ export default function CandidateDetailPage() {
                   {hasDeclarations && (
                     <SectionCard icon={ShieldCheck} title="Declaration Status">
                       <div className="space-y-1.5">
-                        {[
+                        {([
                           { label: "Declaration Agreed", value: latest.declarationAgreed },
                           { label: "Background Check Consent", value: latest.backgroundCheckConsent },
                           { label: "Conflict of Interest Declared", value: latest.conflictOfInterest },
                           { label: "Criminal Record Declared", value: latest.criminalRecord },
                           { label: "Data Privacy Consent", value: latest.dataPrivacyConsent },
-                        ].filter(({ value }) => value != null).map(({ label, value }) => (
+                        ] as Array<{ label: string; value: boolean | null | undefined }>).filter(({ value }) => value != null).map(({ label, value }) => (
                           <div key={label} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">{label}</span>
                             <Badge variant={value ? "default" : "destructive"} className="text-xs">

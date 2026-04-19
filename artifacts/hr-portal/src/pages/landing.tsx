@@ -281,7 +281,6 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
-
       <section className="relative overflow-hidden py-20 px-6" style={{
         background: "linear-gradient(135deg, #0a0a0a 50%, #CE1126 50%)"
       }}>
@@ -298,9 +297,7 @@ export default function LandingPage() {
             style={{ backgroundColor: "#FCD116", color: "#0a0a0a" }}>
             Papua New Guinea Public Service
           </div>
-          <h1 className="text-4xl font-bold text-white mb-4 drop-shadow-sm">
-            Government Careers in Papua New Guinea
-          </h1>
+          <h1 className="text-4xl font-bold text-white mb-4 drop-shadow-sm">NISIT Job Portal</h1>
           <p className="text-white/75 text-lg mb-8 max-w-2xl mx-auto">
             Explore current vacancies at NISIT. Build your public service career today.
           </p>
@@ -316,7 +313,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
       <section className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
@@ -374,7 +370,6 @@ export default function LandingPage() {
           )}
         </div>
       </section>
-
       <section className="max-w-6xl mx-auto px-6 pb-16">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -420,7 +415,6 @@ export default function LandingPage() {
           </div>
         )}
       </section>
-
       <footer className="border-t border-border bg-card">
         <div className="max-w-6xl mx-auto px-6 py-8 text-center">
           <div className="flex justify-center">

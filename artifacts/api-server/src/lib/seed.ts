@@ -610,7 +610,46 @@ async function seedJobVacancies(): Promise<void> {
     deptMap[d.name] = d.id;
   }
 
-  const jobs = vacancies(deptMap, agency.id);
+  const PNG_PROVINCES_CYCLE = [
+    "National Capital District", "Western Highlands", "Morobe",
+    "National Capital District", "East New Britain", "Madang",
+    "National Capital District", "Eastern Highlands",
+  ];
+
+  function inferEmploymentType(title: string): string {
+    const t = title.toLowerCase();
+    if (t.includes("consultant") || t.includes("advisor")) return "contract";
+    if (t.includes("assistant") || t.includes("support") || t.includes("officer"))
+      return "full_time";
+    return "full_time";
+  }
+
+  function inferSalary(title: string): { salaryMin: number; salaryMax: number } {
+    const t = title.toLowerCase();
+    if (t.includes("senior") || t.includes("manager") || t.includes("director"))
+      return { salaryMin: 95000, salaryMax: 130000 };
+    if (t.includes("engineer") || t.includes("developer") || t.includes("analyst"))
+      return { salaryMin: 80000, salaryMax: 110000 };
+    if (t.includes("officer") || t.includes("coordinator"))
+      return { salaryMin: 65000, salaryMax: 90000 };
+    return { salaryMin: 55000, salaryMax: 75000 };
+  }
+
+  const rawJobs = vacancies(deptMap, agency.id);
+  const jobs = rawJobs.map((j, i) => {
+    const { salaryMin, salaryMax } = inferSalary(j.title);
+    return {
+      ...j,
+      province: PNG_PROVINCES_CYCLE[i % PNG_PROVINCES_CYCLE.length],
+      employmentType: inferEmploymentType(j.title),
+      workArrangement: "on_site" as const,
+      salaryMin,
+      salaryMax,
+      salaryCurrency: "PGK",
+      salaryVisibility: "public" as const,
+    };
+  });
+
   let inserted = 0;
   for (const job of jobs) {
     await db.insert(jobsTable).values(job);

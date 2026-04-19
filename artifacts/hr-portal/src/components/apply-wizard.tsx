@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, ArrowRight, Send, Save, Plus, Trash2, Upload,
   User, Phone, MapPin, BookOpen, Briefcase, Wrench, FileText, HelpCircle, Users, CheckSquare, Heart,
-  Loader2, Check, Sparkles, X
+  Loader2, Check, Sparkles, X, Cloud
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -1250,7 +1250,15 @@ export function ApplyWizard({
   const [currentStep, setCurrentStep] = useState(0);
   const [submitted, setSubmitted] = useState<{ id: number; email: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncedToAccount, setSyncedToAccount] = useState(false);
+  const syncedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    return () => {
+      if (syncedTimerRef.current !== null) clearTimeout(syncedTimerRef.current);
+    };
+  }, []);
 
   const form = useForm<WizardValues>({
     resolver: zodResolver(wizardSchema),
@@ -1338,19 +1346,21 @@ export function ApplyWizard({
   // and the draft is reliably linked to the user's account regardless of what email
   // the applicant has typed in the form so far.  The form's candidateEmail is
   // preserved inside draftData and restored when the wizard loads.
-  const saveDraftToServer = useCallback(async () => {
+  const saveDraftToServer = useCallback(async (): Promise<boolean> => {
     const token = getToken();
-    if (!token) return;
+    if (!token) return false;
     const jwtEmail = decodeToken(token)?.email ?? null;
-    if (!jwtEmail) return;
+    if (!jwtEmail) return false;
     const values = form.getValues();
     try {
-      await fetch(`/api/applications/draft/${jobId}`, {
+      const res = await fetch(`/api/applications/draft/${jobId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ candidateEmail: jwtEmail, draftData: values, currentStep }),
       });
+      return res.ok;
     } catch { /* ignore server errors — localStorage draft is the primary mechanism */ }
+    return false;
   }, [form, jobId, currentStep]);
 
   // Auto-save when navigating steps (only while the dialog is open)
@@ -1365,12 +1375,21 @@ export function ApplyWizard({
   const handleSaveDraft = async () => {
     setSaving(true);
     saveDraftLocally();
-    await saveDraftToServer();
+    const isAuthenticated = !!getToken();
+    const serverSaved = isAuthenticated ? await saveDraftToServer() : false;
     setSaving(false);
-    toast({ title: "Draft saved", description: "You can resume your application later." });
+    if (serverSaved) {
+      setSyncedToAccount(true);
+      if (syncedTimerRef.current !== null) clearTimeout(syncedTimerRef.current);
+      syncedTimerRef.current = setTimeout(() => setSyncedToAccount(false), 3000);
+      toast({ title: "Draft saved", description: "Synced to your account — access it from any device." });
+    } else {
+      toast({ title: "Draft saved", description: isAuthenticated ? "Saved locally. Sign in again if sync failed." : "Saved on this device only. Sign in to sync across devices." });
+    }
   };
 
   const totalSteps = STEPS.length;
+  const isAuthenticated = !!getToken();
 
   // Fields that are declaration checkboxes — validated only at final submit, not at Next
   const DECLARATION_FIELDS: (keyof WizardValues)[] = ["declarationAgreed", "backgroundCheckConsent", "dataPrivacyConsent", "conflictOfInterest", "criminalRecord"];
@@ -1517,10 +1536,29 @@ export function ApplyWizard({
               {submitted ? "Application Submitted" : `Apply for: ${jobTitle ?? "Position"}`}
             </DialogTitle>
             {!submitted && (
-              <Button size="sm" variant="ghost" onClick={handleSaveDraft} disabled={saving}>
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                <span className="ml-1.5 text-xs">Save Draft</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                {syncedToAccount && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium animate-in fade-in duration-300">
+                    <Check className="h-3.5 w-3.5" />
+                    Synced to account
+                  </span>
+                )}
+                <Button size="sm" variant="ghost" onClick={handleSaveDraft} disabled={saving}>
+                  {saving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : syncedToAccount ? (
+                    <Cloud className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : isAuthenticated ? (
+                    <span className="flex items-center">
+                      <Save className="h-3.5 w-3.5" />
+                      <Cloud className="h-2.5 w-2.5 -ml-0.5 -mt-1.5 text-primary" />
+                    </span>
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5 text-xs">Save Draft</span>
+                </Button>
+              </div>
             )}
           </div>
           {!submitted && (
@@ -1638,6 +1676,7 @@ export function ApplyWizard({
 export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () => void }) {
   const [hasDraft, setHasDraft] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [syncedToServer, setSyncedToServer] = useState(false);
 
   useEffect(() => {
     // Check localStorage first; auto-discard if older than 30 days
@@ -1670,8 +1709,10 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
         })
           .then(res => (res.ok ? res.json() : null))
           .then((draft: { draftData?: unknown } | null) => {
-            setHasDraft(localHasDraft || !!(draft?.draftData));
+            const hasServerDraft = !!(draft?.draftData);
+            setHasDraft(localHasDraft || hasServerDraft);
             setSavedAt(localSavedAt);
+            setSyncedToServer(hasServerDraft);
           })
           .catch(() => { setHasDraft(localHasDraft); setSavedAt(localSavedAt); });
         return;
@@ -1692,6 +1733,12 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
           {savedAt && (
             <span className="ml-1 text-amber-600 text-xs">
               Saved {draftRelativeTime(savedAt)}
+            </span>
+          )}
+          {syncedToServer && (
+            <span className="ml-2 inline-flex items-center gap-1 text-emerald-700 text-xs font-medium">
+              <Cloud className="h-3 w-3" />
+              Synced to account
             </span>
           )}
         </div>

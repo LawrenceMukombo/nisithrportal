@@ -22,8 +22,24 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
+import { backfillCandidateUserIds } from "../lib/seed";
 
 const router: IRouter = Router();
+
+// Admin-only manual trigger for the candidate→user link back-fill.
+// The same routine runs automatically on server start; this endpoint is
+// provided so an admin can re-run it on demand (e.g. after a bulk import)
+// without restarting the API. It's idempotent — only NULL user_id rows are
+// touched — so calling it repeatedly is safe.
+router.post(
+  "/admin/backfill-candidate-user-ids",
+  authMiddleware,
+  requireRole("admin"),
+  async (_req, res): Promise<void> => {
+    const linked = await backfillCandidateUserIds();
+    res.json({ linked });
+  },
+);
 
 const candidateIdsForAgencySubquery = (agencyId: number) =>
   db

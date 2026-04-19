@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedInitialData, backfillMissingJobFields } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -51,6 +51,14 @@ app.listen(port, (err) => {
   // is disabled.
   backfillMissingJobFields().catch((e) =>
     logger.error(e, "backfillMissingJobFields failed"),
+  );
+
+  // Link legacy candidate records (created before Task #71) to their user
+  // accounts by email. Idempotent — only touches rows with NULL user_id — so
+  // it is safe to run on every boot. Reduces reliance on the slower email
+  // fallback in /applications/my for existing users.
+  backfillCandidateUserIds().catch((e) =>
+    logger.error(e, "backfillCandidateUserIds failed"),
   );
 
   // Run an initial contract expiry check on startup, then every 6 hours.

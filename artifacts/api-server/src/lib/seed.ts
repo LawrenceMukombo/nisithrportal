@@ -1,6 +1,6 @@
-import { eq, count, isNull, or } from "drizzle-orm";
+import { eq, count, isNull, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable } from "@workspace/db";
+import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { seedCompleteData } from "./seed-data";
 
@@ -750,6 +750,36 @@ export async function backfillMissingJobFields(): Promise<void> {
   } catch (err) {
     logger.error(err, "backfillMissingJobFields: failed (non-fatal)");
   }
+}
+
+/**
+ * One-time back-fill that links pre-existing candidate records to user accounts
+ * by matching on email. Candidates created before account-linking (Task #71)
+ * have a NULL `user_id`, which forces the `/applications/my` endpoint to fall
+ * back to a slower email-based lookup. Setting `user_id` lets that endpoint
+ * use the indexed primary path instead.
+ *
+ * Only updates rows where `user_id` IS NULL, so the operation is idempotent
+ * and safe to run on every boot. Uses a single bulk UPDATE for efficiency.
+ *
+ * Returns the number of candidate rows that were linked.
+ */
+export async function backfillCandidateUserIds(): Promise<number> {
+  const result = await db.execute(sql`
+    UPDATE ${candidatesTable}
+    SET user_id = u.id, updated_at = NOW()
+    FROM ${usersTable} u
+    WHERE ${candidatesTable.userId} IS NULL
+      AND ${candidatesTable.email} = u.email
+    RETURNING ${candidatesTable.id}
+  `);
+  const linked = result.rowCount ?? 0;
+  if (linked > 0) {
+    logger.info({ linked }, "backfillCandidateUserIds: linked legacy candidates to user accounts");
+  } else {
+    logger.info("backfillCandidateUserIds: no legacy candidate records require linking");
+  }
+  return linked;
 }
 
 async function seedAdminUser(): Promise<void> {

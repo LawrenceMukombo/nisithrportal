@@ -58,12 +58,14 @@ const PNG_PROVINCES = [
   "Bougainville (AROB)",
 ];
 
-function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, savedJobIds, isAuthenticated, canBookmark }: {
+function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, activeLocation, activeWorkType, savedJobIds, isAuthenticated, canBookmark }: {
   job: Job;
   deptName?: string;
   deptAccent: string;
   onLocationClick?: (province: string) => void;
   onWorkTypeClick?: (workType: string) => void;
+  activeLocation?: string;
+  activeWorkType?: string;
   savedJobIds?: number[];
   isAuthenticated: boolean;
   canBookmark: boolean;
@@ -142,15 +144,19 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, 
                   const province = (job as Job & { province?: string; location?: string }).province
                     || (job as Job & { location?: string }).location;
                   if (!province) return null;
+                  const isActive = !!onLocationClick && activeLocation === province;
+                  const baseCls = "bg-teal-50 text-teal-700 border-teal-200";
+                  const activeCls = "bg-teal-600 text-white border-teal-600 ring-2 ring-teal-300";
                   return (
                     <Badge
                       variant="outline"
-                      className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 pointer-events-auto ${onLocationClick ? "cursor-pointer hover:bg-teal-100 transition-colors" : ""}`}
+                      className={`text-xs py-0 gap-1 pointer-events-auto ${isActive ? activeCls : baseCls} ${onLocationClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
                       data-testid={`badge-province-${job.id}`}
+                      aria-pressed={onLocationClick ? isActive : undefined}
                       onClick={onLocationClick ? (e) => { e.stopPropagation(); e.preventDefault(); onLocationClick(province); } : undefined}
-                      title={onLocationClick ? `Filter by ${province}` : undefined}
+                      title={onLocationClick ? (isActive ? `Clear ${province} filter` : `Filter by ${province}`) : undefined}
                     >
-                      <MapPin className="h-3 w-3" />{province}
+                      {isActive ? <Check className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}{province}
                     </Badge>
                   );
                 })()}
@@ -172,16 +178,19 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, 
                     const cls = empType
                       ? (WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200")
                       : "bg-blue-50 text-blue-700 border-blue-200";
-                    const clickable = onWorkTypeClick && empType;
+                    const clickable = !!(onWorkTypeClick && empType);
+                    const isActive = clickable && activeWorkType === empType;
+                    const activeCls = "bg-primary text-primary-foreground border-primary ring-2 ring-primary/30";
                     return (
                       <Badge
                         variant="outline"
-                        className={`text-xs py-0 gap-1 ${cls} pointer-events-auto ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                        className={`text-xs py-0 gap-1 pointer-events-auto ${isActive ? activeCls : cls} ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
                         data-testid={`badge-work-type-${job.id}`}
+                        aria-pressed={clickable ? isActive : undefined}
                         onClick={clickable ? (e) => { e.stopPropagation(); e.preventDefault(); onWorkTypeClick!(empType!); } : undefined}
-                        title={clickable ? `Filter by ${label}` : undefined}
+                        title={clickable ? (isActive ? `Clear ${label} filter` : `Filter by ${label}`) : undefined}
                       >
-                        <Briefcase className="h-3 w-3" />{label}
+                        {isActive ? <Check className="h-3 w-3" /> : <Briefcase className="h-3 w-3" />}{label}
                       </Badge>
                     );
                   })()}
@@ -487,8 +496,10 @@ export default function LandingPage() {
                 job={job}
                 deptName={job.departmentId ? deptMap[job.departmentId] : undefined}
                 deptAccent={job.departmentId ? (deptAccentMap[job.departmentId] ?? DEPT_ACCENT_COLORS[0]) : DEPT_ACCENT_COLORS[0]}
-                onLocationClick={setLocationFilter}
-                onWorkTypeClick={setWorkTypeFilter}
+                onLocationClick={(p) => setLocationFilter((cur) => cur === p ? "all" : p)}
+                onWorkTypeClick={(w) => setWorkTypeFilter((cur) => cur === w ? "all" : w)}
+                activeLocation={locationFilter}
+                activeWorkType={workTypeFilter}
                 savedJobIds={savedJobIds}
                 isAuthenticated={isAuthenticated}
                 canBookmark={canBookmark}

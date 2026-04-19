@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle, Check } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { DRAFT_KEY_PREFIX, isDraftExpired, draftRelativeTime } from "@/lib/draftKeys";
@@ -294,29 +294,38 @@ export default function JobsPage() {
               {empType && (() => {
                 const label = WORK_TYPE_LABELS[empType] ?? empType;
                 const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
+                const isActive = workTypeFilter === empType;
+                const activeCls = "bg-primary text-primary-foreground border-primary ring-2 ring-primary/30";
                 return (
                   <Badge
                     variant="outline"
-                    className={`text-xs py-0 gap-1 ${cls} cursor-pointer hover:opacity-70 transition-opacity`}
+                    className={`text-xs py-0 gap-1 ${isActive ? activeCls : cls} cursor-pointer hover:opacity-70 transition-opacity`}
                     data-testid={`badge-work-type-${job.id}`}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWorkTypeFilter(empType); }}
-                    title={`Filter by ${label}`}
+                    aria-pressed={isActive}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWorkTypeFilter(isActive ? "all" : empType); }}
+                    title={isActive ? `Clear ${label} filter` : `Filter by ${label}`}
                   >
-                    <Briefcase className="h-3 w-3" />{label}
+                    {isActive ? <Check className="h-3 w-3" /> : <Briefcase className="h-3 w-3" />}{label}
                   </Badge>
                 );
               })()}
-              {province && (
-                <Badge
-                  variant="outline"
-                  className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 cursor-pointer hover:opacity-70 transition-opacity"
-                  data-testid={`badge-province-${job.id}`}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocationFilter(province); }}
-                  title={`Filter by ${province}`}
-                >
-                  <MapPin className="h-3 w-3" />{province}
-                </Badge>
-              )}
+              {province && (() => {
+                const isActive = locationFilter === province;
+                const baseCls = "bg-teal-50 text-teal-700 border-teal-200";
+                const activeCls = "bg-teal-600 text-white border-teal-600 ring-2 ring-teal-300";
+                return (
+                  <Badge
+                    variant="outline"
+                    className={`text-xs py-0 gap-1 ${isActive ? activeCls : baseCls} cursor-pointer hover:opacity-70 transition-opacity`}
+                    data-testid={`badge-province-${job.id}`}
+                    aria-pressed={isActive}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocationFilter(isActive ? "all" : province); }}
+                    title={isActive ? `Clear ${province} filter` : `Filter by ${province}`}
+                  >
+                    {isActive ? <Check className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}{province}
+                  </Badge>
+                );
+              })()}
               {job.workArrangement && (
                 <Badge variant="outline" className="text-xs py-0 bg-slate-50 text-slate-600 border-slate-200">
                   {({ remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" } as Record<string, string>)[job.workArrangement] ?? job.workArrangement}

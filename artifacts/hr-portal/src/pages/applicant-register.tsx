@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,7 +30,28 @@ export default function ApplicantRegisterPage() {
   });
 
   const emailValue = useWatch({ control: form.control, name: "email" });
-  const showGovWarning = isStaffDomain(emailValue ?? "");
+  const isGovEmail = isStaffDomain(emailValue ?? "");
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [stickyGovWarning, setStickyGovWarning] = useState(false);
+
+  const hasClearNonGovDomain = (() => {
+    const email = emailValue ?? "";
+    const atIdx = email.lastIndexOf("@");
+    if (atIdx === -1) return false;
+    const domain = email.slice(atIdx + 1);
+    if (!/^[^@\s]+\.[^@\s]+$/.test(domain)) return false;
+    return !isStaffDomain(email);
+  })();
+
+  useEffect(() => {
+    if (isGovEmail) {
+      setStickyGovWarning(true);
+    } else if (!emailFocused || hasClearNonGovDomain) {
+      setStickyGovWarning(false);
+    }
+  }, [isGovEmail, emailFocused, hasClearNonGovDomain]);
+
+  const showGovWarning = isGovEmail || (emailFocused && stickyGovWarning);
 
   const onSubmit = async (values: FormValues) => {
     if (isStaffDomain(values.email)) {
@@ -107,7 +128,17 @@ export default function ApplicantRegisterPage() {
                     <FormItem>
                       <FormLabel>Email Address</FormLabel>
                       <FormControl>
-                        <Input type="email" placeholder="you@example.com" data-testid="input-email" {...field} />
+                        <Input
+                          type="email"
+                          placeholder="you@example.com"
+                          data-testid="input-email"
+                          {...field}
+                          onFocus={() => setEmailFocused(true)}
+                          onBlur={() => {
+                            field.onBlur();
+                            setEmailFocused(false);
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                       {showGovWarning && (

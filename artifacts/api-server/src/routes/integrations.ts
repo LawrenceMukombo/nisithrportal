@@ -442,6 +442,8 @@ router.get("/integration-config/:id/logs/export", authMiddleware, requireRole("a
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("X-Row-Count", String(rows.length));
+    res.setHeader("Access-Control-Expose-Headers", "X-Row-Count, Content-Disposition");
     res.send(csv);
   } catch (err) {
     logger.error(err, "Failed to export integration logs");

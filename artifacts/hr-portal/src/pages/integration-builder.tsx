@@ -344,20 +344,51 @@ function DailyTrendChart({ data }: { data: DailyBucket[] }) {
   );
 }
 
-async function exportLogsCSV(configId: number, configName: string) {
-  const token = localStorage.getItem("hr_portal_token");
-  const res = await fetch(`/api/integration-config/${configId}/logs/export`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) return;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  const date = new Date().toISOString().slice(0, 10);
-  a.download = `integration-logs-${configName.toLowerCase().replace(/\s+/g, "-")}-${date}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+async function exportLogsCSV(
+  configId: number,
+  configName: string,
+  toast: (opts: { title: string; description?: string; variant?: "default" | "destructive" }) => void,
+) {
+  try {
+    const token = localStorage.getItem("hr_portal_token");
+    const res = await fetch(`/api/integration-config/${configId}/logs/export`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.error) detail = body.error;
+      } catch {}
+      toast({ title: "Export failed", description: detail, variant: "destructive" });
+      return;
+    }
+    const blob = await res.blob();
+    let rowCount = parseInt(res.headers.get("X-Row-Count") ?? "", 10);
+    if (isNaN(rowCount)) {
+      const text = await blob.text();
+      const lines = text.split(/\r?\n/).filter(l => l.length > 0);
+      rowCount = Math.max(0, lines.length - 1);
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    a.download = `integration-logs-${configName.toLowerCase().replace(/\s+/g, "-")}-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({
+      title: rowCount === 0
+        ? "No log entries to export"
+        : `Exported ${rowCount} log ${rowCount === 1 ? "entry" : "entries"}`,
+    });
+  } catch (e) {
+    toast({
+      title: "Export failed",
+      description: (e as Error).message,
+      variant: "destructive",
+    });
+  }
 }
 
 function AlertThresholdsPanel({
@@ -1173,7 +1204,7 @@ function IntegrationConfigCard({
               variant="ghost"
               size="sm"
               className="text-xs h-7 gap-1 text-muted-foreground ml-auto"
-              onClick={() => exportLogsCSV(config.id, config.name)}
+              onClick={() => exportLogsCSV(config.id, config.name, toast)}
               title="Export execution logs as CSV"
               data-testid={`button-export-logs-${config.id}`}
             >

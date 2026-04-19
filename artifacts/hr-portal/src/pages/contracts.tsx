@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, FileText } from "lucide-react";
+import { Search, Plus, FileText, FileCheck2, FileClock } from "lucide-react";
 import { useGetContracts, useGetEmployees, getGetContractsQueryKey, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import type { Contract } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
@@ -132,6 +132,24 @@ export default function ContractsPage() {
       sortValue: (c) => c.endDate as string ?? "",
       exportValue: (c) => c.endDate ? new Date(c.endDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "ongoing",
       render: (c) => <span className="text-muted-foreground text-xs">{c.endDate ? new Date(c.endDate as string).toLocaleDateString() : "ongoing"}</span>,
+    },
+    {
+      key: "signedDocument",
+      label: "Signed Document",
+      sortable: true,
+      sortValue: (c) => (c.documentUrl ? 1 : 0),
+      exportValue: (c) => (c.documentUrl ? "Signed" : "Pending"),
+      render: (c) => (
+        c.documentUrl ? (
+          <Badge variant="default" className="gap-1" data-testid={`badge-signed-${c.id}`}>
+            <FileCheck2 className="h-3 w-3" /> Signed
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="gap-1 text-muted-foreground" data-testid={`badge-pending-${c.id}`}>
+            <FileClock className="h-3 w-3" /> Pending
+          </Badge>
+        )
+      ),
     },
     {
       key: "status",

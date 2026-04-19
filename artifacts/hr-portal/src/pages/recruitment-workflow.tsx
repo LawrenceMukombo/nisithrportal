@@ -14,6 +14,7 @@ import {
   X,
   Settings,
   History,
+  ArrowUpDown,
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
@@ -37,6 +38,22 @@ import {
   TooltipContent as UITooltipContent,
   TooltipTrigger as UITooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES, ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
 import {
   LineChart,
@@ -651,6 +668,10 @@ export default function RecruitmentWorkflowPage() {
   const [search, setSearch] = useState("");
   const { isAdmin, isHrOfficer, isHiringManager } = useRole();
   const canConfigureSla = isAdmin || isHrOfficer || isHiringManager;
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportStage, setExportStage] = useState<string>("all");
+  const [exportJob, setExportJob] = useState<string>("all");
+  const [exportSort, setExportSort] = useState<string>("days-desc");
 
   const { data: applications = [], isLoading: appsLoading } = useGetApplications(
     {},
@@ -844,36 +865,8 @@ export default function RecruitmentWorkflowPage() {
                 className="h-8 gap-1.5 text-xs"
                 data-testid="btn-export-full-pipeline"
                 disabled={isLoading}
-                title="Download one row per active application"
-                onClick={() => {
-                  const today = new Date().toISOString().slice(0, 10);
-                  const esc = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-                  const header = "Candidate Name,Job Title,Current Stage,Days in Stage,Status,Applied Date";
-                  const rows = activeApps.map((app) => {
-                    const cand = app.candidateId != null ? candidateMap.get(app.candidateId) : undefined;
-                    const job = jobMap.get(app.jobId);
-                    const status = app.status ?? "";
-                    const stage = WORKFLOW_STAGES.find((s) => s.status === status);
-                    const days = stage ? daysInStage(app, status) : daysSince(app.createdAt);
-                    const appliedDate = app.createdAt ? new Date(app.createdAt).toISOString().slice(0, 10) : "";
-                    return [
-                      esc(cand?.name ?? `Candidate #${app.candidateId}`),
-                      esc(job?.title ?? `Job #${app.jobId}`),
-                      esc(stage?.label ?? status),
-                      days,
-                      esc(status),
-                      appliedDate,
-                    ].join(",");
-                  });
-                  const csv = [header, ...rows].join("\n");
-                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `pipeline-detail-${today}.csv`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
+                title="Filter and download one row per active application"
+                onClick={() => setExportOpen(true)}
               >
                 <Download className="h-3.5 w-3.5" />
                 Export Full Pipeline ({totalActive})
@@ -1064,6 +1057,182 @@ export default function RecruitmentWorkflowPage() {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-export-full-pipeline">
+          <DialogHeader>
+            <DialogTitle>Export Full Pipeline</DialogTitle>
+            <DialogDescription>
+              Filter and sort active applications before downloading. Defaults export every active application.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const jobIdsInActive = Array.from(new Set(activeApps.map((a) => a.jobId)));
+            const jobOptions = jobIdsInActive
+              .map((id) => ({ id, title: jobMap.get(id)?.title ?? `Job #${id}` }))
+              .sort((a, b) => a.title.localeCompare(b.title));
+            const stageOptions = WORKFLOW_STAGES.filter(
+              (s) => !TERMINAL_STATUSES.includes(s.status),
+            );
+            const filtered = activeApps.filter((app) => {
+              if (exportStage !== "all" && (app.status ?? "") !== exportStage) return false;
+              if (exportJob !== "all" && String(app.jobId) !== exportJob) return false;
+              return true;
+            });
+            const matchCount = filtered.length;
+            return (
+              <>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="export-stage-filter" className="text-xs">Stage</Label>
+                    <Select value={exportStage} onValueChange={setExportStage}>
+                      <SelectTrigger id="export-stage-filter" className="h-9 text-sm" data-testid="select-export-stage">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" data-testid="select-export-stage-all">All stages</SelectItem>
+                        {stageOptions.map((stage) => (
+                          <SelectItem
+                            key={stage.id}
+                            value={stage.status}
+                            data-testid={`select-export-stage-${stage.status}`}
+                          >
+                            {stage.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="export-job-filter" className="text-xs">Job title</Label>
+                    <Select value={exportJob} onValueChange={setExportJob}>
+                      <SelectTrigger id="export-job-filter" className="h-9 text-sm" data-testid="select-export-job">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" data-testid="select-export-job-all">All jobs</SelectItem>
+                        {jobOptions.map((j) => (
+                          <SelectItem
+                            key={j.id}
+                            value={String(j.id)}
+                            data-testid={`select-export-job-${j.id}`}
+                          >
+                            {j.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="export-sort" className="text-xs flex items-center gap-1">
+                      <ArrowUpDown className="h-3 w-3" />
+                      Sort by
+                    </Label>
+                    <Select value={exportSort} onValueChange={setExportSort}>
+                      <SelectTrigger id="export-sort" className="h-9 text-sm" data-testid="select-export-sort">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="days-desc">Days in stage (longest first)</SelectItem>
+                        <SelectItem value="days-asc">Days in stage (shortest first)</SelectItem>
+                        <SelectItem value="applied-desc">Applied date (newest first)</SelectItem>
+                        <SelectItem value="applied-asc">Applied date (oldest first)</SelectItem>
+                        <SelectItem value="name-asc">Candidate name (A–Z)</SelectItem>
+                        <SelectItem value="job-asc">Job title (A–Z)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="text-export-match-count">
+                    {matchCount} active application{matchCount === 1 ? "" : "s"} will be exported.
+                  </p>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setExportStage("all");
+                      setExportJob("all");
+                      setExportSort("days-desc");
+                    }}
+                    data-testid="btn-export-reset"
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExportOpen(false)}
+                    data-testid="btn-export-cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={matchCount === 0}
+                    data-testid="btn-export-confirm"
+                    onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const esc = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+                      const header = "Candidate Name,Job Title,Current Stage,Days in Stage,Status,Applied Date";
+                      const sorted = [...filtered].sort((a, b) => {
+                        const sa = a.status ?? "";
+                        const sb = b.status ?? "";
+                        const stageA = WORKFLOW_STAGES.find((s) => s.status === sa);
+                        const stageB = WORKFLOW_STAGES.find((s) => s.status === sb);
+                        const daysA = stageA ? daysInStage(a, sa) : daysSince(a.createdAt);
+                        const daysB = stageB ? daysInStage(b, sb) : daysSince(b.createdAt);
+                        const nameA = (a.candidateId != null ? candidateMap.get(a.candidateId)?.name : "") ?? "";
+                        const nameB = (b.candidateId != null ? candidateMap.get(b.candidateId)?.name : "") ?? "";
+                        const jobA = jobMap.get(a.jobId)?.title ?? "";
+                        const jobB = jobMap.get(b.jobId)?.title ?? "";
+                        const appliedA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                        const appliedB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                        switch (exportSort) {
+                          case "days-asc": return daysA - daysB;
+                          case "days-desc": return daysB - daysA;
+                          case "applied-asc": return appliedA - appliedB;
+                          case "applied-desc": return appliedB - appliedA;
+                          case "name-asc": return nameA.localeCompare(nameB);
+                          case "job-asc": return jobA.localeCompare(jobB);
+                          default: return 0;
+                        }
+                      });
+                      const rows = sorted.map((app) => {
+                        const cand = app.candidateId != null ? candidateMap.get(app.candidateId) : undefined;
+                        const job = jobMap.get(app.jobId);
+                        const status = app.status ?? "";
+                        const stage = WORKFLOW_STAGES.find((s) => s.status === status);
+                        const days = stage ? daysInStage(app, status) : daysSince(app.createdAt);
+                        const appliedDate = app.createdAt ? new Date(app.createdAt).toISOString().slice(0, 10) : "";
+                        return [
+                          esc(cand?.name ?? `Candidate #${app.candidateId}`),
+                          esc(job?.title ?? `Job #${app.jobId}`),
+                          esc(stage?.label ?? status),
+                          days,
+                          esc(status),
+                          appliedDate,
+                        ].join(",");
+                      });
+                      const csv = [header, ...rows].join("\n");
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `pipeline-detail-${today}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setExportOpen(false);
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Download CSV
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

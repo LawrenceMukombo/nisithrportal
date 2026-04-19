@@ -45,7 +45,8 @@ function getLogoBuffer(): Buffer | null {
     const b64 = nisitLogoDataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
     _logoBuffer = Buffer.from(b64, "base64");
     return _logoBuffer;
-  } catch {
+  } catch (err) {
+    console.warn("[pdf] NISIT logo could not be decoded — documents will be generated without logo branding:", err);
     return null;
   }
 }
@@ -65,8 +66,8 @@ function drawLetterhead(doc: PDFKit.PDFDocument, agencyName: string) {
   if (logo) {
     try {
       doc.image(logo, margins, 14, { height: 60, fit: [80, 60] });
-    } catch {
-      // Ignore logo errors — text header still renders
+    } catch (err) {
+      console.warn("[pdf] Failed to render NISIT logo in PDF letterhead — document will be generated without logo:", err);
     }
   }
 
@@ -265,8 +266,9 @@ router.get(
 
     // Footer
     const footerY = doc.page.height - 40;
+    const generatedFooter = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
     doc.fontSize(7).fillColor("#888888").font("Helvetica")
-      .text(`${agencyName} · Official Document · ${refNo}`, 0, footerY, { align: "center", width: doc.page.width });
+      .text(`${agencyName} · Official Document · ${refNo} · Generated on: ${generatedFooter}`, 0, footerY, { align: "center", width: doc.page.width });
 
     doc.end();
   }
@@ -352,7 +354,8 @@ router.post(
       divider(doc);
       signatureBlock(doc);
       const footerY = doc.page.height - 40;
-      doc.fontSize(7).fillColor("#888888").font("Helvetica").text(`${agencyName} · Official Document · ${refNo}`, 0, footerY, { align: "center", width: doc.page.width });
+      const generatedFooterEmail = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
+      doc.fontSize(7).fillColor("#888888").font("Helvetica").text(`${agencyName} · Official Document · ${refNo} · Generated on: ${generatedFooterEmail}`, 0, footerY, { align: "center", width: doc.page.width });
 
       doc.end();
     });
@@ -531,8 +534,9 @@ router.get(
 
     // Footer
     const footerY = doc.page.height - 40;
+    const generatedFooterContract = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
     doc.fontSize(7).fillColor("#888888").font("Helvetica")
-      .text(`${agencyName} · Official Contract · ${refNo}`, 0, footerY, { align: "center", width: doc.page.width });
+      .text(`${agencyName} · Official Contract · ${refNo} · Generated on: ${generatedFooterContract}`, 0, footerY, { align: "center", width: doc.page.width });
 
     doc.end();
   }

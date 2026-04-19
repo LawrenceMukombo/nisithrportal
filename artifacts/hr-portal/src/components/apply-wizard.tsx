@@ -1980,6 +1980,7 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
   const [hasDraft, setHasDraft] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [syncedToServer, setSyncedToServer] = useState(false);
+  const [serverSyncedAt, setServerSyncedAt] = useState<string | null>(null);
 
   useEffect(() => {
     // Check localStorage first; auto-discard if older than 30 days
@@ -2011,11 +2012,12 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
           headers: { Authorization: `Bearer ${token}` },
         })
           .then(res => (res.ok ? res.json() : null))
-          .then((draft: { draftData?: unknown } | null) => {
+          .then((draft: { draftData?: unknown; updatedAt?: string } | null) => {
             const hasServerDraft = !!(draft?.draftData);
             setHasDraft(localHasDraft || hasServerDraft);
             setSavedAt(localSavedAt);
             setSyncedToServer(hasServerDraft);
+            setServerSyncedAt(hasServerDraft ? (draft?.updatedAt ?? null) : null);
           })
           .catch(() => { setHasDraft(localHasDraft); setSavedAt(localSavedAt); });
         return;
@@ -2042,6 +2044,14 @@ export function DraftBanner({ jobId, onResume }: { jobId: number; onResume: () =
             <span className="ml-2 inline-flex items-center gap-1 text-emerald-700 text-xs font-medium">
               <Cloud className="h-3 w-3" />
               Synced to account
+              {serverSyncedAt && (
+                <span
+                  className="ml-1 font-normal text-emerald-600"
+                  title={new Date(serverSyncedAt).toLocaleString()}
+                >
+                  · {draftRelativeTime(serverSyncedAt)}
+                </span>
+              )}
             </span>
           )}
         </div>

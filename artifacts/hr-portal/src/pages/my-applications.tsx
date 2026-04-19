@@ -86,6 +86,15 @@ export default function MyApplicationsPage() {
     setDrafts(scanLocalDrafts());
   }, []);
 
+  useEffect(() => {
+    const handleDraftCleared = (e: Event) => {
+      const { jobId } = (e as CustomEvent<{ jobId: number }>).detail;
+      setDrafts((prev) => prev.filter((d) => d.jobId !== jobId));
+    };
+    window.addEventListener("draft_cleared", handleDraftCleared);
+    return () => window.removeEventListener("draft_cleared", handleDraftCleared);
+  }, []);
+
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
 
   const submittedJobIds = useMemo(

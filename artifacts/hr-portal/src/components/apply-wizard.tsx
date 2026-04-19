@@ -1468,8 +1468,9 @@ export function ApplyWizard({
 
     const result = await res.json() as { id: number };
 
-    // Clear local draft
+    // Clear local draft and notify any open My Applications page
     localStorage.removeItem(DRAFT_KEY(jobId));
+    window.dispatchEvent(new CustomEvent("draft_cleared", { detail: { jobId } }));
 
     setSubmitted({ id: result.id, email: values.candidateEmail });
   };

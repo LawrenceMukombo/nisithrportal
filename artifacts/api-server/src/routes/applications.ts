@@ -177,20 +177,28 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
   res.json(allApps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
-// GET /applications/ids — returns only IDs for the matching filter set (used by bulk "select all results")
-router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+// Shared filter builder for select-all-results endpoints (/applications/ids and /applications/count).
+// Centralises the tenant + status + search filter logic so the count and ids endpoints stay
+// in lock-step — important when select-all-results banners read total from one and ids from the other.
+function buildApplicationsFilterQuery(req: import("express").Request) {
   const status = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : null;
   const search = typeof req.query.search === "string" && req.query.search.trim() ? req.query.search.trim().toLowerCase() : null;
-
   const agencyId = getTenantAgencyId(req);
-  const baseConditions = [];
 
+  const baseConditions = [];
   if (agencyId != null) {
     baseConditions.push(inArray(applicationsTable.jobId,
       db.select({ id: jobsTable.id }).from(jobsTable).where(eq(jobsTable.agencyId, agencyId)),
     ));
   }
   if (status != null) baseConditions.push(eq(applicationsTable.status, status));
+
+  return { status, search, baseConditions };
+}
+
+// GET /applications/ids — returns only IDs for the matching filter set (used by bulk "select all results")
+router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const { search, baseConditions } = buildApplicationsFilterQuery(req);
 
   let rows: { id: number }[];
   if (search) {
@@ -216,6 +224,41 @@ router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer
 
   const ids = rows.map((r) => r.id);
   res.json({ ids, total: ids.length });
+});
+
+// GET /applications/count — returns total matching count for the current filters.
+// Used by the select-all-results banner to display the backend total instead of relying
+// on the client-loaded array length. This decouples the banner from client-side data so it
+// remains correct if the applications list is ever paginated server-side (banner stays
+// "active" with the true total when the user navigates between pages).
+router.get("/applications/count", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const { search, baseConditions } = buildApplicationsFilterQuery(req);
+
+  let total: number;
+  if (search) {
+    const pattern = `%${search}%`;
+    const searchCondition = or(
+      ilike(candidatesTable.name, pattern),
+      ilike(jobsTable.title, pattern),
+      sql`CAST(${applicationsTable.id} AS TEXT) LIKE ${pattern}`,
+      sql`CAST(${applicationsTable.jobId} AS TEXT) LIKE ${pattern}`,
+      sql`CAST(${applicationsTable.candidateId} AS TEXT) LIKE ${pattern}`,
+    );
+    const allConditions = searchCondition ? [...baseConditions, searchCondition] : baseConditions;
+    const q = db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(applicationsTable)
+      .leftJoin(candidatesTable, eq(applicationsTable.candidateId, candidatesTable.id))
+      .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id));
+    const [row] = allConditions.length > 0 ? await q.where(and(...allConditions)) : await q;
+    total = row?.count ?? 0;
+  } else {
+    const q = db.select({ count: sql<number>`COUNT(*)::int` }).from(applicationsTable);
+    const [row] = baseConditions.length > 0 ? await q.where(and(...baseConditions)) : await q;
+    total = row?.count ?? 0;
+  }
+
+  res.json({ total });
 });
 
 router.get("/applications/my", authMiddleware, async (req, res): Promise<void> => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useSearch } from "wouter";
 import { Search } from "lucide-react";
 import {
@@ -105,6 +105,33 @@ export default function ApplicationsPage() {
     { query: { queryKey: getGetApplicationsQueryKey({ status: statusFilter !== "all" ? statusFilter : undefined }) } }
   );
 
+  // Backend total for the active filter set. Powers the select-all-results banner so the
+  // count remains accurate independent of how many rows are currently loaded on the client.
+  // If pagination is added to the rows query later, the banner will still report the true
+  // total across all pages without any change here.
+  const countParams = useMemo(() => {
+    const p = new URLSearchParams();
+    if (statusFilter !== "all") p.set("status", statusFilter);
+    if (search.trim()) p.set("search", search.trim());
+    return p.toString();
+  }, [statusFilter, search]);
+  const [totalMatchingResults, setTotalMatchingResults] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    // Clear the previous total at the start of every fetch so a failed or in-flight
+    // request never leaves a stale count from a different filter set on screen.
+    setTotalMatchingResults(undefined);
+    const url = `/api/applications/count${countParams ? `?${countParams}` : ""}`;
+    fetch(url, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { total?: number } | null) => {
+        if (cancelled || !body || typeof body.total !== "number") return;
+        setTotalMatchingResults(body.total);
+      })
+      .catch(() => { /* non-blocking — banner just falls back to client count */ });
+    return () => { cancelled = true; };
+  }, [countParams]);
+
   const { data: candidates = [] } = useGetCandidates({ query: { queryKey: getGetCandidatesQueryKey() } });
   const { data: jobs = [] } = useGetJobs(undefined, { query: { queryKey: getGetJobsQueryKey() } });
   const candidateMap = useMemo(() => new Map(candidates.map((c) => [c.id, c])), [candidates]);
@@ -127,12 +154,51 @@ export default function ApplicationsPage() {
     });
   }, [applications.data, search, candidateMap, jobMap]);
 
-  const handleBulkAction = useCallback(async (ids: number[], action: string) => {
+  const handleBulkAction = useCallback(async (ids: number[], action: string, selectAllResults?: boolean) => {
+    // When the user opted into select-all-results mode, resolve the full matching id set
+    // from the server before issuing the bulk update. Today the loaded `ids` already cover
+    // every match (no pagination), but going through `/applications/ids` keeps the action
+    // correct once pagination is introduced. We must fail loudly here: silently falling
+    // back to the current-page subset when the ids fetch fails would silently shrink the
+    // scope of a destructive action the user explicitly asked to apply to everything.
+    let targetIds = ids;
+    if (selectAllResults) {
+      try {
+        const idsRes = await fetch(`/api/applications/ids${countParams ? `?${countParams}` : ""}`, {
+          credentials: "include",
+        });
+        if (!idsRes.ok) {
+          toast({
+            title: "Bulk update failed",
+            description: "Could not load the full set of matching applications. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const body = await idsRes.json() as { ids?: number[] };
+        if (!Array.isArray(body.ids)) {
+          toast({
+            title: "Bulk update failed",
+            description: "Unexpected response while loading matching applications.",
+            variant: "destructive",
+          });
+          return;
+        }
+        targetIds = body.ids;
+      } catch {
+        toast({
+          title: "Bulk update failed",
+          description: "Could not load the full set of matching applications. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     const res = await fetch("/api/applications/bulk-status", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ ids, status: action }),
+      body: JSON.stringify({ ids: targetIds, status: action }),
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => null) as { error?: string } | null;
@@ -147,7 +213,7 @@ export default function ApplicationsPage() {
     await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
     const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
     toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
-  }, [queryClient, toast]);
+  }, [queryClient, toast, countParams]);
 
   const columns: DataTableColumn<Application>[] = [
     {
@@ -271,6 +337,8 @@ export default function ApplicationsPage() {
           bulkActions={BULK_ACTIONS}
           onBulkAction={handleBulkAction}
           exportFilename="applications"
+          totalMatchingResults={totalMatchingResults}
+          filterToken={countParams}
           data-testid="table-applications"
           emptyState="No applications found"
         />

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Download, Printer, Columns3, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,8 +38,22 @@ type DataTableProps<T> = {
   skeletonRows?: number;
   emptyState?: React.ReactNode;
   bulkActions?: DataTableBulkAction[];
-  onBulkAction?: (ids: number[], action: string) => void | Promise<void>;
+  onBulkAction?: (ids: number[], action: string, selectAllResults?: boolean) => void | Promise<void>;
   exportFilename?: string;
+  /**
+   * Total count of rows matching the active server-side filters. When provided and the user
+   * has selected every loaded row, the bulk action bar shows the backend total instead of
+   * the client-loaded count, and offers to expand selection to all matching results
+   * (select-all-results mode). This is the foundation for pagination-aware bulk actions:
+   * the count comes from the server, so it stays correct across page navigation if the
+   * caller ever paginates the rows prop.
+   */
+  totalMatchingResults?: number;
+  /**
+   * A token that changes whenever the active filter/search changes. When this changes,
+   * the select-all-results mode is cleared so the banner doesn't bleed across filter changes.
+   */
+  filterToken?: string;
   "data-testid"?: string;
   rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>;
 };
@@ -81,6 +95,8 @@ export function DataTable<T>({
   bulkActions = [],
   onBulkAction,
   exportFilename = "export",
+  totalMatchingResults,
+  filterToken,
   "data-testid": testId,
   rowProps,
 }: DataTableProps<T>) {
@@ -88,6 +104,15 @@ export function DataTable<T>({
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  // Tracks the "select all matching results" mode — distinct from selecting every loaded row.
+  // In this mode bulk actions apply to every server-matching record (resolved by the caller),
+  // not just the loaded subset. Cleared when filters change or selection is cleared.
+  const [selectAllResults, setSelectAllResults] = useState(false);
+
+  useEffect(() => {
+    setSelectAllResults(false);
+    setSelectedIds(new Set());
+  }, [filterToken]);
 
   const defaultHiddenKeys = useMemo(
     () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
@@ -114,11 +139,24 @@ export function DataTable<T>({
   }, [rows, sortKey, sortDir, columns]);
 
   const rowIds = useMemo(() => sorted.map(getRowId), [sorted, getRowId]);
-  const allSelected = rowIds.length > 0 && rowIds.every((id) => selectedIds.has(id));
-  const someSelected = rowIds.some((id) => selectedIds.has(id));
-  const selectedCount = rowIds.filter((id) => selectedIds.has(id)).length;
+  // In select-all-results mode every loaded row is conceptually part of the selection,
+  // even after the user navigates to another page (where selectedIds wouldn't include
+  // those rows yet). Treating the whole loaded subset as selected keeps the checkboxes
+  // and bulk bar consistent with the user's intent across page changes.
+  const allSelected = selectAllResults || (rowIds.length > 0 && rowIds.every((id) => selectedIds.has(id)));
+  const someSelected = selectAllResults || rowIds.some((id) => selectedIds.has(id));
+  const selectedCount = selectAllResults
+    ? rowIds.length
+    : rowIds.filter((id) => selectedIds.has(id)).length;
 
   function toggleAll() {
+    // Toggling the header checkbox while in select-all-results mode collapses out of
+    // that mode entirely (clears the broad selection); otherwise toggle the page subset.
+    if (selectAllResults) {
+      setSelectAllResults(false);
+      setSelectedIds(new Set());
+      return;
+    }
     if (allSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -135,6 +173,13 @@ export function DataTable<T>({
   }
 
   function toggleRow(id: number) {
+    // Per-row interaction in select-all-results mode collapses back to an explicit
+    // subset selection (every loaded row minus the one being toggled off).
+    if (selectAllResults) {
+      setSelectAllResults(false);
+      setSelectedIds(new Set(rowIds.filter((rid) => rid !== id)));
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -161,13 +206,14 @@ export function DataTable<T>({
       if (!onBulkAction) return;
       setBulkLoading(true);
       try {
-        await onBulkAction(ids, action);
+        await onBulkAction(ids, action, selectAllResults);
         setSelectedIds(new Set());
+        setSelectAllResults(false);
       } finally {
         setBulkLoading(false);
       }
     },
-    [rowIds, selectedIds, onBulkAction]
+    [rowIds, selectedIds, onBulkAction, selectAllResults]
   );
 
   function handleExportSelected() {
@@ -196,13 +242,36 @@ export function DataTable<T>({
       {/* Toolbar — hidden on print */}
       <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
         {/* Bulk action bar — always shown when rows are selected */}
-        {selectedCount > 0 && (
+        {(selectedCount > 0 || selectAllResults) && (
           <div
-            className="flex items-center gap-2 px-3 py-1.5 bg-muted/60 rounded-md border border-border"
+            className="flex items-center gap-2 px-3 py-1.5 bg-muted/60 rounded-md border border-border flex-wrap"
             data-testid="bulk-action-bar"
           >
             <CheckSquare className="h-4 w-4 text-primary shrink-0" />
-            <span className="text-sm font-medium">{selectedCount} selected</span>
+            {/* When in select-all-results mode the banner intentionally stays visible even
+                when the current page has zero selected rows (e.g. user navigated to another
+                page in a paginated view). The backend total drives the label so it remains
+                accurate independently of which page is currently loaded. */}
+            <span className="text-sm font-medium" data-testid="bulk-selected-label">
+              {selectAllResults && totalMatchingResults != null
+                ? `All ${totalMatchingResults} matching results selected`
+                : `${selectedCount} selected`}
+            </span>
+            {/* Offer to expand selection from "all on page" to "all matching results" when
+                the backend total is larger than the loaded subset. With no pagination today
+                the totals match and this prompt stays hidden, but the wiring is ready for
+                when the rows prop becomes a single page. */}
+            {!selectAllResults && allSelected && totalMatchingResults != null && totalMatchingResults > rowIds.length && (
+              <Button
+                size="sm"
+                variant="link"
+                className="h-auto p-0 text-xs"
+                onClick={() => setSelectAllResults(true)}
+                data-testid="button-select-all-results"
+              >
+                Select all {totalMatchingResults} matching results
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -235,7 +304,7 @@ export function DataTable<T>({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => { setSelectedIds(new Set()); setSelectAllResults(false); }}
               className="h-7 text-xs text-muted-foreground"
             >
               Clear

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link } from "wouter";
-import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle, Check } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle, Check, Bookmark, BookmarkCheck, Share2 } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { DRAFT_KEY_PREFIX, isDraftExpired, draftRelativeTime } from "@/lib/draftKeys";
@@ -15,6 +15,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRole } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs";
 import { DataTable } from "@/components/ui/data-table";
 import type { DataTableColumn } from "@/components/ui/data-table";
 
@@ -82,6 +83,82 @@ type ExtJob = Job & {
   salaryMin?: number;
   salaryMax?: number;
 };
+
+function JobSaveShareCell({ job, savedJobIds, isAuthenticated, canBookmark }: {
+  job: ExtJob;
+  savedJobIds?: number[];
+  isAuthenticated: boolean;
+  canBookmark: boolean;
+}) {
+  const [, setLocationHref] = useLocation();
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const saveJob = useSaveJob();
+  const unsaveJob = useUnsaveJob();
+
+  const isSaved = savedJobIds?.includes(job.id) ?? false;
+
+  const handleSaveToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!isAuthenticated) {
+      setLocationHref(`/login?returnTo=/jobs/${job.id}`);
+      return;
+    }
+    if (isSaved) {
+      unsaveJob.mutate(job.id, {
+        onSuccess: () => toast({ title: "Job removed from saved" }),
+        onError: () => toast({ title: "Failed to unsave job", variant: "destructive" }),
+      });
+    } else {
+      saveJob.mutate(job.id, {
+        onSuccess: () => toast({ title: "Job saved!" }),
+        onError: () => toast({ title: "Failed to save job", variant: "destructive" }),
+      });
+    }
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const url = `${window.location.origin}/jobs/${job.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      toast({ title: "Link copied!" });
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      toast({ title: "Could not copy link", variant: "destructive" });
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:text-primary"
+        onClick={handleShare}
+        title="Copy link"
+        data-testid={`button-share-job-${job.id}`}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Share2 className="h-3.5 w-3.5" />}
+      </Button>
+      {canBookmark && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className={`h-7 w-7 ${isSaved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+          onClick={handleSaveToggle}
+          title={isSaved ? "Remove from saved" : "Save job"}
+          data-testid={`button-save-job-${job.id}`}
+          disabled={saveJob.isPending || unsaveJob.isPending}
+        >
+          {isSaved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <Bookmark className="h-3.5 w-3.5" />}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 function JobActionsCell({ job }: { job: ExtJob }) {
   const queryClient = useQueryClient();
@@ -186,8 +263,10 @@ export default function JobsPage() {
   const [salaryFilter, setSalaryFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
-  const { canManageJobs } = useRole();
-  const { agencyId } = useAuth();
+  const { canManageJobs, isApplicant } = useRole();
+  const { agencyId, isAuthenticated } = useAuth();
+  const canBookmark = !isAuthenticated || isApplicant;
+  const { data: savedJobIds } = useSavedJobIds(isApplicant);
 
   function handleSort(key: SortKey) {
     if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
@@ -438,6 +517,18 @@ export default function JobsPage() {
         </Badge>
       ),
     },
+    {
+      key: "save-share",
+      label: "",
+      render: (job: ExtJob) => (
+        <JobSaveShareCell
+          job={job}
+          savedJobIds={savedJobIds}
+          isAuthenticated={isAuthenticated}
+          canBookmark={canBookmark}
+        />
+      ),
+    } satisfies DataTableColumn<ExtJob>,
     ...(canManageJobs ? [{
       key: "actions",
       label: "Actions",

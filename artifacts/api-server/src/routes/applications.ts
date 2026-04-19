@@ -1,6 +1,6 @@
 import express, { Router, type IRouter } from "express";
 import multer from "multer";
-import { eq, and, inArray, asc, gt, desc, or, ilike, sql, ne } from "drizzle-orm";
+import { eq, and, inArray, asc, gt, desc, or, ilike, sql, ne, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -225,20 +225,26 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
     return;
   }
 
-  // #76 Primary: look up candidates linked to this user account (fast indexed lookup)
-  let candidateIdRows: { id: number }[] = [];
-  if (userId != null) {
-    candidateIdRows = await db.select({ id: candidatesTable.id })
-      .from(candidatesTable)
-      .where(eq(candidatesTable.userId, userId));
+  // Build a single OR condition so we always include:
+  //   (a) candidates directly linked to this account (primary, fast indexed path)
+  //   (b) legacy unlinked candidates whose email matches (for records created before account linking)
+  // Using OR means a user with both linked and older unlinked records sees all their applications.
+  const linkedCondition = userId != null ? eq(candidatesTable.userId, userId) : undefined;
+  const legacyCondition = userEmail
+    ? and(eq(candidatesTable.email, userEmail), isNull(candidatesTable.userId))
+    : undefined;
+  const whereClause = linkedCondition && legacyCondition
+    ? or(linkedCondition, legacyCondition)
+    : linkedCondition ?? legacyCondition;
+
+  if (!whereClause) {
+    res.json([]);
+    return;
   }
 
-  // Fallback: legacy email-based match for candidates submitted before account linking
-  if (candidateIdRows.length === 0 && userEmail) {
-    candidateIdRows = await db.select({ id: candidatesTable.id })
-      .from(candidatesTable)
-      .where(eq(candidatesTable.email, userEmail));
-  }
+  const candidateIdRows = await db.select({ id: candidatesTable.id })
+    .from(candidatesTable)
+    .where(whereClause);
 
   if (candidateIdRows.length === 0) {
     res.json([]);

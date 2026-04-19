@@ -1,9 +1,15 @@
 import { useRoute, useLocation, useSearch, Link } from "wouter";
 import {
-  ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, Sparkles, Loader2,
+  ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, ChevronDown, Sparkles, Loader2,
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
   Monitor, CheckCircle2, Medal, Trophy,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
   useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey,
@@ -84,56 +90,129 @@ function QuickMoveButton({
   const { toast } = useToast();
   const update = useUpdateApplicationStatus();
 
-  const TARGET_STATUS = "screening";
-  const targetIndex = WORKFLOW_STAGES.findIndex((s) => s.status === TARGET_STATUS);
+  const MOVE_TARGETS: { status: string; label: string; shortLabel: string }[] = [
+    { status: "screening", label: "CV Screening",   shortLabel: "Review"    },
+    { status: "interview", label: "Interview",      shortLabel: "Interview" },
+    { status: "offer",     label: "Offer Extended", shortLabel: "Offer"     },
+  ];
+
   const currentIndex = WORKFLOW_STAGES.findIndex((s) => s.status === currentStatus);
   const isTerminal = TERMINAL_STATUSES.includes(currentStatus);
-  const alreadyAtOrPast = currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
   const stageLabel =
     WORKFLOW_STAGES.find((s) => s.status === currentStatus)?.label ?? currentStatus;
-  const disabled = alreadyAtOrPast || isTerminal;
-  const tooltip = alreadyAtOrPast
-    ? "Already in this stage"
-    : isTerminal
-    ? `Candidate is ${stageLabel}`
-    : "Move to CV Screening";
 
-  const handleMove = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (disabled) return;
+  const targetsWithMeta = MOVE_TARGETS.map((t) => {
+    const targetIndex = WORKFLOW_STAGES.findIndex((s) => s.status === t.status);
+    const alreadyAtOrPast =
+      currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
+    return { ...t, targetIndex, alreadyAtOrPast };
+  });
+
+  const defaultTarget =
+    targetsWithMeta.find((t) => !t.alreadyAtOrPast) ?? targetsWithMeta[0];
+  const allDisabled = isTerminal || targetsWithMeta.every((t) => t.alreadyAtOrPast);
+
+  const moveTo = async (status: string, label: string) => {
     try {
-      await update.mutateAsync({ id: applicationId, data: { status: TARGET_STATUS } });
+      await update.mutateAsync({ id: applicationId, data: { status } });
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() }),
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey({ job_id: jobId }) }),
       ]);
-      toast({ title: `${candidateName} moved to CV Screening` });
+      toast({ title: `${candidateName} moved to ${label}` });
     } catch {
       toast({ title: "Failed to move candidate", variant: "destructive" });
     }
   };
 
+  const handlePrimary = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (allDisabled || defaultTarget.alreadyAtOrPast) return;
+    void moveTo(defaultTarget.status, defaultTarget.label);
+  };
+
+  if (isTerminal) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-6 text-xs px-2 gap-1 shrink-0"
+        disabled
+        data-testid={`btn-move-review-${applicationId}`}
+        title={`Candidate is ${stageLabel}`}
+      >
+        {stageLabel}
+      </Button>
+    );
+  }
+
+  if (allDisabled) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-6 text-xs px-2 gap-1 shrink-0"
+        disabled
+        data-testid={`btn-move-review-${applicationId}`}
+        title={`Already at ${stageLabel}`}
+      >
+        ✓ {stageLabel}
+      </Button>
+    );
+  }
+
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-6 text-xs px-2 gap-1 shrink-0"
-      onClick={handleMove}
-      disabled={disabled || update.isPending}
-      data-testid={`btn-move-review-${applicationId}`}
-      title={tooltip}
-    >
-      {update.isPending ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
-      ) : alreadyAtOrPast ? (
-        <>✓ {stageLabel}</>
-      ) : isTerminal ? (
-        stageLabel
-      ) : (
-        "→ Review"
-      )}
-    </Button>
+    <div className="inline-flex shrink-0" onClick={(e) => e.stopPropagation()}>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-6 text-xs px-2 gap-1 rounded-r-none border-r-0"
+        onClick={handlePrimary}
+        disabled={update.isPending || defaultTarget.alreadyAtOrPast}
+        data-testid={`btn-move-review-${applicationId}`}
+        title={`Move to ${defaultTarget.label}`}
+      >
+        {update.isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <>→ {defaultTarget.shortLabel}</>
+        )}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-1 rounded-l-none"
+            disabled={update.isPending}
+            data-testid={`btn-move-stage-menu-${applicationId}`}
+            title="Choose target stage"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+          {targetsWithMeta.map((t) => (
+            <DropdownMenuItem
+              key={t.status}
+              disabled={t.alreadyAtOrPast || update.isPending}
+              onSelect={() => {
+                if (t.alreadyAtOrPast) return;
+                void moveTo(t.status, t.label);
+              }}
+              data-testid={`menu-move-${t.status}-${applicationId}`}
+            >
+              {t.alreadyAtOrPast ? `✓ ${t.label}` : `→ ${t.label}`}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 

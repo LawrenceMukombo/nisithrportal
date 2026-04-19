@@ -49,6 +49,9 @@ interface IntegrationConfig {
   fieldMappings: Record<string, string> | null;
   responseMapping: Record<string, string> | null;
   enabled: boolean;
+  alertThreshold: number;
+  degradedThreshold: number;
+  lastAlertedHealth: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -292,6 +295,102 @@ async function exportLogsCSV(configId: number, configName: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+function AlertThresholdsPanel({
+  config,
+  onUpdated,
+}: {
+  config: IntegrationConfig;
+  onUpdated: () => void;
+}) {
+  const [alertT, setAlertT] = useState(String(config.alertThreshold ?? 50));
+  const [degradedT, setDegradedT] = useState(String(config.degradedThreshold ?? 80));
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const a = parseInt(alertT);
+      const d = parseInt(degradedT);
+      if (isNaN(a) || isNaN(d) || a < 0 || a > 100 || d < 0 || d > 100) {
+        throw new Error("Thresholds must be integers between 0 and 100");
+      }
+      if (a >= d) throw new Error("Failing threshold must be lower than Degraded threshold");
+      return apiFetch(`/api/integration-config/${config.id}/alert-thresholds`, {
+        method: "PATCH",
+        body: JSON.stringify({ alertThreshold: a, degradedThreshold: d }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Alert thresholds saved" });
+      qc.invalidateQueries({ queryKey: ["integration-configs"] });
+      onUpdated();
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const lastHealth = config.lastAlertedHealth;
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Bell className="h-3.5 w-3.5 text-primary" />
+        <p className="text-xs font-semibold">Alert Thresholds</p>
+        {lastHealth && lastHealth !== "healthy" && (
+          <Badge
+            variant="outline"
+            className={`text-xs ml-auto ${lastHealth === "failing" ? "bg-red-100 text-red-800 border-red-200" : "bg-amber-100 text-amber-800 border-amber-200"}`}
+          >
+            Last alerted: {lastHealth}
+          </Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Admins receive an in-app notification when this integration's success rate (last 20 executions) transitions into a worse health state.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Failing below (%)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            className="h-8 text-xs"
+            value={alertT}
+            onChange={e => setAlertT(e.target.value)}
+            data-testid={`input-alert-threshold-${config.id}`}
+          />
+          <p className="text-xs text-muted-foreground">Below this → Failing alert</p>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Degraded below (%)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            className="h-8 text-xs"
+            value={degradedT}
+            onChange={e => setDegradedT(e.target.value)}
+            data-testid={`input-degraded-threshold-${config.id}`}
+          />
+          <p className="text-xs text-muted-foreground">Below this → Degraded alert</p>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 text-xs"
+        onClick={() => saveMutation.mutate()}
+        disabled={saveMutation.isPending}
+        data-testid={`button-save-alert-thresholds-${config.id}`}
+      >
+        {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bell className="h-3 w-3" />}
+        Save Thresholds
+      </Button>
+    </div>
+  );
+}
+
 
 function TestPanel({
   config,
@@ -970,6 +1069,11 @@ function IntegrationConfigCard({
               </div>
             </div>
           )}
+
+          <AlertThresholdsPanel
+            config={config}
+            onUpdated={() => { qc.invalidateQueries({ queryKey: ["integration-configs"] }); onUpdated(); }}
+          />
 
           <div className="flex items-center gap-2">
             <Button

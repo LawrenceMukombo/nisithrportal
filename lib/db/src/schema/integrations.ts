@@ -16,6 +16,9 @@ export const integrationConfigsTable = pgTable("integration_configs", {
   fieldMappings: jsonb("field_mappings").default({}),
   responseMapping: jsonb("response_mapping").default({}),
   enabled: boolean("enabled").notNull().default(true),
+  alertThreshold: integer("alert_threshold").notNull().default(50),
+  degradedThreshold: integer("degraded_threshold").notNull().default(80),
+  lastAlertedHealth: text("last_alerted_health"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

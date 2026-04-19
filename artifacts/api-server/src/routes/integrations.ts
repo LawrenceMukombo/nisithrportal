@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, integrationConfigsTable, integrationLogsTable, notificationsTable, usersTable, rolesTable } from "@workspace/db";
+import { db, integrationConfigsTable, integrationLogsTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { notifyAdmins } from "../lib/notificationService";
 import {
   CONNECTOR_CATALOG,
   getConnector,
@@ -17,80 +18,6 @@ import {
 
 const router: IRouter = Router();
 
-// ─── Integration failure alerting ─────────────────────────────────────────────
-
-const CONSECUTIVE_FAILURE_THRESHOLD = 3;
-
-async function alertAdminsOnConsecutiveFailures(configId: number, agencyId: number | null): Promise<void> {
-  try {
-    // Fetch the last N logs for this config
-    const recentLogs = await db
-      .select({ status: integrationLogsTable.status })
-      .from(integrationLogsTable)
-      .where(eq(integrationLogsTable.integrationConfigId, configId))
-      .orderBy(desc(integrationLogsTable.createdAt))
-      .limit(CONSECUTIVE_FAILURE_THRESHOLD);
-
-    // Only alert if all recent logs are errors
-    if (recentLogs.length < CONSECUTIVE_FAILURE_THRESHOLD) return;
-    if (recentLogs.some((l) => l.status !== "error")) return;
-
-    // Find the config name for the alert message
-    const [cfg] = await db
-      .select({ name: integrationConfigsTable.name })
-      .from(integrationConfigsTable)
-      .where(eq(integrationConfigsTable.id, configId));
-    const cfgName = cfg?.name ?? `Integration #${configId}`;
-
-    // Find admin role ID
-    const [adminRole] = await db
-      .select({ id: rolesTable.id })
-      .from(rolesTable)
-      .where(eq(rolesTable.name, "admin"));
-    if (!adminRole) return;
-
-    // Find all admin users in this agency (or all admins if agencyId is null)
-    const adminQuery = db
-      .select({ id: usersTable.id })
-      .from(usersTable)
-      .where(
-        agencyId != null
-          ? and(eq(usersTable.roleId, adminRole.id), eq(usersTable.agencyId, agencyId))
-          : eq(usersTable.roleId, adminRole.id)
-      );
-    const adminUsers = await adminQuery;
-    if (adminUsers.length === 0) return;
-
-    const message = `Integration "${cfgName}" has failed ${CONSECUTIVE_FAILURE_THRESHOLD} times in a row. Check the integration logs and verify the endpoint is reachable.`;
-
-    // Dedup: skip if an identical notification was inserted in the last hour
-    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
-    const [existing] = await db
-      .select({ id: notificationsTable.id })
-      .from(notificationsTable)
-      .where(
-        and(
-          eq(notificationsTable.type, "integration_failure"),
-          eq(notificationsTable.message, message),
-          gte(notificationsTable.createdAt, oneHourAgo)
-        )
-      )
-      .limit(1);
-    if (existing) return;
-
-    await db.insert(notificationsTable).values(
-      adminUsers.map((u) => ({
-        userId: u.id,
-        type: "integration_failure",
-        message,
-        read: false,
-      }))
-    );
-    logger.warn({ configId, cfgName, adminCount: adminUsers.length }, "Integration failure alert sent to admins");
-  } catch (err) {
-    logger.warn(err, "Failed to send integration failure alert");
-  }
-}
 
 const CreateIntegrationConfigSchema = z.object({
   integrationType: z.string().min(1),
@@ -113,6 +40,85 @@ const UpdateIntegrationConfigSchema = CreateIntegrationConfigSchema.partial();
 function canAccessConfig(userAgencyId: number | null, configAgencyId: number | null): boolean {
   if (userAgencyId === null) return false;
   return configAgencyId === null || configAgencyId === userAgencyId;
+}
+
+// ─── Helper: compute health and fire alert if transition occurred ──────────────
+async function checkAndAlertHealthTransition(configId: number): Promise<void> {
+  try {
+    const [cfg] = await db
+      .select({
+        id: integrationConfigsTable.id,
+        name: integrationConfigsTable.name,
+        agencyId: integrationConfigsTable.agencyId,
+        alertThreshold: integrationConfigsTable.alertThreshold,
+        degradedThreshold: integrationConfigsTable.degradedThreshold,
+        lastAlertedHealth: integrationConfigsTable.lastAlertedHealth,
+      })
+      .from(integrationConfigsTable)
+      .where(eq(integrationConfigsTable.id, configId));
+
+    if (!cfg) return;
+
+    // Fetch the last 20 executions to compute recent health
+    const recentLogs = await db
+      .select({ status: integrationLogsTable.status, errorMessage: integrationLogsTable.errorMessage, createdAt: integrationLogsTable.createdAt })
+      .from(integrationLogsTable)
+      .where(eq(integrationLogsTable.integrationConfigId, configId))
+      .orderBy(desc(integrationLogsTable.createdAt))
+      .limit(20);
+
+    if (recentLogs.length === 0) return;
+
+    const total = recentLogs.length;
+    const successes = recentLogs.filter(l => l.status === "success").length;
+    const ratePercent = (successes / total) * 100;
+
+    let currentHealth: "healthy" | "degraded" | "failing";
+    const failingThreshold = cfg.alertThreshold ?? 50;
+    const degradedThreshold = cfg.degradedThreshold ?? 80;
+
+    if (ratePercent < failingThreshold) {
+      currentHealth = "failing";
+    } else if (ratePercent < degradedThreshold) {
+      currentHealth = "degraded";
+    } else {
+      currentHealth = "healthy";
+    }
+
+    const previousHealth = cfg.lastAlertedHealth as "healthy" | "degraded" | "failing" | null;
+
+    // Only alert when transitioning from a better state or first-time failure/degradation
+    const shouldAlert =
+      currentHealth !== "healthy" &&
+      currentHealth !== previousHealth &&
+      (previousHealth === null || previousHealth === "healthy" ||
+        (previousHealth === "degraded" && currentHealth === "failing"));
+
+    if (shouldAlert) {
+      const lastError = recentLogs.find(l => l.status === "error");
+      const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+      const statusLabel = currentHealth === "failing" ? "Failing" : "Degraded";
+      const message = [
+        `Integration alert: "${cfg.name}" is now ${statusLabel}.`,
+        `Success rate: ${Math.round(ratePercent)}% (last ${total} executions).`,
+        lastError?.errorMessage ? `Last error: ${lastError.errorMessage.slice(0, 120)}` : null,
+        `Time: ${timestamp}`,
+      ].filter(Boolean).join(" ");
+
+      await notifyAdmins(cfg.agencyId, "integration_alert", message);
+      logger.warn({ configId, configName: cfg.name, currentHealth, previousHealth }, "Integration health alert fired");
+    }
+
+    // Always update lastAlertedHealth if health changed
+    if (currentHealth !== previousHealth) {
+      await db
+        .update(integrationConfigsTable)
+        .set({ lastAlertedHealth: currentHealth, updatedAt: new Date() })
+        .where(eq(integrationConfigsTable.id, configId));
+    }
+  } catch (err) {
+    logger.warn(err, "checkAndAlertHealthTransition failed");
+  }
 }
 
 // ─── List connector catalog ────────────────────────────────────────────────────
@@ -240,6 +246,45 @@ router.delete("/integration-config/:id", authMiddleware, requireRole("admin"), a
   }
 });
 
+// ─── PATCH alert thresholds for a config ──────────────────────────────────────
+
+const AlertThresholdsSchema = z.object({
+  alertThreshold: z.number().int().min(0).max(100),
+  degradedThreshold: z.number().int().min(0).max(100),
+});
+
+router.patch("/integration-config/:id/alert-thresholds", authMiddleware, requireRole("admin"), async (req, res) => {
+  const parse = AlertThresholdsSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: parse.error.flatten() });
+    return;
+  }
+  if (parse.data.alertThreshold >= parse.data.degradedThreshold) {
+    res.status(400).json({ error: "alertThreshold must be strictly less than degradedThreshold" });
+    return;
+  }
+  try {
+    const id = parseInt(req.params["id"] as string);
+    const [existing] = await db.select({ agencyId: integrationConfigsTable.agencyId }).from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), existing.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const [updated] = await db.update(integrationConfigsTable)
+      .set({
+        alertThreshold: parse.data.alertThreshold,
+        degradedThreshold: parse.data.degradedThreshold,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationConfigsTable.id, id))
+      .returning();
+    res.json(updated);
+  } catch (err) {
+    logger.error(err, "Failed to update alert thresholds");
+    res.status(500).json({ error: "Failed to update alert thresholds" });
+  }
+});
+
 // ─── Dynamic integration executor: POST /integration/:type ────────────────────
 // Loads config from DB (prefers agency-scoped config) then falls back to static.
 // Supports all three auth patterns: bearer, api_key, header.
@@ -268,8 +313,10 @@ router.post("/integration/:type", authMiddleware, requireRole("admin", "hr_offic
       durationMs: result.durationMs,
       triggeredBy: String(req.user?.userId ?? "system"),
     });
-    if (!result.success && config.dbConfigId) {
-      await alertAdminsOnConsecutiveFailures(config.dbConfigId, agencyId);
+
+    // Fire health-transition alert if the integration has a DB config
+    if (config.dbConfigId != null) {
+      void checkAndAlertHealthTransition(config.dbConfigId);
     }
   } catch (logErr) {
     logger.warn(logErr, "Failed to persist integration log");
@@ -322,9 +369,7 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
     triggeredBy: String(req.user?.userId ?? "system"),
   });
 
-  if (!result.success) {
-    await alertAdminsOnConsecutiveFailures(configId, cfg.agencyId ?? null);
-  }
+  void checkAndAlertHealthTransition(configId);
 
   res.json(result);
 });

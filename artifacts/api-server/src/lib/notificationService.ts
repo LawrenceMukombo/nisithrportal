@@ -53,3 +53,28 @@ export async function notifyHrOfficers(agencyId: number, type: string, message: 
   const hrOfficerIds = await getHrOfficerIds(agencyId);
   await Promise.all(hrOfficerIds.map((userId) => createNotification({ userId, type, message })));
 }
+
+/**
+ * Find all admins, optionally scoped to an agency.
+ */
+export async function getAdminIds(agencyId?: number | null): Promise<number[]> {
+  const { rolesTable } = await import("@workspace/db/schema");
+  const query = db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .innerJoin(rolesTable, eq(usersTable.roleId, rolesTable.id));
+
+  const conditions = [eq(rolesTable.name, "admin")];
+  if (agencyId != null) conditions.push(eq(usersTable.agencyId, agencyId));
+
+  const admins = await query.where(and(...conditions));
+  return admins.map((u) => u.id);
+}
+
+/**
+ * Notify all admins, optionally scoped to an agency.
+ */
+export async function notifyAdmins(agencyId: number | null | undefined, type: string, message: string): Promise<void> {
+  const adminIds = await getAdminIds(agencyId);
+  await Promise.all(adminIds.map((userId) => createNotification({ userId, type, message })));
+}

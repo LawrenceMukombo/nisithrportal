@@ -42,6 +42,11 @@ const TYPE_CONFIG: Record<string, NotificationTypeConfig> = {
     iconClass: "text-amber-500",
     wrapperClass: "bg-amber-100 dark:bg-amber-900/40",
   },
+  integration_alert: {
+    icon: AlertTriangle,
+    iconClass: "text-red-600",
+    wrapperClass: "bg-red-100 dark:bg-red-900/40",
+  },
 };
 
 const DEFAULT_CONFIG: NotificationTypeConfig = {
@@ -145,7 +150,8 @@ export function NotificationBell() {
                     className={cn(
                       "flex items-start gap-3 px-4 py-3 hover:bg-accent/50 transition-colors",
                       !notif.read && "bg-primary/5",
-                      notif.type === "application_withdrawn" && "border-l-2 border-slate-400"
+                      notif.type === "application_withdrawn" && "border-l-2 border-orange-400 bg-orange-50/60 dark:bg-orange-950/20",
+                      notif.type === "integration_alert" && "border-l-2 border-red-500 bg-red-50/60 dark:bg-red-950/20"
                     )}
                   >
                     {(() => {

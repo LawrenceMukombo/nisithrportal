@@ -40,6 +40,15 @@ function getStatusBadgeClasses(status: string): string {
   return "bg-gray-100 text-gray-600";
 }
 
+function getStatusBadgeLabel(status: string): string {
+  const resolved = STATUS_ALIAS[status] ?? status;
+  const stage = WORKFLOW_STAGES.find((s) => s.status === resolved);
+  if (stage) return stage.label;
+  if (resolved === "rejected") return "Rejected";
+  if (resolved === "withdrawn") return "Withdrawn";
+  return status;
+}
+
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
@@ -332,7 +341,7 @@ export default function CandidateDetailPage() {
                               </div>
                             )}
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getStatusBadgeClasses(app.status)}`}>
-                              {app.status}
+                              {getStatusBadgeLabel(app.status)}
                             </span>
                           </div>
                         </div>

@@ -14,6 +14,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { notifyHrOfficers } from "../lib/notificationService";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { setObjectAclPolicy } from "../lib/objectAcl";
+import { writeAuditLog } from "../lib/audit";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -234,6 +235,32 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
     }
   }
 
+  // Audit removal/replacement of an existing signed contract document so HR can
+  // investigate "who cleared my signed contract?" disputes. We log when a previous
+  // documentUrl existed and the caller either explicitly cleared it (null) or replaced it.
+  if (
+    body.data.documentUrl !== undefined &&
+    existing.documentUrl != null &&
+    body.data.documentUrl !== existing.documentUrl
+  ) {
+    const auditAgencyId = agencyId ?? (await getEmployeeAgencyId(existing.employeeId));
+    await writeAuditLog({
+      performedById: req.user?.userId ?? null,
+      performedByEmail: req.user?.email ?? null,
+      actionType: "contract_document_clear",
+      outcome: "success",
+      details: {
+        contractId: existing.id,
+        employeeId: existing.employeeId,
+        previousUrl: existing.documentUrl,
+        newUrl: body.data.documentUrl,
+        action: body.data.documentUrl === null ? "cleared" : "replaced",
+        performedByRole: req.user?.roleName ?? null,
+      },
+      agencyId: auditAgencyId ?? null,
+    });
+  }
+
   res.json(contract);
 });
 
@@ -294,11 +321,34 @@ router.post("/contracts/:id/upload-signed", authMiddleware, requireRole("admin",
       return;
     }
 
+    const previousUrl = existing.documentUrl;
+
     const [updated] = await db
       .update(contractsTable)
       .set({ documentUrl: fileUrl })
       .where(eq(contractsTable.id, contractId))
       .returning();
+
+    // If a previous signed document existed, audit the replacement so HR has a
+    // record of who overwrote the original and when.
+    if (previousUrl != null && previousUrl !== fileUrl) {
+      await writeAuditLog({
+        performedById: req.user?.userId ?? null,
+        performedByEmail: req.user?.email ?? null,
+        actionType: "contract_document_clear",
+        outcome: "success",
+        details: {
+          contractId: existing.id,
+          employeeId: existing.employeeId,
+          previousUrl,
+          newUrl: fileUrl,
+          action: "replaced",
+          via: "upload-signed",
+          performedByRole: req.user?.roleName ?? null,
+        },
+        agencyId: resolvedAgencyId ?? null,
+      });
+    }
 
     res.status(200).json(updated);
   });

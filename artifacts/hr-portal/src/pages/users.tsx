@@ -591,6 +591,8 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   email_change: "Email Changed",
   password_reset: "Password Reset",
   domain_violation: "Domain Violation",
+  application_document_delete: "Application Doc Deleted",
+  contract_document_clear: "Contract Doc Removed",
 };
 
 function formatDetails(entry: AuditLogEntry): string {
@@ -611,6 +613,15 @@ function formatDetails(entry: AuditLogEntry): string {
       return `Role: ${d.roleName ?? "—"}`;
     case "password_reset":
       return "Admin reset password";
+    case "application_document_delete": {
+      const type = d.documentType ? String(d.documentType) : "document";
+      const name = d.fileName ? ` "${d.fileName}"` : "";
+      return `Deleted ${type}${name} from application #${d.applicationId ?? "—"}`;
+    }
+    case "contract_document_clear": {
+      const action = d.action === "replaced" ? "Replaced" : "Cleared";
+      return `${action} signed document for contract #${d.contractId ?? "—"}`;
+    }
     default:
       return "";
   }

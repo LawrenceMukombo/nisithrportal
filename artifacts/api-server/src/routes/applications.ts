@@ -35,6 +35,7 @@ import { createNotification, getHrOfficerIds, getUserIdByEmail, notifyHrOfficers
 import { autoParseCvBackground } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency, setObjectAclPolicy } from "../lib/objectAcl";
+import { writeAuditLog } from "../lib/audit";
 const router: IRouter = Router();
 
 // Convert empty strings to null (for optional DB fields where empty string ≠ null)
@@ -1384,6 +1385,23 @@ router.delete(
     }
 
     await db.delete(applicationDocumentsTable).where(eq(applicationDocumentsTable.id, docId));
+
+    await writeAuditLog({
+      performedById: req.user?.userId ?? null,
+      performedByEmail: req.user?.email ?? null,
+      actionType: "application_document_delete",
+      outcome: "success",
+      details: {
+        applicationId: appId,
+        documentId: docId,
+        documentType: doc.documentType ?? null,
+        fileName: doc.fileName ?? null,
+        url: doc.url ?? null,
+        performedByRole: req.user?.roleName ?? null,
+      },
+      agencyId: appRow.agencyId ?? null,
+    });
+
     res.status(204).end();
   }
 );

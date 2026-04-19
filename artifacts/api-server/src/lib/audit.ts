@@ -7,7 +7,9 @@ export type AuditActionType =
   | "status_change"
   | "email_change"
   | "password_reset"
-  | "domain_violation";
+  | "domain_violation"
+  | "application_document_delete"
+  | "contract_document_clear";
 
 export type AuditOutcome = "success" | "rejected";
 

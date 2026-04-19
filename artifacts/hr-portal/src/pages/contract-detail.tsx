@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2, Eye } from "lucide-react";
 import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/auth-context";
 import { getToken } from "@/lib/api-config";
 import { useQueryClient } from "@tanstack/react-query";
+import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
 
 function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: number; currentEndDate?: string | null; onClose: () => void }) {
   const { toast } = useToast();
@@ -133,6 +134,7 @@ export default function ContractDetailPage() {
   const [, setLocation] = useLocation();
   const [showRenew, setShowRenew] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [contractPdfLoading, setContractPdfLoading] = useState(false);
   const [signedUploading, setSignedUploading] = useState(false);
   const [showRemoveDoc, setShowRemoveDoc] = useState(false);
@@ -259,6 +261,15 @@ export default function ContractDetailPage() {
                 )}
                 <Button size="sm" variant="outline" onClick={() => setShowStatus(true)} data-testid="button-update-status">
                   Update Status
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowPreview(true)}
+                  data-testid="button-preview-contract-pdf"
+                  className="border-purple-600 text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-500 dark:hover:bg-purple-950"
+                >
+                  <Eye className="h-3.5 w-3.5 mr-1" />Preview
                 </Button>
                 <Button
                   size="sm"
@@ -441,6 +452,13 @@ export default function ContractDetailPage() {
           onClose={() => setShowStatus(false)}
         />
       )}
+      <PdfPreviewDialog
+        open={showPreview}
+        onOpenChange={setShowPreview}
+        url={`/api/pdf/contract/${contract.id}`}
+        title={`Contract #${contract.id} — Preview`}
+        downloadFilename={`contract-${contract.id}.pdf`}
+      />
     </AppLayout>
   );
 }

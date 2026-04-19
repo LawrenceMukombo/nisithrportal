@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2 } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2, Eye } from "lucide-react";
+import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
 import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
@@ -307,6 +308,7 @@ export default function ApplicationDetailPage() {
 
   const [offerLetterLoading, setOfferLetterLoading] = useState(false);
   const [sendOfferLoading, setSendOfferLoading] = useState(false);
+  const [showOfferPreview, setShowOfferPreview] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
   const contractFileRef = useRef<HTMLInputElement>(null);
 
@@ -441,6 +443,15 @@ export default function ApplicationDetailPage() {
           )}
           {app.status === "hired" && canUpdateStatus && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowOfferPreview(true)}
+                data-testid="button-preview-offer-letter"
+                className="border-purple-600 text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-500 dark:hover:bg-purple-950"
+              >
+                <Eye className="h-3.5 w-3.5 mr-1.5" />Preview Offer Letter
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -933,6 +944,15 @@ export default function ApplicationDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {appId && (
+        <PdfPreviewDialog
+          open={showOfferPreview}
+          onOpenChange={setShowOfferPreview}
+          url={`/api/pdf/offer-letter/${appId}`}
+          title={`Offer Letter — Application #${appId}`}
+          downloadFilename={`offer-letter-${appId}.pdf`}
+        />
+      )}
     </AppLayout>
   );
 }

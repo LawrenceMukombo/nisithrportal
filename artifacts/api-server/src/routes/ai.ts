@@ -20,6 +20,21 @@ const aiRateLimit = rateLimit({
   message: { error: "Too many AI requests — please wait a minute before trying again." },
 });
 
+const _cvPrefillMax = parseInt(process.env.AI_CV_PREFILL_RATE_LIMIT ?? "", 10);
+const CV_PREFILL_RATE_LIMIT_MAX = Number.isFinite(_cvPrefillMax) && _cvPrefillMax > 0 ? _cvPrefillMax : 10;
+
+const _cvPrefillWindowMs = parseInt(process.env.AI_CV_PREFILL_RATE_LIMIT_WINDOW_MS ?? "", 10);
+const CV_PREFILL_RATE_LIMIT_WINDOW_MS = Number.isFinite(_cvPrefillWindowMs) && _cvPrefillWindowMs > 0 ? _cvPrefillWindowMs : 60_000;
+
+const cvPrefillRateLimit = rateLimit({
+  windowMs: CV_PREFILL_RATE_LIMIT_WINDOW_MS,
+  max: CV_PREFILL_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.userId ?? req.ip),
+  message: { error: "Too many CV prefill requests — please wait before trying again." },
+});
+
 // ---------------------------------------------------------------------------
 // Zod schemas for validating AI JSON responses
 // ---------------------------------------------------------------------------
@@ -177,7 +192,7 @@ const CvPrefillBody = z.object({
   cvText: z.string().max(50_000).optional(),
 }).refine(d => d.cvUrl || d.cvText, { message: "One of cvUrl or cvText is required" });
 
-router.post("/ai/cv-prefill", aiRateLimit, authMiddleware, async (req, res): Promise<void> => {
+router.post("/ai/cv-prefill", authMiddleware, cvPrefillRateLimit, async (req, res): Promise<void> => {
   const parsed = CvPrefillBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

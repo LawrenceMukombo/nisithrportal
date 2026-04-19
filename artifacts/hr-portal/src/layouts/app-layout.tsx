@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
-  ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog,
+  ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -66,6 +66,7 @@ function useNavItems() {
   if (isAdmin) {
     items.push({ label: "User Management", href: "/users", icon: Settings });
     items.push({ label: "Integration Builder", href: "/integrations", icon: Puzzle });
+    items.push({ label: "Pipeline SLA", href: "/settings/pipeline-sla", icon: Clock });
   }
 
   return items;

@@ -33,6 +33,7 @@ import RecruitmentWorkflowPage from "@/pages/recruitment-workflow";
 import IntegrationBuilderPage from "@/pages/integration-builder";
 import ResetRequestPage from "@/pages/reset-request";
 import ResetPasswordPage from "@/pages/reset-password";
+import PipelineSlaSettingsPage from "@/pages/pipeline-sla-settings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -161,6 +162,9 @@ function Router() {
       </Route>
       <Route path="/integrations">
         {() => <ProtectedRoute component={IntegrationBuilderPage} roles={["admin"]} />}
+      </Route>
+      <Route path="/settings/pipeline-sla">
+        {() => <ProtectedRoute component={PipelineSlaSettingsPage} roles={["admin"]} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

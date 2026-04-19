@@ -493,6 +493,8 @@ export default function JobFormPage() {
   })();
 
   const [currentStep, setCurrentStep] = useState(initialStep);
+  const [saveChip, setSaveChip] = useState<"idle" | "saved" | "error">("idle");
+  const saveChipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [reviewScreeningQuestions, setReviewScreeningQuestions] = useState<ScreeningQuestion[]>([]);
   const [responsibilities, setResponsibilities] = useState<string[]>([]);
   const [technicalSkills, setTechnicalSkills] = useState<string[]>([]);
@@ -623,8 +625,16 @@ export default function JobFormPage() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetJobsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetJobQueryKey(jobId) });
+        setSaveChip("saved");
+        if (saveChipTimer.current) clearTimeout(saveChipTimer.current);
+        saveChipTimer.current = setTimeout(() => setSaveChip("idle"), 3000);
       },
-      onError: () => toast({ title: "Failed to update job", variant: "destructive" }),
+      onError: () => {
+        toast({ title: "Failed to update job", variant: "destructive" });
+        setSaveChip("error");
+        if (saveChipTimer.current) clearTimeout(saveChipTimer.current);
+        saveChipTimer.current = setTimeout(() => setSaveChip("idle"), 4000);
+      },
     },
   });
 
@@ -1358,24 +1368,36 @@ export default function JobFormPage() {
 
               <div className="flex items-center gap-2">
                 {isEdit && currentStep < 5 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={isPending}
-                    onClick={form.handleSubmit(async (vals) => {
-                      const payload = buildPayload(vals);
-                      await updateJob.mutateAsync({ id: jobId, data: payload });
-                      toast({ title: "Progress saved" });
-                    })}
-                    data-testid="button-save-progress"
-                  >
-                    {updateJob.isPending
-                      ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      : <Save className="h-3.5 w-3.5 mr-1" />
-                    }
-                    Save Progress
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isPending}
+                      onClick={form.handleSubmit(async (vals) => {
+                        const payload = buildPayload(vals);
+                        await updateJob.mutateAsync({ id: jobId, data: payload });
+                        toast({ title: "Progress saved" });
+                      })}
+                      data-testid="button-save-progress"
+                    >
+                      {updateJob.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                        : <Save className="h-3.5 w-3.5 mr-1" />
+                      }
+                      {updateJob.isPending ? "Saving…" : "Save Progress"}
+                    </Button>
+                    {saveChip === "saved" && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium" data-testid="badge-save-status-saved">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                      </span>
+                    )}
+                    {saveChip === "error" && (
+                      <span className="text-xs text-red-600 font-medium" data-testid="badge-save-status-error">
+                        Save failed
+                      </span>
+                    )}
+                  </>
                 )}
                 {currentStep < 5 && (
                   <Button type="button" onClick={() => goToStep(currentStep + 1)} data-testid="button-next-step">

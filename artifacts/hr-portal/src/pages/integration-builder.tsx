@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Plus, Puzzle, Play, Trash2, ChevronDown, ChevronRight, Loader2,
   Sparkles, CheckCircle2, XCircle, Clock, Eye, EyeOff, Pencil, TestTube2, X,
-  AlertTriangle, Activity, TrendingUp, Zap,
+  AlertTriangle, Activity, TrendingUp, Zap, Download, Bell,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
@@ -244,6 +244,59 @@ function LogRow({ log }: { log: IntegrationLog }) {
       )}
     </div>
   );
+}
+
+function MiniTrendChart({ logs }: { logs: IntegrationLog[] }) {
+  if (logs.length === 0) return null;
+  const recent = [...logs].reverse().slice(-30);
+  const barW = 4;
+  const gap = 1;
+  const h = 24;
+  const total = recent.length;
+  const width = total * (barW + gap) - gap;
+  return (
+    <svg width={width} height={h} aria-label="Execution trend" className="shrink-0">
+      {recent.map((log, i) => {
+        const isSuccess = log.status === "success";
+        return (
+          <rect
+            key={log.id}
+            x={i * (barW + gap)}
+            y={0}
+            width={barW}
+            height={h}
+            rx={1}
+            className={isSuccess ? "fill-emerald-400" : "fill-red-400"}
+            opacity={0.85}
+          >
+            <title>{isSuccess ? "Success" : "Error"} — {new Date(log.createdAt).toLocaleString()}</title>
+          </rect>
+        );
+      })}
+    </svg>
+  );
+}
+
+function downloadLogsCSV(logs: IntegrationLog[], configName: string) {
+  const headers = ["id", "status", "duration_ms", "error", "triggered_by", "created_at"];
+  const rows = logs.map(l => [
+    l.id,
+    l.status,
+    l.durationMs ?? "",
+    (l.errorMessage ?? "").replace(/"/g, '""'),
+    l.triggeredBy ?? "",
+    l.createdAt,
+  ]);
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => (String(v).includes(",") || String(v).includes('"') || String(v).includes("\n") ? `"${v}"` : v)).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `integration-logs-${configName.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function TestPanel({
@@ -924,17 +977,31 @@ function IntegrationConfigCard({
             </div>
           )}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs h-7 gap-1"
-            onClick={() => setShowLogs(!showLogs)}
-          >
-            {showLogs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            Execution Logs {logQuery.data ? `(${logQuery.data.length})` : ""}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 gap-1"
+              onClick={() => setShowLogs(!showLogs)}
+            >
+              {showLogs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              Execution Logs {logQuery.data ? `(${logQuery.data.length})` : ""}
+            </Button>
+            {logQuery.data && logQuery.data.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7 gap-1 text-muted-foreground"
+                onClick={() => downloadLogsCSV(logQuery.data!, config.name)}
+                title="Download logs as CSV"
+                data-testid={`button-export-logs-${config.id}`}
+              >
+                <Download className="h-3 w-3" /> CSV
+              </Button>
+            )}
+          </div>
           {showLogs && (
-            <div className="rounded-md border bg-muted/20 p-2">
+            <div className="rounded-md border bg-muted/20 p-2 space-y-2">
               {logQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
                   <Loader2 className="h-3 w-3 animate-spin" /> Loading logs...
@@ -942,7 +1009,15 @@ function IntegrationConfigCard({
               ) : logQuery.data?.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-2">No executions yet.</p>
               ) : (
-                logQuery.data?.map(log => <LogRow key={log.id} log={log} />)
+                <>
+                  {logQuery.data && logQuery.data.length > 1 && (
+                    <div className="flex items-center gap-2 pb-1 border-b border-border">
+                      <span className="text-xs text-muted-foreground">Trend (last {Math.min(logQuery.data.length, 30)}):</span>
+                      <MiniTrendChart logs={logQuery.data} />
+                    </div>
+                  )}
+                  {logQuery.data?.map(log => <LogRow key={log.id} log={log} />)}
+                </>
               )}
             </div>
           )}
@@ -1138,6 +1213,8 @@ export default function IntegrationBuilderPage() {
     refetchInterval: 60_000,
   });
 
+  const [alertDismissed, setAlertDismissed] = useState(false);
+
   const catalog = catalogQuery.data ?? [];
   const configs = configsQuery.data ?? [];
   const stats = statsQuery.data;
@@ -1164,6 +1241,36 @@ export default function IntegrationBuilderPage() {
             </p>
           </div>
         </div>
+
+        {/* ── Failing integrations alert banner (#59) ── */}
+        {!alertDismissed && stats && (() => {
+          const failing = stats.perConfig.filter(p => p.health === "failing");
+          const degraded = stats.perConfig.filter(p => p.health === "degraded");
+          if (failing.length === 0 && degraded.length === 0) return null;
+          const isCritical = failing.length > 0;
+          return (
+            <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${isCritical ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+              <Bell className={`h-4 w-4 mt-0.5 shrink-0 ${isCritical ? "text-red-600" : "text-amber-600"}`} />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold">
+                  {isCritical
+                    ? `${failing.length} integration${failing.length > 1 ? "s" : ""} failing`
+                    : `${degraded.length} integration${degraded.length > 1 ? "s" : ""} degraded`}
+                </p>
+                <p className="text-xs mt-0.5 opacity-80">
+                  {[...failing, ...degraded].map(p => p.configName).join(", ")} — success rate below threshold in the last 24 h.
+                </p>
+              </div>
+              <button
+                onClick={() => setAlertDismissed(true)}
+                className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+                aria-label="Dismiss alert"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ── Health Dashboard ── */}
         {stats ? (

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db, agenciesTable } from "@workspace/db";
 import {
   CreateAgencyBody,
@@ -10,6 +11,17 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+
+export const DEFAULT_STALE_THRESHOLDS: Record<string, number> = {
+  applied:    3,
+  screening:  7,
+  interview:  10,
+  offer:      5,
+  hired:      7,
+  onboarding: 14,
+};
+
+const ThresholdsBody = z.record(z.string(), z.number().int().min(1).max(365));
 
 const router: IRouter = Router();
 
@@ -100,6 +112,33 @@ router.put("/agencies/:id", authMiddleware, requireRole("admin"), async (req, re
     return;
   }
   res.json(agency);
+});
+
+// ─── GET /api/agencies/settings/stale-thresholds ──────────────────────────────
+router.get("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
+  const [agency] = await db.select({ configuration: agenciesTable.configuration })
+    .from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+  const saved = (agency?.configuration as { staleThresholds?: Record<string, number> } | null)?.staleThresholds ?? {};
+  const thresholds = { ...DEFAULT_STALE_THRESHOLDS, ...saved };
+  res.json(thresholds);
+});
+
+// ─── PUT /api/agencies/settings/stale-thresholds ──────────────────────────────
+router.put("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
+  const parsed = ThresholdsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [agency] = await db.select({ configuration: agenciesTable.configuration })
+    .from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+  const existing = (agency?.configuration as Record<string, unknown> | null) ?? {};
+  const updated = { ...existing, staleThresholds: parsed.data };
+  await db.update(agenciesTable)
+    .set({ configuration: updated, updatedAt: new Date() })
+    .where(eq(agenciesTable.id, agencyId));
+  res.json({ ...DEFAULT_STALE_THRESHOLDS, ...parsed.data });
 });
 
 export default router;

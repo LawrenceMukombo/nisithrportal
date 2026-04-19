@@ -17,6 +17,7 @@ import {
   candidateSkillsTable,
   jobsTable,
   notificationsTable,
+  agenciesTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -1010,8 +1011,7 @@ router.get("/jobs/:id/di-report", authMiddleware, requireRole("admin", "hr_offic
   });
 });
 
-// Stale thresholds (days) per DB status — must stay in sync with workflowStages.ts
-const STALE_THRESHOLDS: Record<string, number> = {
+const DEFAULT_STALE_THRESHOLDS: Record<string, number> = {
   applied:    3,
   screening:  7,
   interview:  10,
@@ -1020,6 +1020,13 @@ const STALE_THRESHOLDS: Record<string, number> = {
   onboarding: 14,
 };
 const TERMINAL_STATUSES_SET = new Set(["rejected", "withdrawn"]);
+
+async function getStaleThresholds(agencyId: number): Promise<Record<string, number>> {
+  const [agency] = await db.select({ configuration: agenciesTable.configuration })
+    .from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+  const saved = (agency?.configuration as { staleThresholds?: Record<string, number> } | null)?.staleThresholds ?? {};
+  return { ...DEFAULT_STALE_THRESHOLDS, ...saved };
+}
 
 // POST /applications/check-stalled — scan all active applications and create
 // in-app notifications for HR officers when any are stuck beyond their stage threshold.
@@ -1041,6 +1048,7 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
     .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
     .where(eq(jobsTable.agencyId, agencyId));
 
+  const staleThresholds = await getStaleThresholds(agencyId);
   const activeApps = apps.filter((a) => !TERMINAL_STATUSES_SET.has(a.status ?? ""));
   if (activeApps.length === 0) { res.json({ notified: 0 }); return; }
 
@@ -1064,7 +1072,7 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
 
   const now = Date.now();
   const stalledApps = activeApps.filter((app) => {
-    const threshold = STALE_THRESHOLDS[app.status ?? ""] ?? 7;
+    const threshold = staleThresholds[app.status ?? ""] ?? 7;
     const entry = historyByApp.get(app.id);
     const entryTime = entry?.changedAt ? new Date(entry.changedAt).getTime() : (app.createdAt ? new Date(app.createdAt).getTime() : now);
     const days = Math.max(0, Math.floor((now - entryTime) / (1000 * 60 * 60 * 24)));
@@ -1094,7 +1102,7 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
 
   let notifiedCount = 0;
   for (const app of toNotify) {
-    const threshold = STALE_THRESHOLDS[app.status ?? ""] ?? 7;
+    const threshold = staleThresholds[app.status ?? ""] ?? 7;
     const entry = historyByApp.get(app.id);
     const entryTime = entry?.changedAt ? new Date(entry.changedAt).getTime() : (app.createdAt ? new Date(app.createdAt).getTime() : now);
     const days = Math.max(0, Math.floor((now - entryTime) / (1000 * 60 * 60 * 24)));

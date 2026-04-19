@@ -154,52 +154,36 @@ export default function ApplicationsPage() {
     });
   }, [applications.data, search, candidateMap, jobMap]);
 
-  const handleBulkAction = useCallback(async (ids: number[], action: string, selectAllResults?: boolean) => {
-    // When the user opted into select-all-results mode, resolve the full matching id set
-    // from the server before issuing the bulk update. Today the loaded `ids` already cover
-    // every match (no pagination), but going through `/applications/ids` keeps the action
-    // correct once pagination is introduced. We must fail loudly here: silently falling
-    // back to the current-page subset when the ids fetch fails would silently shrink the
-    // scope of a destructive action the user explicitly asked to apply to everything.
-    let targetIds = ids;
-    if (selectAllResults) {
-      try {
-        const idsRes = await fetch(`/api/applications/ids${countParams ? `?${countParams}` : ""}`, {
+  const handleBulkAction = useCallback(async (
+    ids: number[],
+    action: string,
+    meta: { allSelected: boolean; totalRows: number },
+  ) => {
+    // When the recruiter has selected every row in the current filter view (including
+    // the explicit select-all-results mode), switch to the filter-based endpoint so the
+    // server resolves the target set itself — no ID list crosses the wire and the
+    // update runs as one atomic query. This keeps bulk actions correct even once the
+    // applications list becomes paginated server-side.
+    const useFilterMode = meta.allSelected && meta.totalRows > 0;
+    const res = useFilterMode
+      ? await fetch("/api/applications/bulk-status-by-filter", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           credentials: "include",
+          body: JSON.stringify({
+            filters: {
+              status: statusFilter !== "all" ? statusFilter : null,
+              search: search.trim() || null,
+            },
+            status: action,
+          }),
+        })
+      : await fetch("/api/applications/bulk-status", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ ids, status: action }),
         });
-        if (!idsRes.ok) {
-          toast({
-            title: "Bulk update failed",
-            description: "Could not load the full set of matching applications. Please try again.",
-            variant: "destructive",
-          });
-          return;
-        }
-        const body = await idsRes.json() as { ids?: number[] };
-        if (!Array.isArray(body.ids)) {
-          toast({
-            title: "Bulk update failed",
-            description: "Unexpected response while loading matching applications.",
-            variant: "destructive",
-          });
-          return;
-        }
-        targetIds = body.ids;
-      } catch {
-        toast({
-          title: "Bulk update failed",
-          description: "Could not load the full set of matching applications. Please try again.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-    const res = await fetch("/api/applications/bulk-status", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ ids: targetIds, status: action }),
-    });
     if (!res.ok) {
       const errBody = await res.json().catch(() => null) as { error?: string } | null;
       toast({
@@ -213,7 +197,7 @@ export default function ApplicationsPage() {
     await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
     const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
     toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
-  }, [queryClient, toast, countParams]);
+  }, [queryClient, toast, statusFilter, search]);
 
   const columns: DataTableColumn<Application>[] = [
     {

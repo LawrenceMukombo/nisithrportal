@@ -27,6 +27,7 @@ import {
   UpdateApplicationStatusParams,
   UpdateApplicationStatusBody,
   BulkUpdateApplicationStatusBody,
+  BulkUpdateApplicationStatusByFilterBody,
 } from "@workspace/api-zod";
 import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
@@ -177,13 +178,17 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
   res.json(allApps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
 });
 
-// Shared filter builder for select-all-results endpoints (/applications/ids and /applications/count).
-// Centralises the tenant + status + search filter logic so the count and ids endpoints stay
-// in lock-step — important when select-all-results banners read total from one and ids from the other.
-function buildApplicationsFilterQuery(req: import("express").Request) {
-  const status = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : null;
-  const search = typeof req.query.search === "string" && req.query.search.trim() ? req.query.search.trim().toLowerCase() : null;
-  const agencyId = getTenantAgencyId(req);
+// Centralised filter logic shared by /applications/ids, /applications/count, and
+// PATCH /applications/bulk-status-by-filter so they all honour identical scoping semantics
+// (tenant + status + search) — important for keeping select-all-results banners,
+// id retrieval, and filter-based bulk updates in lock-step.
+function buildApplicationsFilters(
+  agencyId: number | null,
+  rawStatus: string | null | undefined,
+  rawSearch: string | null | undefined,
+) {
+  const status = typeof rawStatus === "string" && rawStatus !== "all" && rawStatus.trim() !== "" ? rawStatus : null;
+  const search = typeof rawSearch === "string" && rawSearch.trim() ? rawSearch.trim().toLowerCase() : null;
 
   const baseConditions = [];
   if (agencyId != null) {
@@ -196,9 +201,14 @@ function buildApplicationsFilterQuery(req: import("express").Request) {
   return { status, search, baseConditions };
 }
 
-// GET /applications/ids — returns only IDs for the matching filter set (used by bulk "select all results")
-router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
-  const { search, baseConditions } = buildApplicationsFilterQuery(req);
+// Resolve application IDs for the given recruiter-side filter set.
+// Shared by GET /applications/ids and PATCH /applications/bulk-status-by-filter.
+async function resolveApplicationIdsForFilters(
+  agencyId: number | null,
+  rawStatus: string | null | undefined,
+  rawSearch: string | null | undefined,
+): Promise<number[]> {
+  const { search, baseConditions } = buildApplicationsFilters(agencyId, rawStatus, rawSearch);
 
   let rows: { id: number }[];
   if (search) {
@@ -221,8 +231,14 @@ router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer
     const q = db.select({ id: applicationsTable.id }).from(applicationsTable);
     rows = baseConditions.length > 0 ? await q.where(and(...baseConditions)) : await q;
   }
+  return rows.map((r) => r.id);
+}
 
-  const ids = rows.map((r) => r.id);
+// GET /applications/ids — returns only IDs for the matching filter set (used by bulk "select all results")
+router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const status = typeof req.query.status === "string" ? req.query.status : null;
+  const search = typeof req.query.search === "string" ? req.query.search : null;
+  const ids = await resolveApplicationIdsForFilters(getTenantAgencyId(req), status, search);
   res.json({ ids, total: ids.length });
 });
 
@@ -232,7 +248,9 @@ router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer
 // remains correct if the applications list is ever paginated server-side (banner stays
 // "active" with the true total when the user navigates between pages).
 router.get("/applications/count", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
-  const { search, baseConditions } = buildApplicationsFilterQuery(req);
+  const rawStatus = typeof req.query.status === "string" ? req.query.status : null;
+  const rawSearch = typeof req.query.search === "string" ? req.query.search : null;
+  const { search, baseConditions } = buildApplicationsFilters(getTenantAgencyId(req), rawStatus, rawSearch);
 
   let total: number;
   if (search) {
@@ -905,6 +923,147 @@ function isDefaultBulkTransitionAllowed(from: string, to: string): boolean {
   return toIdx - fromIdx === 1; // forward exactly one step
 }
 
+type BulkUpdateOutcome =
+  | { ok: true; updated: number }
+  | { ok: false; blocked: { id: number; status: string }[]; canOverride: boolean };
+
+// Apply a status update to a tenant-scoped set of application IDs in a single
+// transaction, then fire applicant notifications. Returns the number of
+// applications whose status actually changed (idempotent for no-op updates).
+//
+// Workflow guard: rejects transitions that skip required review stages (e.g.
+// applied -> offer) unless `options.override` is set by an admin caller. The
+// guard honours per-agency allow-lists from agencies.configuration.allowedBulkTransitions
+// when present and falls back to the default pipeline policy otherwise. When
+// blocked, returns `{ ok: false, blocked, canOverride }` so the route handler
+// can produce a 422 response with the offending IDs.
+async function applyBulkStatusUpdate(
+  candidateIds: number[],
+  status: string,
+  agencyId: number | null,
+  options: { override?: boolean; isAdmin?: boolean } = {},
+): Promise<BulkUpdateOutcome> {
+  if (candidateIds.length === 0) return { ok: true, updated: 0 };
+
+  const existing = await db
+    .select({
+      id: applicationsTable.id,
+      status: applicationsTable.status,
+      candidateId: applicationsTable.candidateId,
+      jobAgencyId: jobsTable.agencyId,
+    })
+    .from(applicationsTable)
+    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(inArray(applicationsTable.id, candidateIds));
+
+  const accessible = agencyId != null
+    ? existing.filter((a) => a.jobAgencyId === agencyId)
+    : existing;
+
+  if (accessible.length === 0) return { ok: true, updated: 0 };
+
+  const changedApps = accessible.filter((a) => a.status !== status);
+  if (changedApps.length === 0) return { ok: true, updated: 0 };
+
+  // Workflow guard: validate every (from -> to) transition unless an admin has
+  // explicitly opted to bypass. Custom per-agency allow-lists win over defaults.
+  const bypassGuard = options.override === true && options.isAdmin === true;
+  if (!bypassGuard) {
+    let allowedSet: Set<string> | null = null;
+    if (agencyId != null) {
+      const [agency] = await db
+        .select({ configuration: agenciesTable.configuration })
+        .from(agenciesTable)
+        .where(eq(agenciesTable.id, agencyId));
+      const cfgList = (agency?.configuration as { allowedBulkTransitions?: { from: string; to: string }[] } | null)
+        ?.allowedBulkTransitions;
+      if (Array.isArray(cfgList) && cfgList.length > 0) {
+        allowedSet = new Set(cfgList.map((t) => `${t.from}->${t.to}`));
+      }
+    }
+
+    const blocked = changedApps
+      .filter((a) =>
+        allowedSet != null
+          ? !allowedSet.has(`${a.status}->${status}`)
+          : !isDefaultBulkTransitionAllowed(a.status, status),
+      )
+      .map((a) => ({ id: a.id, status: a.status }));
+
+    if (blocked.length > 0) {
+      return { ok: false, blocked, canOverride: options.isAdmin === true };
+    }
+  }
+
+  const changedIds = changedApps.map((a) => a.id);
+
+  await db.transaction(async (tx) => {
+    await tx.update(applicationsTable)
+      .set({ status })
+      .where(inArray(applicationsTable.id, changedIds));
+
+    await tx.insert(applicationStatusHistoryTable).values(
+      changedApps.map((a) => ({
+        applicationId: a.id,
+        fromStatus: a.status,
+        status,
+      }))
+    );
+  });
+
+  // Fire applicant notifications for each changed application (non-fatal).
+  const statusLabel: Record<string, string> = {
+    screening: "is being reviewed",
+    interview: "has advanced to interview stage",
+    offer: "has received a job offer",
+    hired: "has been accepted — congratulations!",
+    onboarding: "has started the onboarding process — welcome to the team!",
+    rejected: "was not successful this time",
+    withdrawn: "has been withdrawn",
+  };
+  const label = statusLabel[status] ?? `has been updated to "${status}"`;
+  const notifyCandidateIds = [...new Set(changedApps.map((a) => a.candidateId).filter((id): id is number => id !== null))];
+  try {
+    const candidates = notifyCandidateIds.length > 0
+      ? await db.select({ id: candidatesTable.id, email: candidatesTable.email })
+          .from(candidatesTable)
+          .where(inArray(candidatesTable.id, notifyCandidateIds))
+      : [];
+    await Promise.allSettled(
+      candidates.map(async (c) => {
+        if (!c.email) return;
+        const userId = await getUserIdByEmail(c.email);
+        if (!userId) return;
+        await createNotification({
+          userId,
+          type: "application_status",
+          message: `Your application ${label}.`,
+        });
+      })
+    );
+  } catch (err) {
+    console.error("[applications] Bulk notification trigger failed:", err);
+  }
+
+  return { ok: true, updated: changedApps.length };
+}
+
+// Translate a blocked-bulk outcome into the standard 422 error response shape.
+function sendBulkBlockedResponse(
+  res: import("express").Response,
+  status: string,
+  blocked: { id: number; status: string }[],
+  canOverride: boolean,
+): void {
+  const sample = blocked.slice(0, 5).map((a) => `#${a.id} (${a.status} → ${status})`).join(", ");
+  const more = blocked.length > 5 ? ` and ${blocked.length - 5} more` : "";
+  res.status(422).json({
+    error: `Bulk transition skips required review stages for ${blocked.length} application${blocked.length === 1 ? "" : "s"}: ${sample}${more}.${canOverride ? " Pass override:true to force this change." : " Move them through intermediate stages first, or ask an admin to override."}`,
+    blockedIds: blocked.map((a) => a.id),
+    canOverride,
+  });
+}
+
 // PATCH /applications/bulk-status — atomically update status for a batch of applications.
 // Accepts { ids: number[], status: string, override?: boolean } and returns { updated: number }.
 // Uses a single transaction to avoid dozens of individual API calls for bulk actions.
@@ -921,127 +1080,41 @@ router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "
   }
   const { ids, status } = body.data;
   const override = (req.body as { override?: unknown })?.override === true;
+  const isAdmin = req.user?.roleName === "admin";
+  const result = await applyBulkStatusUpdate(ids, status, getTenantAgencyId(req), { override, isAdmin });
+  if (!result.ok) {
+    sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
+    return;
+  }
+  res.json({ updated: result.updated });
+});
+
+// PATCH /applications/bulk-status-by-filter — apply a status change to every
+// application matching the recruiter's current filters (status + search), with
+// no client-side ID list. Lets "select all results" actions scale beyond the
+// payload limit of the ID-based endpoint. Honours the same workflow guard +
+// admin override semantics as the ID-based endpoint.
+router.patch("/applications/bulk-status-by-filter", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const body = BulkUpdateApplicationStatusByFilterBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const { filters, status } = body.data;
+  const override = (req.body as { override?: unknown })?.override === true;
+  const isAdmin = req.user?.roleName === "admin";
   const agencyId = getTenantAgencyId(req);
-
-  // Fetch existing records to validate tenant access and detect status changes.
-  const existing = await db
-    .select({
-      id: applicationsTable.id,
-      status: applicationsTable.status,
-      candidateId: applicationsTable.candidateId,
-      jobAgencyId: jobsTable.agencyId,
-    })
-    .from(applicationsTable)
-    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
-    .where(inArray(applicationsTable.id, ids));
-
-  // Filter to only applications this caller's agency owns (when a tenant context exists).
-  const accessible = agencyId != null
-    ? existing.filter((a) => a.jobAgencyId === agencyId)
-    : existing;
-
-  if (accessible.length === 0) {
-    res.json({ updated: 0 });
+  const matchedIds = await resolveApplicationIdsForFilters(agencyId, filters.status ?? null, filters.search ?? null);
+  if (matchedIds.length === 0) {
+    res.json({ updated: 0, matched: 0 });
     return;
   }
-
-  const changedApps = accessible.filter((a) => a.status !== status);
-
-  if (changedApps.length === 0) {
-    res.json({ updated: 0 });
+  const result = await applyBulkStatusUpdate(matchedIds, status, agencyId, { override, isAdmin });
+  if (!result.ok) {
+    sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
     return;
   }
-
-  // Workflow guard: validate every (from -> to) transition unless an admin has
-  // explicitly opted to bypass. Custom per-agency allow-lists win over defaults.
-  if (!override || req.user?.roleName !== "admin") {
-    let allowedSet: Set<string> | null = null;
-    if (agencyId != null) {
-      const [agency] = await db
-        .select({ configuration: agenciesTable.configuration })
-        .from(agenciesTable)
-        .where(eq(agenciesTable.id, agencyId));
-      const cfgList = (agency?.configuration as { allowedBulkTransitions?: { from: string; to: string }[] } | null)
-        ?.allowedBulkTransitions;
-      if (Array.isArray(cfgList) && cfgList.length > 0) {
-        allowedSet = new Set(cfgList.map((t) => `${t.from}->${t.to}`));
-      }
-    }
-
-    const blocked = changedApps.filter((a) =>
-      allowedSet != null
-        ? !allowedSet.has(`${a.status}->${status}`)
-        : !isDefaultBulkTransitionAllowed(a.status, status),
-    );
-
-    if (blocked.length > 0) {
-      const sample = blocked.slice(0, 5).map((a) => `#${a.id} (${a.status} → ${status})`).join(", ");
-      const more = blocked.length > 5 ? ` and ${blocked.length - 5} more` : "";
-      const isAdmin = req.user?.roleName === "admin";
-      res.status(422).json({
-        error: `Bulk transition skips required review stages for ${blocked.length} application${blocked.length === 1 ? "" : "s"}: ${sample}${more}.${isAdmin ? " Pass override:true to force this change." : " Move them through intermediate stages first, or ask an admin to override."}`,
-        blockedIds: blocked.map((a) => a.id),
-        canOverride: isAdmin,
-      });
-      return;
-    }
-  }
-
-  const changedIds = changedApps.map((a) => a.id);
-
-  // Perform update + history inserts in a single transaction.
-  // Only touch rows where status actually differs to avoid unnecessary writes.
-  await db.transaction(async (tx) => {
-    await tx.update(applicationsTable)
-      .set({ status })
-      .where(inArray(applicationsTable.id, changedIds));
-
-    await tx.insert(applicationStatusHistoryTable).values(
-      changedApps.map((a) => ({
-        applicationId: a.id,
-        fromStatus: a.status,
-        status,
-      }))
-    );
-  });
-
-  // Fire applicant notifications for each changed application (non-fatal).
-  {
-    const statusLabel: Record<string, string> = {
-      screening: "is being reviewed",
-      interview: "has advanced to interview stage",
-      offer: "has received a job offer",
-      hired: "has been accepted — congratulations!",
-      onboarding: "has started the onboarding process — welcome to the team!",
-      rejected: "was not successful this time",
-      withdrawn: "has been withdrawn",
-    };
-    const label = statusLabel[status] ?? `has been updated to "${status}"`;
-    const candidateIds = [...new Set(changedApps.map((a) => a.candidateId).filter((id): id is number => id !== null))];
-    try {
-      const candidates = candidateIds.length > 0
-        ? await db.select({ id: candidatesTable.id, email: candidatesTable.email })
-            .from(candidatesTable)
-            .where(inArray(candidatesTable.id, candidateIds))
-        : [];
-      await Promise.allSettled(
-        candidates.map(async (c) => {
-          if (!c.email) return;
-          const userId = await getUserIdByEmail(c.email);
-          if (!userId) return;
-          await createNotification({
-            userId,
-            type: "application_status",
-            message: `Your application ${label}.`,
-          });
-        })
-      );
-    } catch (err) {
-      console.error("[applications] Bulk notification trigger failed:", err);
-    }
-  }
-
-  res.json({ updated: changedApps.length });
+  res.json({ updated: result.updated, matched: matchedIds.length });
 });
 
 router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {

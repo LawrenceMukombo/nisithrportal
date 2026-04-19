@@ -38,7 +38,19 @@ type DataTableProps<T> = {
   skeletonRows?: number;
   emptyState?: React.ReactNode;
   bulkActions?: DataTableBulkAction[];
-  onBulkAction?: (ids: number[], action: string, selectAllResults?: boolean) => void | Promise<void>;
+  /**
+   * Bulk action handler. The third argument carries selection metadata so callers can
+   * distinguish a partial selection from "every matching result selected" — the latter
+   * lets the caller hit a server-side filter endpoint instead of pushing a large id list.
+   * `allSelected` is true when the user opted into select-all-results mode OR when every
+   * loaded row is selected; `totalRows` is the backend total when known, otherwise the
+   * loaded row count.
+   */
+  onBulkAction?: (
+    ids: number[],
+    action: string,
+    meta: { allSelected: boolean; totalRows: number },
+  ) => void | Promise<void>;
   exportFilename?: string;
   /**
    * Total count of rows matching the active server-side filters. When provided and the user
@@ -254,14 +266,20 @@ export function DataTable<T>({
       if (!onBulkAction) return;
       setBulkLoading(true);
       try {
-        await onBulkAction(ids, action, selectAllResults);
+        // In select-all-results mode the user explicitly opted into "every matching record"
+        // so report allSelected=true with the backend total (when known). Otherwise we only
+        // report allSelected when every loaded row is in the selection set.
+        await onBulkAction(ids, action, {
+          allSelected: selectAllResults || (rowIds.length > 0 && ids.length === rowIds.length),
+          totalRows: selectAllResults && totalMatchingResults != null ? totalMatchingResults : rowIds.length,
+        });
         setSelectedIds(new Set());
         setSelectAllResults(false);
       } finally {
         setBulkLoading(false);
       }
     },
-    [rowIds, selectedIds, onBulkAction, selectAllResults]
+    [rowIds, selectedIds, onBulkAction, selectAllResults, totalMatchingResults]
   );
 
   function handleExportSelected() {

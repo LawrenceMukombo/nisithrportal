@@ -31,11 +31,19 @@ const loginRateLimit = rateLimit({
   message: { error: "Too many login attempts — please try again in 15 minutes." },
 });
 
+const registerRateLimit = rateLimit({
+  windowMs: 60 * 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many registration attempts from this IP — please try again in an hour." },
+});
+
 router.post("/auth/register", (_req, res): void => {
   res.status(404).json({ error: "Not found" });
 });
 
-router.post("/auth/applicant-register", async (req, res): Promise<void> => {
+router.post("/auth/applicant-register", registerRateLimit, async (req, res): Promise<void> => {
   const schema = RegisterBody.pick({ name: true, email: true, password: true });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {

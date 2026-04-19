@@ -278,19 +278,29 @@ function EditUserDialog({
   );
 }
 
+type UserRow = UserWithRole & { agencyName?: string | null };
+
 export default function UsersPage() {
   const [search, setSearch] = useState("");
-  const [editUser, setEditUser] = useState<UserWithRole | null>(null);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: users = [], isLoading: loadingUsers, refetch } = useGetUsers();
+  const { data: rawUsers = [], isLoading: loadingUsers, refetch } = useGetUsers();
+  const users = rawUsers as UserRow[];
   const { data: roles = [], isLoading: loadingRoles } = useGetRoles();
 
-  const filtered = users.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch =
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.agencyName ?? "").toLowerCase().includes(q);
+      const matchesRole = roleFilter === "all" || u.roleName === roleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [users, search, roleFilter]);
 
   return (
     <AppLayout>
@@ -301,7 +311,7 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold" data-testid="heading-users">User Management</h1>
           </div>
           <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">{users.length} user{users.length !== 1 ? "s" : ""}</p>
+            <p className="text-sm text-muted-foreground">{filtered.length} of {users.length} user{users.length !== 1 ? "s" : ""}</p>
             <Button
               size="sm"
               onClick={() => setShowCreate(true)}
@@ -312,15 +322,33 @@ export default function UsersPage() {
           </div>
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="input-search-users"
-          />
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Search name, email or agency..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              data-testid="input-search-users"
+            />
+          </div>
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-44 h-9 text-sm" data-testid="select-filter-role">
+              <SelectValue placeholder="All Roles" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(search || roleFilter !== "all") && (
+            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setRoleFilter("all"); }}>
+              Clear filters
+            </Button>
+          )}
         </div>
 
         {loadingUsers || loadingRoles ? (
@@ -328,12 +356,13 @@ export default function UsersPage() {
             {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
         ) : (
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Agency</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Joined</TableHead>
@@ -343,13 +372,16 @@ export default function UsersPage() {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No users found</TableCell>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No users found</TableCell>
                   </TableRow>
                 ) : (
                   filtered.map((user) => (
                     <TableRow key={user.id} data-testid="row-user">
                       <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{user.email}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate" title={user.agencyName ?? "—"}>
+                        {user.agencyName ?? "—"}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline">
                           {user.roleName ? (ROLE_LABELS[user.roleName] ?? user.roleName) : "No role"}

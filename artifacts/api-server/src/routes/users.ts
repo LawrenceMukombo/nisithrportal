@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, usersTable, rolesTable } from "@workspace/db";
+import { db, usersTable, rolesTable, agenciesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
@@ -77,32 +77,21 @@ router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Pr
   res.status(201).json({ ...user, roleName });
 });
 
-router.get("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
-  const agencyId = getTenantAgencyId(req);
-  const conditions = [];
-  if (agencyId != null) {
-    conditions.push(eq(usersTable.agencyId, agencyId));
-  }
-
-  const users = conditions.length > 0
-    ? await db.select({
-        id: usersTable.id,
-        name: usersTable.name,
-        email: usersTable.email,
-        roleId: usersTable.roleId,
-        agencyId: usersTable.agencyId,
-        status: usersTable.status,
-        createdAt: usersTable.createdAt,
-      }).from(usersTable).where(and(...conditions)).orderBy(usersTable.name)
-    : await db.select({
-        id: usersTable.id,
-        name: usersTable.name,
-        email: usersTable.email,
-        roleId: usersTable.roleId,
-        agencyId: usersTable.agencyId,
-        status: usersTable.status,
-        createdAt: usersTable.createdAt,
-      }).from(usersTable).orderBy(usersTable.name);
+router.get("/users", authMiddleware, requireRole("admin"), async (_req, res): Promise<void> => {
+  const users = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      roleId: usersTable.roleId,
+      agencyId: usersTable.agencyId,
+      agencyName: agenciesTable.name,
+      status: usersTable.status,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .leftJoin(agenciesTable, eq(usersTable.agencyId, agenciesTable.id))
+    .orderBy(usersTable.name);
 
   const roles = await db.select().from(rolesTable);
   const roleMap = Object.fromEntries(roles.map((r) => [r.id, r.name]));

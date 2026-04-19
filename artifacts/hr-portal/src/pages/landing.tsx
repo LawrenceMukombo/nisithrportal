@@ -122,17 +122,16 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick }
                 {(() => {
                   const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType ??
                     (job as Job & { workType?: string }).workType;
-                  const label = empType ? (WORK_TYPE_LABELS[empType] ?? empType) : "Public Service";
-                  const cls = empType
-                    ? (WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200")
-                    : "bg-blue-50 text-blue-700 border-blue-200";
-                  const clickable = onWorkTypeClick && empType;
+                  if (!empType) return null;
+                  const label = WORK_TYPE_LABELS[empType] ?? empType;
+                  const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
+                  const clickable = onWorkTypeClick;
                   return (
                     <Badge
                       variant="outline"
                       className={`text-xs py-0 gap-1 ${cls} ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
                       data-testid={`badge-work-type-${job.id}`}
-                      onClick={clickable ? () => onWorkTypeClick!(empType!) : undefined}
+                      onClick={clickable ? () => onWorkTypeClick!(empType) : undefined}
                       title={clickable ? `Filter by ${label}` : undefined}
                     >
                       <Briefcase className="h-3 w-3" />{label}

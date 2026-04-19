@@ -100,6 +100,14 @@ router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  if (!parsed.data.employmentType) {
+    res.status(400).json({ error: "Employment type is required" });
+    return;
+  }
+  if (!parsed.data.province) {
+    res.status(400).json({ error: "Province is required" });
+    return;
+  }
   const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
   if (agencyId == null) {
     res.status(403).json({ error: "Forbidden: no agency context — cannot create job" });

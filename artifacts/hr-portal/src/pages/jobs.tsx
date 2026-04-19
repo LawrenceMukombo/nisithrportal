@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { DRAFT_KEY_PREFIX, isDraftExpired, draftRelativeTime } from "@/lib/draftKeys";
@@ -327,6 +327,17 @@ export default function JobsPage() {
               {draftSavedAt && (
                 <Badge variant="outline" className="text-xs py-0 gap-1 bg-amber-50 text-amber-700 border-amber-200 font-normal" data-testid={`badge-draft-age-${job.id}`}>
                   In progress · {draftRelativeTime(draftSavedAt)}
+                </Badge>
+              )}
+              {(!empType || !province) && (
+                <Badge
+                  variant="outline"
+                  className="text-xs py-0 gap-1 bg-orange-50 text-orange-700 border-orange-200"
+                  data-testid={`badge-incomplete-${job.id}`}
+                  title={[!empType && "Employment type missing", !province && "Province missing"].filter(Boolean).join(", ")}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {!empType && !province ? "Type & location missing" : !empType ? "Type missing" : "Location missing"}
                 </Badge>
               )}
             </div>

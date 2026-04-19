@@ -98,7 +98,7 @@ const WIZARD_STEPS = [
 ];
 
 const STEP_REQUIRED_FIELDS: (keyof FormValues)[][] = [
-  ["title"],
+  ["title", "employmentType", "province"],
   [],
   [],
   [],
@@ -798,6 +798,7 @@ export default function JobFormPage() {
                             {EMPLOYMENT_TYPES.map(e => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                        <FormMessage />
                       </FormItem>
                     )} />
 
@@ -835,6 +836,7 @@ export default function JobFormPage() {
                             {PNG_PROVINCES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                        <FormMessage />
                       </FormItem>
                     )} />
 

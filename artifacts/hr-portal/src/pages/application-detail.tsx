@@ -359,6 +359,7 @@ export default function ApplicationDetailPage() {
   const [offerHistory, setOfferHistory] = useState<OfferLetterSendLogEntry[]>([]);
   const [offerHistoryLoading, setOfferHistoryLoading] = useState(false);
   const [offerHistoryOpen, setOfferHistoryOpen] = useState(false);
+  const [resendConfirm, setResendConfirm] = useState<{ hours: number; onSuccess?: () => void } | null>(null);
 
   async function loadOfferLetterHistory() {
     if (!appId) return;
@@ -387,34 +388,17 @@ export default function ApplicationDetailPage() {
     loadOfferLetterHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appId, app?.offerLetterSentAt, isAdmin, isHR, isHiringManager]);
-  const [contractUploading, setContractUploading] = useState(false);
-  const contractFileRef = useRef<HTMLInputElement>(null);
 
-  async function downloadOfferLetter() {
-    if (!appId) return;
-    setOfferLetterLoading(true);
-    try {
-      const token = getToken();
-      const res = await fetch(`/api/pdf/offer-letter/${appId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        toast({ title: err.error ?? "Failed to generate offer letter", variant: "destructive" });
+  function requestSendOfferLetter(onSuccess?: () => void) {
+    if (app?.offerLetterSentAt) {
+      const sentAt = new Date(app.offerLetterSentAt).getTime();
+      const hoursAgo = (Date.now() - sentAt) / (1000 * 60 * 60);
+      if (hoursAgo < 24) {
+        setResendConfirm({ hours: Math.max(0, hoursAgo), onSuccess });
         return;
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `offer-letter-${appId}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast({ title: "Failed to generate offer letter", variant: "destructive" });
-    } finally {
-      setOfferLetterLoading(false);
     }
+    setConfirmSendOffer(true);
   }
 
   async function sendOfferLetterEmail(): Promise<boolean> {
@@ -443,7 +427,9 @@ export default function ApplicationDetailPage() {
     }
   }
 
-  async function handleDeleteDocument() {
+  const [deleteReason, setDeleteReason] = useState("");
+
+  async function handleDeleteDocument(reason: string) {
     if (!docToDelete || !appId) return;
     setDeletingDoc(true);
     try {
@@ -558,7 +544,7 @@ export default function ApplicationDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setConfirmSendOffer(true)}
+                  onClick={() => requestSendOfferLetter()}
                   disabled={sendOfferLoading}
                   data-testid="button-send-offer-letter"
                   className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"
@@ -1071,7 +1057,7 @@ export default function ApplicationDetailPage() {
               <AlertDialogTitle>Delete this document?</AlertDialogTitle>
               <AlertDialogDescription>
                 {docToDelete?.fileName ?? DOC_TYPE_LABELS[docToDelete?.documentType ?? ""] ?? docToDelete?.documentType}
-                {" "}will be permanently removed from this application. You can upload a replacement afterwards. This cannot be undone.
+                {" "}will be permanently removed from this application. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-1.5">
@@ -1095,12 +1081,85 @@ export default function ApplicationDetailPage() {
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deletingDoc}>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                onClick={(e) => { e.preventDefault(); void handleDeleteDocument(); }}
-                disabled={deletingDoc}
+                onClick={(e) => { e.preventDefault(); void handleDeleteDocument(deleteReason); }}
+                disabled={deletingDoc || !deleteReason.trim()}
                 data-testid="button-confirm-delete-document"
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 {deletingDoc ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Deleting...</> : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={resendConfirm != null} onOpenChange={(open) => { if (!open && !sendOfferLoading) setResendConfirm(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Resend offer letter?</AlertDialogTitle>
+              <AlertDialogDescription data-testid="text-resend-confirm-description">
+                {(() => {
+                  const h = resendConfirm?.hours ?? 0;
+                  const phrase = h < 1
+                    ? `less than an hour ago`
+                    : `${Math.round(h)} hour${Math.round(h) === 1 ? "" : "s"} ago`;
+                  return `This offer was just sent ${phrase}. Resending will email the candidate again. Resend anyway?`;
+                })()}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={sendOfferLoading} data-testid="button-cancel-resend-offer">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  const onSuccess = resendConfirm?.onSuccess;
+                  void sendOfferLetterEmail().then((ok) => {
+                    if (ok) {
+                      setResendConfirm(null);
+                      onSuccess?.();
+                    }
+                  });
+                }}
+                disabled={sendOfferLoading}
+                data-testid="button-confirm-resend-offer"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {sendOfferLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</> : "Resend anyway"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={confirmSendOffer}
+          onOpenChange={(open) => { if (!open && !sendOfferLoading) setConfirmSendOffer(false); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send this offer letter?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {candidate?.email
+                  ? <>This will email the offer letter to <span className="font-medium text-foreground">{candidate?.name ?? "the candidate"}</span> at <span className="font-medium text-foreground" data-testid="text-confirm-send-offer-email">{candidate.email}</span>.</>
+                  : <>No email address is on file for {candidate?.name ?? "this candidate"}, so the offer letter can't be sent.</>}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={sendOfferLoading} data-testid="button-confirm-send-offer-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={sendOfferLoading || !candidate?.email}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  const ok = await sendOfferLetterEmail();
+                  if (ok) {
+                    setConfirmSendOffer(false);
+                    setShowOfferPreview(false);
+                  }
+                }}
+                data-testid="button-confirm-send-offer-confirm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {sendOfferLoading
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
+                  : <>Send offer letter</>}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1181,7 +1240,7 @@ export default function ApplicationDetailPage() {
           footerActions={
             <Button
               size="sm"
-              onClick={() => setConfirmSendOffer(true)}
+              onClick={() => requestSendOfferLetter(() => setShowOfferPreview(false))}
               disabled={sendOfferLoading}
               data-testid="button-send-offer-letter-from-preview"
               className="bg-blue-600 hover:bg-blue-700 text-white"

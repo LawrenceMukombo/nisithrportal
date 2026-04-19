@@ -49,3 +49,6 @@ SMTP_PORT = "587"
 
 [userenv.development]
 APP_BASE_URL = "https://e30ca484-0663-4c80-81c3-d8e30b6f2e4d-00-28yr8er340eio.spock.replit.dev"
+
+[userenv.production]
+APP_BASE_URL = "https://png-nisit-hr.replit.app"

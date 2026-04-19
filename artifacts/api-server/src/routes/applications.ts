@@ -806,9 +806,38 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
   res.json({ ...application, statusHistory });
 });
 
+// Pipeline order used to derive default bulk-status transitions when an agency
+// has not configured an explicit allow-list. Forward moves of more than one
+// step are considered "skips" and rejected to prevent accidentally bypassing
+// review stages (e.g. applied -> offer for 50 candidates at once).
+const BULK_PIPELINE_ORDER = ["applied", "screening", "interview", "offer", "hired", "onboarding"] as const;
+const BULK_TERMINAL_STATUSES = ["rejected", "withdrawn"] as const;
+
+// Returns true when `from -> to` is permitted under the default policy:
+//   - same status (no-op)
+//   - any backward move within the pipeline
+//   - forward by exactly one pipeline step
+//   - any move to a terminal status (rejected/withdrawn)
+//   - moves out of a terminal status are blocked (must be done individually)
+function isDefaultBulkTransitionAllowed(from: string, to: string): boolean {
+  if (from === to) return true;
+  if ((BULK_TERMINAL_STATUSES as readonly string[]).includes(to)) return true;
+  if ((BULK_TERMINAL_STATUSES as readonly string[]).includes(from)) return false;
+  const fromIdx = BULK_PIPELINE_ORDER.indexOf(from as typeof BULK_PIPELINE_ORDER[number]);
+  const toIdx = BULK_PIPELINE_ORDER.indexOf(to as typeof BULK_PIPELINE_ORDER[number]);
+  if (fromIdx === -1 || toIdx === -1) return true; // unknown statuses: don't block
+  if (toIdx <= fromIdx) return true; // backward or same
+  return toIdx - fromIdx === 1; // forward exactly one step
+}
+
 // PATCH /applications/bulk-status — atomically update status for a batch of applications.
-// Accepts { ids: number[], status: string } and returns { updated: number }.
+// Accepts { ids: number[], status: string, override?: boolean } and returns { updated: number }.
 // Uses a single transaction to avoid dozens of individual API calls for bulk actions.
+//
+// Workflow guard: rejects transitions that skip required review stages (e.g.
+// applied -> offer). Agencies may configure an explicit allow-list via
+// configuration.allowedBulkTransitions; otherwise sensible defaults apply.
+// Admins may bypass the guard by passing { override: true }.
 router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const body = BulkUpdateApplicationStatusBody.safeParse(req.body);
   if (!body.success) {
@@ -816,6 +845,7 @@ router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "
     return;
   }
   const { ids, status } = body.data;
+  const override = (req.body as { override?: unknown })?.override === true;
   const agencyId = getTenantAgencyId(req);
 
   // Fetch existing records to validate tenant access and detect status changes.
@@ -845,6 +875,41 @@ router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "
   if (changedApps.length === 0) {
     res.json({ updated: 0 });
     return;
+  }
+
+  // Workflow guard: validate every (from -> to) transition unless an admin has
+  // explicitly opted to bypass. Custom per-agency allow-lists win over defaults.
+  if (!override || req.user?.roleName !== "admin") {
+    let allowedSet: Set<string> | null = null;
+    if (agencyId != null) {
+      const [agency] = await db
+        .select({ configuration: agenciesTable.configuration })
+        .from(agenciesTable)
+        .where(eq(agenciesTable.id, agencyId));
+      const cfgList = (agency?.configuration as { allowedBulkTransitions?: { from: string; to: string }[] } | null)
+        ?.allowedBulkTransitions;
+      if (Array.isArray(cfgList) && cfgList.length > 0) {
+        allowedSet = new Set(cfgList.map((t) => `${t.from}->${t.to}`));
+      }
+    }
+
+    const blocked = changedApps.filter((a) =>
+      allowedSet != null
+        ? !allowedSet.has(`${a.status}->${status}`)
+        : !isDefaultBulkTransitionAllowed(a.status, status),
+    );
+
+    if (blocked.length > 0) {
+      const sample = blocked.slice(0, 5).map((a) => `#${a.id} (${a.status} → ${status})`).join(", ");
+      const more = blocked.length > 5 ? ` and ${blocked.length - 5} more` : "";
+      const isAdmin = req.user?.roleName === "admin";
+      res.status(422).json({
+        error: `Bulk transition skips required review stages for ${blocked.length} application${blocked.length === 1 ? "" : "s"}: ${sample}${more}.${isAdmin ? " Pass override:true to force this change." : " Move them through intermediate stages first, or ask an admin to override."}`,
+        blockedIds: blocked.map((a) => a.id),
+        canOverride: isAdmin,
+      });
+      return;
+    }
   }
 
   const changedIds = changedApps.map((a) => a.id);

@@ -135,7 +135,12 @@ export default function ApplicationsPage() {
       body: JSON.stringify({ ids, status: action }),
     });
     if (!res.ok) {
-      toast({ title: "Bulk update failed", variant: "destructive" });
+      const errBody = await res.json().catch(() => null) as { error?: string } | null;
+      toast({
+        title: "Bulk update failed",
+        description: errBody?.error ?? undefined,
+        variant: "destructive",
+      });
       return;
     }
     const { updated } = await res.json() as { updated: number };

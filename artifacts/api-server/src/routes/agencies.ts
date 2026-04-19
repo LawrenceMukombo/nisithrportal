@@ -23,6 +23,11 @@ export const DEFAULT_STALE_THRESHOLDS: Record<string, number> = {
 
 const ThresholdsBody = z.record(z.string(), z.number().int().min(1).max(365));
 
+const BulkTransitionsBody = z.array(z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+}));
+
 const router: IRouter = Router();
 
 router.get("/agencies", authMiddleware, async (req, res): Promise<void> => {
@@ -139,6 +144,37 @@ router.put("/agencies/settings/stale-thresholds", authMiddleware, requireRole("a
     .set({ configuration: updated, updatedAt: new Date() })
     .where(eq(agenciesTable.id, agencyId));
   res.json({ ...DEFAULT_STALE_THRESHOLDS, ...parsed.data });
+});
+
+// ─── GET /api/agencies/settings/bulk-transitions ──────────────────────────────
+// Returns the agency's configured allow-list of (from -> to) bulk status
+// transitions. Empty array means "use server defaults".
+router.get("/agencies/settings/bulk-transitions", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
+  const [agency] = await db.select({ configuration: agenciesTable.configuration })
+    .from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+  const saved = (agency?.configuration as { allowedBulkTransitions?: { from: string; to: string }[] } | null)?.allowedBulkTransitions ?? [];
+  res.json(saved);
+});
+
+// ─── PUT /api/agencies/settings/bulk-transitions ──────────────────────────────
+// Saves the agency's allow-list. Admin-only — controls how strict the bulk
+// workflow guard is across the whole agency. Pass [] to clear and revert to
+// server defaults.
+router.put("/agencies/settings/bulk-transitions", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
+  const parsed = BulkTransitionsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [agency] = await db.select({ configuration: agenciesTable.configuration })
+    .from(agenciesTable).where(eq(agenciesTable.id, agencyId));
+  const existing = (agency?.configuration as Record<string, unknown> | null) ?? {};
+  const updated = { ...existing, allowedBulkTransitions: parsed.data };
+  await db.update(agenciesTable)
+    .set({ configuration: updated, updatedAt: new Date() })
+    .where(eq(agenciesTable.id, agencyId));
+  res.json(parsed.data);
 });
 
 export default router;

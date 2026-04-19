@@ -262,6 +262,7 @@ export default function JobsPage() {
     });
   }, [filtered, sortKey, sortDir, deptMap]);
 
+  const { toast } = useToast();
   const [draftRefreshTick, setDraftRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -340,7 +341,17 @@ export default function JobsPage() {
                     className={`text-xs py-0 gap-1 ${isActive ? activeCls : cls} cursor-pointer hover:opacity-70 transition-opacity`}
                     data-testid={`badge-work-type-${job.id}`}
                     aria-pressed={isActive}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWorkTypeFilter(isActive ? "all" : empType); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (isActive) {
+                        setWorkTypeFilter("all");
+                        toast({ title: `Cleared ${label} filter`, duration: 2000 });
+                      } else {
+                        setWorkTypeFilter(empType);
+                        toast({ title: `Filtered by ${label}`, duration: 2000 });
+                      }
+                    }}
                     title={isActive ? `Clear ${label} filter` : `Filter by ${label}`}
                   >
                     {isActive ? <Check className="h-3 w-3" /> : <Briefcase className="h-3 w-3" />}{label}
@@ -357,7 +368,17 @@ export default function JobsPage() {
                     className={`text-xs py-0 gap-1 ${isActive ? activeCls : baseCls} cursor-pointer hover:opacity-70 transition-opacity`}
                     data-testid={`badge-province-${job.id}`}
                     aria-pressed={isActive}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocationFilter(isActive ? "all" : province); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (isActive) {
+                        setLocationFilter("all");
+                        toast({ title: `Cleared ${province} filter`, duration: 2000 });
+                      } else {
+                        setLocationFilter(province);
+                        toast({ title: `Filtered by ${province}`, duration: 2000 });
+                      }
+                    }}
                     title={isActive ? `Clear ${province} filter` : `Filter by ${province}`}
                   >
                     {isActive ? <Check className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}{province}

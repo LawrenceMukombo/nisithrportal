@@ -292,6 +292,7 @@ export default function LandingPage() {
   const [workTypeFilter, setWorkTypeFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [salaryFilter, setSalaryFilter] = useState("all");
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
   const { isApplicant } = useRole();
@@ -496,8 +497,25 @@ export default function LandingPage() {
                 job={job}
                 deptName={job.departmentId ? deptMap[job.departmentId] : undefined}
                 deptAccent={job.departmentId ? (deptAccentMap[job.departmentId] ?? DEPT_ACCENT_COLORS[0]) : DEPT_ACCENT_COLORS[0]}
-                onLocationClick={(p) => setLocationFilter((cur) => cur === p ? "all" : p)}
-                onWorkTypeClick={(w) => setWorkTypeFilter((cur) => cur === w ? "all" : w)}
+                onLocationClick={(p) => {
+                  if (locationFilter === p) {
+                    setLocationFilter("all");
+                    toast({ title: `Cleared ${p} filter`, duration: 2000 });
+                  } else {
+                    setLocationFilter(p);
+                    toast({ title: `Filtered by ${p}`, duration: 2000 });
+                  }
+                }}
+                onWorkTypeClick={(w) => {
+                  const label = WORK_TYPE_LABELS[w] ?? w;
+                  if (workTypeFilter === w) {
+                    setWorkTypeFilter("all");
+                    toast({ title: `Cleared ${label} filter`, duration: 2000 });
+                  } else {
+                    setWorkTypeFilter(w);
+                    toast({ title: `Filtered by ${label}`, duration: 2000 });
+                  }
+                }}
                 activeLocation={locationFilter}
                 activeWorkType={workTypeFilter}
                 savedJobIds={savedJobIds}

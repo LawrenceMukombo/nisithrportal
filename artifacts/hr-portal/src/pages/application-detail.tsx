@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2, Eye } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2, Eye, ChevronDown, ChevronRight } from "lucide-react";
 import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
 import { getToken } from "@/lib/api-config";
 import {
@@ -251,6 +251,14 @@ type DocDeletion = {
   createdAt: string;
   details: { documentType?: string | null; fileName?: string | null; documentId?: number | null } | null;
 };
+type OfferLetterSendLogEntry = {
+  id: number;
+  sentAt: string;
+  recipientEmail: string;
+  userId: number | null;
+  userName: string | null;
+  userEmail: string | null;
+};
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   cv: "CV / Résumé", academic_cert: "Academic Certificate", professional_cert: "Professional Certificate",
@@ -347,6 +355,37 @@ export default function ApplicationDetailPage() {
   const [sendOfferLoading, setSendOfferLoading] = useState(false);
   const [showOfferPreview, setShowOfferPreview] = useState(false);
   const [confirmSendOffer, setConfirmSendOffer] = useState(false);
+  const [offerHistory, setOfferHistory] = useState<OfferLetterSendLogEntry[]>([]);
+  const [offerHistoryLoading, setOfferHistoryLoading] = useState(false);
+  const [offerHistoryOpen, setOfferHistoryOpen] = useState(false);
+
+  async function loadOfferLetterHistory() {
+    if (!appId) return;
+    setOfferHistoryLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/pdf/offer-letter-history/${appId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const rows = (await res.json()) as OfferLetterSendLogEntry[];
+        setOfferHistory(rows);
+      }
+    } catch {
+      /* non-fatal */
+    } finally {
+      setOfferHistoryLoading(false);
+    }
+  }
+
+  // Auto-load history when an offer has ever been sent so we can show the count.
+  useEffect(() => {
+    if (!appId) return;
+    if (!(isAdmin || isHR || isHiringManager)) return;
+    if (!app?.offerLetterSentAt) return;
+    loadOfferLetterHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, app?.offerLetterSentAt, isAdmin, isHR, isHiringManager]);
   const [contractUploading, setContractUploading] = useState(false);
   const contractFileRef = useRef<HTMLInputElement>(null);
 
@@ -393,6 +432,7 @@ export default function ApplicationDetailPage() {
       }
       toast({ title: "Offer letter sent to candidate", description: body.message });
       queryClient.invalidateQueries({ queryKey: getGetApplicationQueryKey(appId) });
+      loadOfferLetterHistory();
       return true;
     } catch {
       toast({ title: "Failed to send offer letter", variant: "destructive" });
@@ -533,6 +573,57 @@ export default function ApplicationDetailPage() {
                       hour: "numeric", minute: "2-digit",
                     })}
                   </span>
+                )}
+                {app.offerLetterSentAt && (
+                  <button
+                    type="button"
+                    onClick={() => setOfferHistoryOpen((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] text-blue-600 hover:underline pl-1 mt-0.5"
+                    data-testid="button-toggle-offer-history"
+                  >
+                    {offerHistoryOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    {offerHistoryLoading && offerHistory.length === 0
+                      ? "Loading send history…"
+                      : `Send history (${offerHistory.length})`}
+                  </button>
+                )}
+                {offerHistoryOpen && app.offerLetterSentAt && (
+                  <div
+                    className="mt-1 ml-1 border border-border rounded-md bg-muted/30 p-2 text-[11px] w-[320px] max-w-full"
+                    data-testid="container-offer-letter-history"
+                  >
+                    {offerHistoryLoading && offerHistory.length === 0 ? (
+                      <div className="text-muted-foreground">Loading…</div>
+                    ) : offerHistory.length === 0 ? (
+                      <div className="text-muted-foreground">No send history recorded yet.</div>
+                    ) : (
+                      <ol className="space-y-1.5">
+                        {offerHistory.map((entry, idx) => (
+                          <li
+                            key={entry.id}
+                            className="flex flex-col gap-0.5"
+                            data-testid={`row-offer-letter-history-${entry.id}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-foreground">
+                                #{offerHistory.length - idx} ·{" "}
+                                {new Date(entry.sentAt).toLocaleString("en-PG", {
+                                  day: "numeric", month: "short", year: "numeric",
+                                  hour: "numeric", minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                            <span className="text-muted-foreground">
+                              By {entry.userName ?? entry.userEmail ?? "Unknown user"}
+                            </span>
+                            <span className="text-muted-foreground break-all">
+                              To {entry.recipientEmail}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
                 )}
               </div>
               <Button

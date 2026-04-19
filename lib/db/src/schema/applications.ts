@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -93,6 +93,18 @@ export const candidateRefereesTable = pgTable("candidate_referees", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export type CandidateReferee = typeof candidateRefereesTable.$inferSelect;
+
+// Audit trail of every offer-letter send event for an application
+export const offerLetterSendLogTable = pgTable("offer_letter_send_log", {
+  id: serial("id").primaryKey(),
+  applicationId: integer("application_id").notNull().references(() => applicationsTable.id, { onDelete: "cascade" }),
+  userId: integer("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  recipientEmail: text("recipient_email").notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  applicationIdx: index("offer_letter_send_log_application_idx").on(t.applicationId),
+}));
+export type OfferLetterSendLog = typeof offerLetterSendLogTable.$inferSelect;
 
 export const insertApplicationSchema = createInsertSchema(applicationsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;

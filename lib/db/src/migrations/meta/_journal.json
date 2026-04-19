@@ -78,6 +78,13 @@
       "when": 1776729600000,
       "tag": "0010_users_email_saved_job_closing",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776729700000,
+      "tag": "0011_offer_letter_send_log",
+      "breakpoints": true
     }
   ]
 }

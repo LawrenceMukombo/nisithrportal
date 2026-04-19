@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import {
   db,
   applicationsTable,
@@ -10,6 +10,8 @@ import {
   positionsTable,
   agenciesTable,
   departmentsTable,
+  offerLetterSendLogTable,
+  usersTable,
 } from "@workspace/db";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
@@ -384,6 +386,18 @@ router.post(
         .set({ offerLetterSentAt: sentAt })
         .where(eq(applicationsTable.id, applicationId));
 
+      // Append to the offer-letter send audit log
+      try {
+        await db.insert(offerLetterSendLogTable).values({
+          applicationId,
+          userId: req.user?.userId ?? null,
+          recipientEmail: candidateEmail,
+          sentAt,
+        });
+      } catch (logErr) {
+        logger.warn({ err: logErr, applicationId }, "Failed to record offer-letter send log entry");
+      }
+
       const notifMessage = `Offer letter for "${position}" (application #${applicationId}) was emailed to ${candidateName} <${candidateEmail}>.`;
       const notifType = "offer_letter_sent";
 
@@ -575,6 +589,50 @@ router.get(
     doc.text("Date", col2, doc.y - doc.currentLineHeight());
 
     doc.end();
+  }
+);
+
+// ─── GET /api/pdf/offer-letter-history/:applicationId ───────────────────────
+// Returns the full audit trail of every offer-letter send event for an application.
+
+router.get(
+  "/pdf/offer-letter-history/:applicationId",
+  authMiddleware,
+  requireRole("admin", "hr_officer", "hiring_manager"),
+  async (req: Request, res: Response) => {
+    const applicationId = parseIntParam(req.params.applicationId);
+
+    const [appRow] = await db
+      .select({ jobId: applicationsTable.jobId })
+      .from(applicationsTable)
+      .where(eq(applicationsTable.id, applicationId));
+
+    if (!appRow) {
+      res.status(404).json({ error: "Application not found" });
+      return;
+    }
+
+    const [jobForTenant] = await db
+      .select({ agencyId: jobsTable.agencyId })
+      .from(jobsTable)
+      .where(eq(jobsTable.id, appRow.jobId));
+    if (!assertTenantAccess(res, jobForTenant?.agencyId ?? null, getTenantAgencyId(req))) return;
+
+    const rows = await db
+      .select({
+        id: offerLetterSendLogTable.id,
+        sentAt: offerLetterSendLogTable.sentAt,
+        recipientEmail: offerLetterSendLogTable.recipientEmail,
+        userId: offerLetterSendLogTable.userId,
+        userName: usersTable.name,
+        userEmail: usersTable.email,
+      })
+      .from(offerLetterSendLogTable)
+      .leftJoin(usersTable, eq(offerLetterSendLogTable.userId, usersTable.id))
+      .where(eq(offerLetterSendLogTable.applicationId, applicationId))
+      .orderBy(desc(offerLetterSendLogTable.sentAt));
+
+    res.json(rows);
   }
 );
 

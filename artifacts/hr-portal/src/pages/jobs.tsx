@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "wouter";
 import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn, AlertTriangle, Check } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
@@ -262,6 +262,24 @@ export default function JobsPage() {
     });
   }, [filtered, sortKey, sortDir, deptMap]);
 
+  const [draftRefreshTick, setDraftRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setDraftRefreshTick((t) => t + 1);
+    }, 60_000);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key.startsWith(DRAFT_KEY_PREFIX)) {
+        setDraftRefreshTick((t) => t + 1);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   const draftMap = useMemo(() => {
     const map: Record<number, string> = {};
     try {
@@ -287,7 +305,7 @@ export default function JobsPage() {
       }
     } catch { /* ignore */ }
     return map;
-  }, [jobs.data]);
+  }, [jobs.data, draftRefreshTick]);
 
   const columns: DataTableColumn<ExtJob>[] = [
     {

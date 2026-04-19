@@ -1645,6 +1645,17 @@ export function ApplyWizard({
     return false;
   }, [form, jobId, currentStep]);
 
+  // Fire-and-forget background sync that also flashes the "Synced to account" indicator
+  const syncDraftToServerInBackground = useCallback(() => {
+    if (!getToken()) return;
+    void saveDraftToServer().then((ok) => {
+      if (!ok) return;
+      setSyncedToAccount(true);
+      if (syncedTimerRef.current !== null) clearTimeout(syncedTimerRef.current);
+      syncedTimerRef.current = setTimeout(() => setSyncedToAccount(false), 3000);
+    });
+  }, [saveDraftToServer]);
+
   // Auto-save when navigating steps (only while the dialog is open)
   const prevOpenRef = useRef(false);
   useEffect(() => {
@@ -1652,7 +1663,10 @@ export function ApplyWizard({
     if (!open) { prevOpenRef.current = false; return; }
     if (!prevOpenRef.current) { prevOpenRef.current = true; return; }
     saveDraftLocally();
-  }, [open, currentStep, saveDraftLocally]);
+    // Also push to the server for authenticated users so the draft is available
+    // cross-device even if they close the wizard without clicking "Save Draft".
+    syncDraftToServerInBackground();
+  }, [open, currentStep, saveDraftLocally, syncDraftToServerInBackground]);
 
   const handleSaveDraft = async () => {
     setSaving(true);

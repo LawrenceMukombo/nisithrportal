@@ -541,7 +541,7 @@ Only include mappings where you are reasonably confident. Skip uncertain mapping
   }
 });
 
-// ─── GET /integration-config/:id/stats — daily bucketed trend for last 7 days ──
+// ─── GET /integration-config/:id/stats — daily bucketed trend ──────────────────
 
 router.get("/integration-config/:id/stats", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
@@ -556,9 +556,11 @@ router.get("/integration-config/:id/stats", authMiddleware, requireRole("admin")
       res.status(403).json({ error: "Forbidden" }); return;
     }
 
-    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const daysRaw = parseInt(String(req.query["days"] ?? "7"), 10);
+    const days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, daysRaw)) : 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    // Fetch all logs in the last 7 days for this config
+    // Fetch all logs in the selected window for this config
     const logs = await db
       .select({
         status: integrationLogsTable.status,
@@ -568,14 +570,14 @@ router.get("/integration-config/:id/stats", authMiddleware, requireRole("admin")
       .where(
         and(
           eq(integrationLogsTable.integrationConfigId, id),
-          gte(integrationLogsTable.createdAt, since7d),
+          gte(integrationLogsTable.createdAt, since),
         )
       )
       .orderBy(integrationLogsTable.createdAt);
 
-    // Build a map of the last 7 days (date string → { success, error })
+    // Build a map of the last N days (date string → { success, error })
     const buckets: Record<string, { date: string; success: number; error: number }> = {};
-    for (let i = 6; i >= 0; i--) {
+    for (let i = days - 1; i >= 0; i--) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
       const key = d.toISOString().slice(0, 10);
       buckets[key] = { date: key, success: 0, error: 0 };

@@ -304,7 +304,7 @@ function DailyTrendChart({ data }: { data: DailyBucket[] }) {
   if (!hasAnyData) {
     return (
       <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
-        No executions in the last 7 days
+        No executions in the last {data.length} day{data.length === 1 ? "" : "s"}
       </div>
     );
   }
@@ -1000,9 +1000,10 @@ function IntegrationConfigCard({
     enabled: showLogs,
   });
 
+  const [trendDays, setTrendDays] = useState<7 | 14 | 30>(7);
   const statsQuery = useQuery({
-    queryKey: ["integration-config-stats", config.id],
-    queryFn: () => apiFetch<IntegrationConfigStats>(`/api/integration-config/${config.id}/stats`),
+    queryKey: ["integration-config-stats", config.id, trendDays],
+    queryFn: () => apiFetch<IntegrationConfigStats>(`/api/integration-config/${config.id}/stats?days=${trendDays}`),
     enabled: expanded,
     staleTime: 60_000,
   });
@@ -1175,8 +1176,25 @@ function IntegrationConfigCard({
           <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5 text-primary" />
-              <p className="text-xs font-semibold">7-Day Daily Trend</p>
-              {statsQuery.isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-auto" />}
+              <p className="text-xs font-semibold">Daily Trend — Last {trendDays} Days</p>
+              {statsQuery.isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              <div className="ml-auto inline-flex rounded-md border bg-background overflow-hidden">
+                {([7, 14, 30] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setTrendDays(d)}
+                    className={`px-2 py-0.5 text-xs font-medium transition-colors ${
+                      trendDays === d
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                    aria-pressed={trendDays === d}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
             </div>
             {statsQuery.data ? (
               <DailyTrendChart data={statsQuery.data.daily} />

@@ -32,6 +32,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { AppLayout } from "@/layouts/app-layout";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { ApplyWizard, DraftBanner, type ScreeningQuestion } from "@/components/apply-wizard";
+import { shareJob } from "@/lib/share";
 
 const STATUS_COLORS: Record<string, string> = {
   applied: "bg-blue-100 text-blue-700",
@@ -656,15 +657,21 @@ export default function JobDetailPage() {
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
+    if (!job) return;
     const url = `${window.location.origin}/jobs/${jobId}`;
-    navigator.clipboard.writeText(url).then(() => {
+    const result = await shareJob({
+      url,
+      title: job.title,
+      text: `Check out this job: ${job.title}`,
+    });
+    if (result === "copied") {
       setCopied(true);
       toast({ title: "Link copied!" });
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      toast({ title: "Could not copy link", variant: "destructive" });
-    });
+    } else if (result === "error") {
+      toast({ title: "Could not share link", variant: "destructive" });
+    }
   };
 
   if (isLoading) {
@@ -770,7 +777,7 @@ export default function JobDetailPage() {
                 variant="ghost"
                 className="h-9 w-9 text-muted-foreground hover:text-primary"
                 onClick={handleShare}
-                title="Copy link"
+                title="Share job"
                 data-testid="button-share-job"
               >
                 {copied ? <Check className="h-4 w-4 text-green-600" /> : <Share2 className="h-4 w-4" />}

@@ -23,6 +23,7 @@ import { Link } from "wouter";
 import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX, AlarmClock, Share2, Check } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
+import { shareJob } from "@/lib/share";
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -74,18 +75,23 @@ function scanLocalDrafts(): LocalDraft[] {
   });
 }
 
-function ShareJobButton({ jobId, testIdPrefix }: { jobId: number; testIdPrefix: string }) {
+function ShareJobButton({ jobId, jobTitle, testIdPrefix }: { jobId: number; jobTitle?: string; testIdPrefix: string }) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
-  const handleShare = () => {
+  const handleShare = async () => {
     const url = `${window.location.origin}/jobs/${jobId}`;
-    navigator.clipboard.writeText(url).then(() => {
+    const result = await shareJob({
+      url,
+      title: jobTitle,
+      text: jobTitle ? `Check out this job: ${jobTitle}` : undefined,
+    });
+    if (result === "copied") {
       setCopied(true);
       toast({ title: "Link copied!" });
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      toast({ title: "Could not copy link", variant: "destructive" });
-    });
+    } else if (result === "error") {
+      toast({ title: "Could not share link", variant: "destructive" });
+    }
   };
   return (
     <Button
@@ -93,7 +99,7 @@ function ShareJobButton({ jobId, testIdPrefix }: { jobId: number; testIdPrefix: 
       variant="ghost"
       className="h-7 w-7 text-muted-foreground hover:text-primary"
       onClick={handleShare}
-      title="Copy link"
+      title="Share job"
       data-testid={`${testIdPrefix}-${jobId}`}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Share2 className="h-3.5 w-3.5" />}
@@ -370,7 +376,7 @@ export default function MyApplicationsPage() {
 
                     <div className="mt-3 pt-3 border-t flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <ShareJobButton jobId={app.jobId} testIdPrefix="btn-share-application-job" />
+                        <ShareJobButton jobId={app.jobId} jobTitle={job?.title} testIdPrefix="btn-share-application-job" />
                         {!isTerminal && (
                           <Button
                             variant="outline"
@@ -488,7 +494,7 @@ export default function MyApplicationsPage() {
                             <ArrowRight className="h-3 w-3" /> Apply
                           </Button>
                         </Link>
-                        <ShareJobButton jobId={row.job.id} testIdPrefix="btn-share-saved-job" />
+                        <ShareJobButton jobId={row.job.id} jobTitle={row.job.title} testIdPrefix="btn-share-saved-job" />
                         <Button
                           size="icon"
                           variant="ghost"

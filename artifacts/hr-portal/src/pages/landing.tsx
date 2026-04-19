@@ -13,6 +13,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs";
+import { shareJob } from "@/lib/share";
 
 const WORK_TYPE_LABELS: Record<string, string> = {
   full_time: "Full-time",
@@ -107,17 +108,22 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, 
     }
   };
 
-  const handleShare = (e: React.MouseEvent) => {
+  const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     const url = `${window.location.origin}/jobs/${job.id}`;
-    navigator.clipboard.writeText(url).then(() => {
+    const result = await shareJob({
+      url,
+      title: job.title,
+      text: `Check out this job: ${job.title}`,
+    });
+    if (result === "copied") {
       setCopied(true);
       toast({ title: "Link copied!" });
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      toast({ title: "Could not copy link", variant: "destructive" });
-    });
+    } else if (result === "error") {
+      toast({ title: "Could not share link", variant: "destructive" });
+    }
   };
 
   return (
@@ -224,7 +230,7 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, 
                     variant="ghost"
                     className="h-7 w-7 text-muted-foreground hover:text-primary"
                     onClick={handleShare}
-                    title="Copy link"
+                    title="Share job"
                     data-testid={`button-share-job-${job.id}`}
                   >
                     {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Share2 className="h-3.5 w-3.5" />}

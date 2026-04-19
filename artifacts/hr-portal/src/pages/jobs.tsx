@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
+import { DRAFT_KEY_PREFIX, isDraftExpired, draftRelativeTime } from "@/lib/draftKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
@@ -71,14 +72,6 @@ const SALARY_BANDS_JOBS = [
   { value: "gt_100k", label: "K100,000+", min: 100000 },
 ];
 
-function draftAgeLabel(savedAt: number): string {
-  const mins = Math.floor((Date.now() - savedAt) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 type ExtJob = Job & {
   employmentType?: string;
@@ -252,18 +245,27 @@ export default function JobsPage() {
   }, [filtered, sortKey, sortDir, deptMap]);
 
   const draftMap = useMemo(() => {
-    const map: Record<number, number> = {};
+    const map: Record<number, string> = {};
     try {
+      const keys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i) ?? "";
-        const m = key.match(/^job-draft-(\d+)$/);
-        if (m) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const parsed = JSON.parse(raw) as Record<string, unknown>;
-            if (typeof parsed._savedAt === "number") map[parseInt(m[1])] = parsed._savedAt;
-          }
+        const k = localStorage.key(i);
+        if (k) keys.push(k);
+      }
+      for (const key of keys) {
+        if (!key.startsWith(DRAFT_KEY_PREFIX)) continue;
+        const jobIdStr = key.slice(DRAFT_KEY_PREFIX.length);
+        const jobId = parseInt(jobIdStr, 10);
+        if (isNaN(jobId)) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw) as { savedAt?: string };
+        if (!parsed.savedAt) continue;
+        if (isDraftExpired(parsed.savedAt)) {
+          localStorage.removeItem(key);
+          continue;
         }
+        map[jobId] = parsed.savedAt;
       }
     } catch { /* ignore */ }
     return map;
@@ -324,7 +326,7 @@ export default function JobsPage() {
               </span>
               {draftSavedAt && (
                 <Badge variant="outline" className="text-xs py-0 gap-1 bg-amber-50 text-amber-700 border-amber-200 font-normal" data-testid={`badge-draft-age-${job.id}`}>
-                  Draft · {draftAgeLabel(draftSavedAt)}
+                  In progress · {draftRelativeTime(draftSavedAt)}
                 </Badge>
               )}
             </div>

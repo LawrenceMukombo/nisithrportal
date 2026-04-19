@@ -44,11 +44,12 @@ async function notifyApplicantOfClosingJob(params: {
   userId: number;
   candidateName: string;
   candidateEmail: string | null;
+  emailOptIn: boolean;
   jobId: number;
   jobTitle: string;
   closingDate: string;
 }): Promise<boolean> {
-  const { userId, candidateName, candidateEmail, jobId, jobTitle, closingDate } = params;
+  const { userId, candidateName, candidateEmail, emailOptIn, jobId, jobTitle, closingDate } = params;
   const daysLeft = daysUntil(closingDate);
   if (daysLeft < 0 || daysLeft > CLOSING_SOON_DAYS) return false;
 
@@ -79,7 +80,7 @@ async function notifyApplicantOfClosingJob(params: {
     message: `Saved job "${jobTitle}" ${closingPhrase} (job #${jobId}). Apply before the closing date.`,
   });
 
-  if (candidateEmail) {
+  if (candidateEmail && emailOptIn) {
     await sendSavedJobClosingEmail(candidateEmail, candidateName, jobTitle, jobId, daysLeft, closingDate);
   }
   return true;
@@ -104,9 +105,11 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
         userId: candidatesTable.userId,
         candidateName: candidatesTable.name,
         candidateEmail: candidatesTable.email,
+        emailOptIn: usersTable.emailSavedJobClosing,
       })
       .from(savedJobsTable)
       .innerJoin(candidatesTable, eq(savedJobsTable.applicantId, candidatesTable.id))
+      .leftJoin(usersTable, eq(candidatesTable.userId, usersTable.id))
       .innerJoin(
         jobsTable,
         and(
@@ -125,6 +128,7 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
         userId: row.userId,
         candidateName: row.candidateName,
         candidateEmail: row.candidateEmail,
+        emailOptIn: row.emailOptIn ?? true,
         jobId: row.jobId,
         jobTitle: row.jobTitle,
         closingDate: row.closingDate,
@@ -239,7 +243,7 @@ router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), asyn
           .from(candidatesTable)
           .where(eq(candidatesTable.id, candidateId));
         const [u] = await db
-          .select({ id: usersTable.id })
+          .select({ id: usersTable.id, emailOptIn: usersTable.emailSavedJobClosing })
           .from(usersTable)
           .where(eq(usersTable.id, userId));
         if (cand && u) {
@@ -247,6 +251,7 @@ router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), asyn
             userId: u.id,
             candidateName: cand.name,
             candidateEmail: cand.email,
+            emailOptIn: u.emailOptIn,
             jobId: job.id,
             jobTitle: job.title,
             closingDate: job.closingDate!,

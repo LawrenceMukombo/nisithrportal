@@ -203,6 +203,48 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
   });
 });
 
+router.get("/auth/me/preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const [user] = await db
+    .select({ emailSavedJobClosing: usersTable.emailSavedJobClosing })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.user!.userId));
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ emailSavedJobClosing: user.emailSavedJobClosing });
+});
+
+router.patch("/auth/me/preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const schema = z.object({
+    emailSavedJobClosing: z.boolean().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    return;
+  }
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.emailSavedJobClosing !== undefined) {
+    updates.emailSavedJobClosing = parsed.data.emailSavedJobClosing;
+  }
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No preferences provided" });
+    return;
+  }
+  const [updated] = await db
+    .update(usersTable)
+    .set(updates)
+    .where(eq(usersTable.id, req.user!.userId))
+    .returning({ emailSavedJobClosing: usersTable.emailSavedJobClosing });
+  if (!updated) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  logger.info({ userId: req.user!.userId, updates }, "auth/me/preferences: applicant preferences updated");
+  res.json({ emailSavedJobClosing: updated.emailSavedJobClosing });
+});
+
 router.patch("/auth/me/email", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
   const schema = z.object({
     newEmail: z.string().email("Enter a valid email address"),

@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Info, Mail } from "lucide-react";
+import { Bell, Info, Mail } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { isStaffDomain } from "@/lib/emailDomain";
@@ -24,6 +26,74 @@ export default function AccountPage() {
   const { user, updateEmail } = useAuth();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
+  const [emailSavedJobClosing, setEmailSavedJobClosing] = useState<boolean>(true);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getToken();
+        const res = await fetch("/api/auth/me/preferences", {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setEmailSavedJobClosing(Boolean(data.emailSavedJobClosing));
+        }
+      } catch {
+        // ignore — leave default
+      } finally {
+        if (!cancelled) setPrefsLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const updateClosingEmailPref = async (next: boolean) => {
+    const previous = emailSavedJobClosing;
+    setEmailSavedJobClosing(next);
+    setPrefsSaving(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/auth/me/preferences", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ emailSavedJobClosing: next }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        setEmailSavedJobClosing(previous);
+        const data = await res.json().catch(() => ({}));
+        toast({
+          title: "Could not save preference",
+          description: data.error ?? "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: next ? "Email alerts on" : "Email alerts off",
+        description: next
+          ? "You'll get an email when a saved job is closing soon."
+          : "You'll only see closing-soon alerts in the portal.",
+      });
+    } catch {
+      setEmailSavedJobClosing(previous);
+      toast({
+        title: "Could not save preference",
+        description: "Unable to reach the server. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -72,6 +142,37 @@ export default function AccountPage() {
           <h1 className="text-2xl font-bold text-foreground">My Account</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage your account details.</p>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bell className="h-4 w-4" />
+              Email Notifications
+            </CardTitle>
+            <CardDescription>
+              Choose which alerts you want to receive by email. In-app notifications stay on either way.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="pref-saved-job-closing" className="text-sm font-medium">
+                  Email me when a saved job is closing soon
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  We'll still show closing-soon alerts in your notifications panel.
+                </p>
+              </div>
+              <Switch
+                id="pref-saved-job-closing"
+                checked={emailSavedJobClosing}
+                onCheckedChange={updateClosingEmailPref}
+                disabled={!prefsLoaded || prefsSaving}
+                data-testid="switch-email-saved-job-closing"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

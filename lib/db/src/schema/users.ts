@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { agenciesTable } from "./agencies";
@@ -12,6 +12,7 @@ export const usersTable = pgTable("users", {
   roleId: integer("role_id").references(() => rolesTable.id),
   agencyId: integer("agency_id").references(() => agenciesTable.id),
   status: text("status").notNull().default("active"),
+  emailSavedJobClosing: boolean("email_saved_job_closing").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

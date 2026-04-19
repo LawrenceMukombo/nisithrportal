@@ -31,7 +31,7 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
-import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
+import { createNotification, getHrOfficerIds, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency, setObjectAclPolicy } from "../lib/objectAcl";
@@ -1509,6 +1509,21 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
   const toNotify = stalledApps.filter((a) => !recentlyNotifiedAppIds.has(a.id));
   if (toNotify.length === 0) { res.json({ notified: 0 }); return; }
 
+  // Look up the hiring manager (job creator) for each stalled application's job
+  // so we can notify them in addition to HR officers.
+  const stalledJobIds = Array.from(new Set(toNotify.map((a) => a.jobId).filter((id): id is number => id != null)));
+  const jobOwners = stalledJobIds.length > 0
+    ? await db
+        .select({ id: jobsTable.id, createdBy: jobsTable.createdBy })
+        .from(jobsTable)
+        .where(inArray(jobsTable.id, stalledJobIds))
+    : [];
+  const jobOwnerById = new Map<number, number | null>(jobOwners.map((j) => [j.id, j.createdBy]));
+
+  // Resolve HR officer recipients once so we can deduplicate against any
+  // hiring manager that also happens to hold the HR officer role.
+  const hrOfficerIds = await getHrOfficerIds(agencyId);
+
   let notifiedCount = 0;
   for (const app of toNotify) {
     const threshold = staleThresholds[app.status ?? ""] ?? 7;
@@ -1516,7 +1531,14 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
     const entryTime = entry?.changedAt ? new Date(entry.changedAt).getTime() : (app.createdAt ? new Date(app.createdAt).getTime() : now);
     const days = Math.max(0, Math.floor((now - entryTime) / (1000 * 60 * 60 * 24)));
     const message = `Application #${app.id} has been in "${app.status}" for ${days} day${days !== 1 ? "s" : ""} (threshold: ${threshold}d). Please review.`;
-    await notifyHrOfficers(agencyId, "application_stalled", message);
+    const recipients = new Set<number>(hrOfficerIds);
+    const hiringManagerId = app.jobId != null ? jobOwnerById.get(app.jobId) ?? null : null;
+    if (hiringManagerId != null) recipients.add(hiringManagerId);
+    await Promise.all(
+      Array.from(recipients).map((userId) =>
+        createNotification({ userId, type: "application_stalled", message }),
+      ),
+    );
     notifiedCount++;
   }
 

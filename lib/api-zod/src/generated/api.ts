@@ -1207,6 +1207,15 @@ export const UpdateApplicationStatusBody = zod.object({
   score: zod.string().nullish(),
 });
 
+export const BulkUpdateApplicationStatusBody = zod.object({
+  ids: zod.array(zod.number().int().positive()).min(1).max(5000),
+  status: zod.enum(["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn", "onboarding"]),
+});
+
+export const BulkUpdateApplicationStatusResponse = zod.object({
+  updated: zod.number(),
+});
+
 export const UpdateApplicationStatusResponse = zod.object({
   id: zod.number(),
   jobId: zod.number(),

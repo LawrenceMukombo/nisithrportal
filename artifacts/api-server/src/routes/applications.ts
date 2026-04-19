@@ -26,6 +26,7 @@ import {
   GetApplicationParams,
   UpdateApplicationStatusParams,
   UpdateApplicationStatusBody,
+  BulkUpdateApplicationStatusBody,
 } from "@workspace/api-zod";
 import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
@@ -805,6 +806,104 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
   res.json({ ...application, statusHistory });
 });
 
+// PATCH /applications/bulk-status — atomically update status for a batch of applications.
+// Accepts { ids: number[], status: string } and returns { updated: number }.
+// Uses a single transaction to avoid dozens of individual API calls for bulk actions.
+router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const body = BulkUpdateApplicationStatusBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const { ids, status } = body.data;
+  const agencyId = getTenantAgencyId(req);
+
+  // Fetch existing records to validate tenant access and detect status changes.
+  const existing = await db
+    .select({
+      id: applicationsTable.id,
+      status: applicationsTable.status,
+      candidateId: applicationsTable.candidateId,
+      jobAgencyId: jobsTable.agencyId,
+    })
+    .from(applicationsTable)
+    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(inArray(applicationsTable.id, ids));
+
+  // Filter to only applications this caller's agency owns (when a tenant context exists).
+  const accessible = agencyId != null
+    ? existing.filter((a) => a.jobAgencyId === agencyId)
+    : existing;
+
+  if (accessible.length === 0) {
+    res.json({ updated: 0 });
+    return;
+  }
+
+  const changedApps = accessible.filter((a) => a.status !== status);
+
+  if (changedApps.length === 0) {
+    res.json({ updated: 0 });
+    return;
+  }
+
+  const changedIds = changedApps.map((a) => a.id);
+
+  // Perform update + history inserts in a single transaction.
+  // Only touch rows where status actually differs to avoid unnecessary writes.
+  await db.transaction(async (tx) => {
+    await tx.update(applicationsTable)
+      .set({ status })
+      .where(inArray(applicationsTable.id, changedIds));
+
+    await tx.insert(applicationStatusHistoryTable).values(
+      changedApps.map((a) => ({
+        applicationId: a.id,
+        fromStatus: a.status,
+        status,
+      }))
+    );
+  });
+
+  // Fire applicant notifications for each changed application (non-fatal).
+  {
+    const statusLabel: Record<string, string> = {
+      screening: "is being reviewed",
+      interview: "has advanced to interview stage",
+      offer: "has received a job offer",
+      hired: "has been accepted — congratulations!",
+      onboarding: "has started the onboarding process — welcome to the team!",
+      rejected: "was not successful this time",
+      withdrawn: "has been withdrawn",
+    };
+    const label = statusLabel[status] ?? `has been updated to "${status}"`;
+    const candidateIds = [...new Set(changedApps.map((a) => a.candidateId).filter((id): id is number => id !== null))];
+    try {
+      const candidates = candidateIds.length > 0
+        ? await db.select({ id: candidatesTable.id, email: candidatesTable.email })
+            .from(candidatesTable)
+            .where(inArray(candidatesTable.id, candidateIds))
+        : [];
+      await Promise.allSettled(
+        candidates.map(async (c) => {
+          if (!c.email) return;
+          const userId = await getUserIdByEmail(c.email);
+          if (!userId) return;
+          await createNotification({
+            userId,
+            type: "application_status",
+            message: `Your application ${label}.`,
+          });
+        })
+      );
+    } catch (err) {
+      console.error("[applications] Bulk notification trigger failed:", err);
+    }
+  }
+
+  res.json({ updated: changedApps.length });
+});
+
 router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const params = UpdateApplicationStatusParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {
@@ -937,44 +1036,6 @@ router.get("/applications/:id/documents", authMiddleware, requireRole("admin", "
     .where(eq(applicationDocumentsTable.applicationId, appId))
     .orderBy(asc(applicationDocumentsTable.createdAt));
   res.json(docs);
-});
-
-// POST /applications/bulk-status — update status of multiple applications at once (#67)
-router.post("/applications/bulk-status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
-  const body = z.object({
-    ids: z.array(z.number().int().positive()).min(1).max(5000),
-    status: z.string().min(1),
-  }).safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: "ids (array) and status (string) required" }); return; }
-
-  const { ids, status } = body.data;
-  const ALLOWED_STATUSES = ["applied", "screening", "interview", "offer", "hired", "rejected", "onboarding"];
-  if (!ALLOWED_STATUSES.includes(status)) { res.status(400).json({ error: `Invalid status. Allowed: ${ALLOWED_STATUSES.join(", ")}` }); return; }
-
-  const userAgencyId = getTenantAgencyId(req);
-  const apps = await db
-    .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId, status: applicationsTable.status })
-    .from(applicationsTable)
-    .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
-    .where(inArray(applicationsTable.id, ids));
-
-  const allowedIds = apps
-    .filter(a => userAgencyId === null || a.agencyId === userAgencyId)
-    .filter(a => !["rejected", "withdrawn"].includes(a.status ?? ""))
-    .map(a => a.id);
-
-  if (allowedIds.length === 0) { res.json({ updated: 0 }); return; }
-
-  await db
-    .update(applicationsTable)
-    .set({ status, updatedAt: new Date() })
-    .where(inArray(applicationsTable.id, allowedIds));
-
-  await db.insert(applicationStatusHistoryTable).values(
-    allowedIds.map(id => ({ applicationId: id, status, changedBy: req.user?.id ?? null }))
-  );
-
-  res.json({ updated: allowedIds.length });
 });
 
 // POST /applications/:id/documents — upload a document (e.g. signed contract) for an application (#58)

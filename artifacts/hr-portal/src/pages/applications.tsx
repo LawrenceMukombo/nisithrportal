@@ -129,7 +129,7 @@ export default function ApplicationsPage() {
 
   const handleBulkAction = useCallback(async (ids: number[], action: string) => {
     const res = await fetch("/api/applications/bulk-status", {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ ids, status: action }),

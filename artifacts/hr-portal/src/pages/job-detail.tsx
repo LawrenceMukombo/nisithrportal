@@ -4,7 +4,7 @@ import {
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
   Monitor, CheckCircle2, Medal, Trophy,
 } from "lucide-react";
-import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
+import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
   useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey,
   useGetAiScores, getGetAiScoresQueryKey,
@@ -83,16 +83,26 @@ function QuickMoveButton({
   const { toast } = useToast();
   const update = useUpdateApplicationStatus();
 
-  const alreadyMoved = currentStatus !== "applied";
-  const stageLabel = alreadyMoved
-    ? (WORKFLOW_STAGES.find((s) => s.status === currentStatus)?.label ?? currentStatus)
-    : null;
+  const TARGET_STATUS = "screening";
+  const targetIndex = WORKFLOW_STAGES.findIndex((s) => s.status === TARGET_STATUS);
+  const currentIndex = WORKFLOW_STAGES.findIndex((s) => s.status === currentStatus);
+  const isTerminal = TERMINAL_STATUSES.includes(currentStatus);
+  const alreadyAtOrPast = currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
+  const stageLabel =
+    WORKFLOW_STAGES.find((s) => s.status === currentStatus)?.label ?? currentStatus;
+  const disabled = alreadyAtOrPast || isTerminal;
+  const tooltip = alreadyAtOrPast
+    ? "Already in this stage"
+    : isTerminal
+    ? `Candidate is ${stageLabel}`
+    : "Move to CV Screening";
 
   const handleMove = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled) return;
     try {
-      await update.mutateAsync({ id: applicationId, data: { status: "screening" } });
+      await update.mutateAsync({ id: applicationId, data: { status: TARGET_STATUS } });
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() }),
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey({ job_id: jobId }) }),
@@ -103,30 +113,22 @@ function QuickMoveButton({
     }
   };
 
-  if (alreadyMoved) {
-    return (
-      <span
-        className="h-6 text-xs px-2 text-muted-foreground shrink-0 flex items-center gap-0.5 whitespace-nowrap"
-        title={`Already in ${stageLabel}`}
-        data-testid={`btn-move-review-${applicationId}`}
-      >
-        ✓ {stageLabel}
-      </span>
-    );
-  }
-
   return (
     <Button
       size="sm"
       variant="outline"
       className="h-6 text-xs px-2 gap-1 shrink-0"
       onClick={handleMove}
-      disabled={update.isPending}
+      disabled={disabled || update.isPending}
       data-testid={`btn-move-review-${applicationId}`}
-      title="Move to CV Screening"
+      title={tooltip}
     >
       {update.isPending ? (
         <Loader2 className="h-3 w-3 animate-spin" />
+      ) : alreadyAtOrPast ? (
+        <>✓ {stageLabel}</>
+      ) : isTerminal ? (
+        stageLabel
       ) : (
         "→ Review"
       )}

@@ -510,6 +510,7 @@ export default function JobsPage() {
           getRowId={(j) => j.id}
           isLoading={jobs.isLoading}
           exportFilename="jobs"
+          tableId="jobs"
           data-testid="table-jobs"
           emptyState={
             hasFilters ? (

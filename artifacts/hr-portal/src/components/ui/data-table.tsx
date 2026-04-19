@@ -54,6 +54,12 @@ type DataTableProps<T> = {
    * the select-all-results mode is cleared so the banner doesn't bleed across filter changes.
    */
   filterToken?: string;
+  /**
+   * Stable identifier for this table (e.g. "applications", "employees"). When provided,
+   * the user's column visibility choices are persisted to localStorage under
+   * `dt-columns-${tableId}` and restored on next mount.
+   */
+  tableId?: string;
   "data-testid"?: string;
   rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>;
 };
@@ -97,6 +103,7 @@ export function DataTable<T>({
   exportFilename = "export",
   totalMatchingResults,
   filterToken,
+  tableId,
   "data-testid": testId,
   rowProps,
 }: DataTableProps<T>) {
@@ -118,7 +125,48 @@ export function DataTable<T>({
     () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
     [columns]
   );
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(defaultHiddenKeys);
+  const storageKey = tableId ? `dt-columns-${tableId}` : null;
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => {
+    if (!storageKey || typeof window === "undefined") return defaultHiddenKeys;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return defaultHiddenKeys;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Filter to keys that still exist on the table to avoid stale entries surviving
+        // a column rename/removal.
+        const validKeys = new Set(columns.map((c) => c.key));
+        return new Set((parsed as unknown[]).filter((k): k is string => typeof k === "string" && validKeys.has(k)));
+      }
+    } catch {
+      // Corrupt entry — fall back to defaults.
+    }
+    return defaultHiddenKeys;
+  });
+
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined") return;
+    // When the user's choice matches the table's defaults, remove the saved entry
+    // entirely rather than writing the defaults. This keeps "Reset to defaults"
+    // truly clearing storage, and lets future changes to defaultHidden flow through
+    // for users who haven't explicitly customized anything.
+    const matchesDefaults =
+      hiddenKeys.size === defaultHiddenKeys.size &&
+      Array.from(hiddenKeys).every((k) => defaultHiddenKeys.has(k));
+    try {
+      if (matchesDefaults) {
+        window.localStorage.removeItem(storageKey);
+      } else {
+        window.localStorage.setItem(storageKey, JSON.stringify(Array.from(hiddenKeys)));
+      }
+    } catch {
+      // Storage may be unavailable (private mode, quota) — silently ignore.
+    }
+  }, [hiddenKeys, storageKey, defaultHiddenKeys]);
+
+  function resetColumnsToDefaults() {
+    setHiddenKeys(new Set(defaultHiddenKeys));
+  }
 
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hiddenKeys.has(c.key)),
@@ -337,14 +385,18 @@ export function DataTable<T>({
                   {col.label}
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
               {hiddenKeys.size > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setHiddenKeys(new Set())}>
-                    Show all
-                  </DropdownMenuItem>
-                </>
+                <DropdownMenuItem onSelect={() => setHiddenKeys(new Set())}>
+                  Show all
+                </DropdownMenuItem>
               )}
+              <DropdownMenuItem
+                onSelect={resetColumnsToDefaults}
+                data-testid="button-reset-columns"
+              >
+                Reset to defaults
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 

@@ -216,6 +216,7 @@ export default function ContractsPage() {
           getRowId={(c) => c.id}
           isLoading={isLoading}
           exportFilename="contracts"
+          tableId="contracts"
           data-testid="table-contracts"
           emptyState={
             <div className="py-4">

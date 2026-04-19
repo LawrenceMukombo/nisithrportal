@@ -339,6 +339,7 @@ export default function ApplicationsPage() {
           exportFilename="applications"
           totalMatchingResults={totalMatchingResults}
           filterToken={countParams}
+          tableId="applications"
           data-testid="table-applications"
           emptyState="No applications found"
         />

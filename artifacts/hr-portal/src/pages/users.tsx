@@ -974,6 +974,7 @@ export default function UsersPage() {
                 bulkActions={BULK_ACTIONS}
                 onBulkAction={handleBulkAction}
                 exportFilename="users"
+                tableId="users"
                 data-testid="table-users"
                 emptyState="No users found"
                 rowProps={(u) => ({

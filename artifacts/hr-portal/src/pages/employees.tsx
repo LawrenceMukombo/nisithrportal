@@ -196,6 +196,7 @@ export default function EmployeesPage() {
           getRowId={(e) => e.id}
           isLoading={isLoading}
           exportFilename="employees"
+          tableId="employees"
           data-testid="table-employees"
           emptyState={
             <div className="py-4">

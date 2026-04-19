@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { AppLayout } from "@/layouts/app-layout";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { ApplyWizard, DraftBanner, type ScreeningQuestion } from "@/components/apply-wizard";
@@ -126,13 +127,44 @@ function QuickMoveButton({
   const allDisabled = isTerminal || targetsWithMeta.every((t) => t.alreadyAtOrPast);
 
   const moveTo = async (status: string, label: string) => {
+    const previousStatus = currentStatus;
+    const previousLabel =
+      WORKFLOW_STAGES.find((s) => s.status === previousStatus)?.label ?? previousStatus;
     try {
       await update.mutateAsync({ id: applicationId, data: { status } });
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() }),
         qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey({ job_id: jobId }) }),
       ]);
-      toast({ title: `${candidateName} moved to ${label}` });
+
+      const undo = async () => {
+        try {
+          await update.mutateAsync({ id: applicationId, data: { status: previousStatus } });
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() }),
+            qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey({ job_id: jobId }) }),
+          ]);
+          toast({ title: `Reverted ${candidateName} to ${previousLabel}` });
+        } catch {
+          toast({ title: "Failed to undo move", variant: "destructive" });
+        }
+      };
+
+      toast({
+        title: `${candidateName} moved to ${label}`,
+        duration: 6000,
+        action: (
+          <ToastAction
+            altText={`Undo move to ${label}`}
+            onClick={() => {
+              void undo();
+            }}
+            data-testid={`btn-undo-move-${applicationId}`}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
     } catch {
       toast({ title: "Failed to move candidate", variant: "destructive" });
     }

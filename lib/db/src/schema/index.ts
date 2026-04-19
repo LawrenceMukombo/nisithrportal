@@ -14,3 +14,4 @@ export * from "./notifications";
 export * from "./integrations";
 export * from "./password_reset_tokens";
 export * from "./audit_log";
+export * from "./saved_jobs";

@@ -37,7 +37,7 @@ function downloadJobsCSV(jobs: Job[], deptMap: Record<number, string>) {
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "secondary",
-  open: "secondary",
+  open: "default",
   published: "default",
   closed: "outline",
 };
@@ -133,7 +133,7 @@ function JobActionsCell({ job }: { job: ExtJob }) {
           <CheckCircle className="h-3.5 w-3.5" />
         </Button>
       )}
-      {job.status === "published" && (
+      {(job.status === "published" || job.status === "open") && (
         <Button
           variant="ghost"
           size="icon"
@@ -141,6 +141,7 @@ function JobActionsCell({ job }: { job: ExtJob }) {
           onClick={() => closeMutation.mutate({ id: job.id })}
           disabled={closeMutation.isPending}
           data-testid={`button-close-job-${job.id}`}
+          title="Close job"
         >
           <XCircle className="h-3.5 w-3.5" />
         </Button>

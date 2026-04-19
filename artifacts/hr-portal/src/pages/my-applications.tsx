@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSavedJobs, useUnsaveJob } from "@/hooks/use-saved-jobs";
+import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 
@@ -81,6 +83,9 @@ export default function MyApplicationsPage() {
   const queryClient = useQueryClient();
   const { data: allApplications = [], isLoading } = useGetMyApplications();
   const { data: jobs = [] } = useGetJobs({});
+  const { data: savedJobs = [], isLoading: savedJobsLoading } = useSavedJobs(true);
+  const unsaveJob = useUnsaveJob();
+  const { toast } = useToast();
 
   useEffect(() => {
     setDrafts(scanLocalDrafts());
@@ -388,6 +393,79 @@ export default function MyApplicationsPage() {
             })}
           </div>
         )}
+
+        <div className="pt-2" data-testid="saved-jobs-section">
+          <h2 className="text-base font-semibold flex items-center gap-2 mb-3">
+            <Bookmark className="h-4 w-4 text-primary" />
+            Saved Jobs
+            {savedJobs.length > 0 && (
+              <span className="text-xs font-normal text-muted-foreground">({savedJobs.length})</span>
+            )}
+          </h2>
+          {savedJobsLoading ? (
+            <div className="space-y-2">
+              {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+            </div>
+          ) : savedJobs.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <Bookmark className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-40" />
+                <p className="text-sm text-muted-foreground">No saved jobs yet.</p>
+                <Link href="/">
+                  <span className="text-primary hover:underline text-sm cursor-pointer mt-1 block">Browse vacancies to save jobs →</span>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {savedJobs.map((row) => (
+                <Card key={row.savedJobId} className="hover:shadow-md transition-shadow" data-testid={`card-saved-job-${row.job.id}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <Link href={`/jobs/${row.job.id}`}>
+                          <span className="font-medium text-sm hover:text-primary transition-colors cursor-pointer">{row.job.title}</span>
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
+                          {row.job.province && (
+                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.job.province}</span>
+                          )}
+                          {row.job.employmentType && (
+                            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" />{row.job.employmentType.replace(/_/g, " ")}</span>
+                          )}
+                          {row.job.closingDate && (
+                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Closes {new Date(row.job.closingDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Link href={`/jobs/${row.job.id}?apply=1`}>
+                          <Button size="sm" className="h-7 text-xs gap-1" data-testid={`btn-apply-saved-${row.job.id}`}>
+                            <ArrowRight className="h-3 w-3" /> Apply
+                          </Button>
+                        </Link>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          title="Remove from saved"
+                          data-testid={`btn-unsave-job-${row.job.id}`}
+                          disabled={unsaveJob.isPending}
+                          onClick={() => unsaveJob.mutate(row.job.id, {
+                            onSuccess: () => toast({ title: "Job removed from saved" }),
+                            onError: () => toast({ title: "Failed to remove saved job", variant: "destructive" }),
+                          })}
+                        >
+                          <BookmarkX className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <AlertDialog

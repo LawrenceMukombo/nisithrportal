@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Briefcase, ChevronRight, Calendar, Building2, MapPin, Clock, ArrowRight } from "lucide-react";
+import { Search, Briefcase, ChevronRight, Calendar, Building2, MapPin, Clock, ArrowRight, Bookmark, BookmarkCheck, Share2, Check } from "lucide-react";
 import { useGetJobs, useGetDepartments, getGetJobsQueryKey, getGetDepartmentsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/auth-context";
+import { useToast } from "@/hooks/use-toast";
+import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs";
 
 const WORK_TYPE_LABELS: Record<string, string> = {
   full_time: "Full-time",
@@ -56,13 +58,22 @@ const PNG_PROVINCES = [
   "Bougainville (AROB)",
 ];
 
-function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick }: {
+function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick, savedJobIds, isAuthenticated, canBookmark }: {
   job: Job;
   deptName?: string;
   deptAccent: string;
   onLocationClick?: (province: string) => void;
   onWorkTypeClick?: (workType: string) => void;
+  savedJobIds?: number[];
+  isAuthenticated: boolean;
+  canBookmark: boolean;
 }) {
+  const [, setLocationHref] = useLocation();
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const saveJob = useSaveJob();
+  const unsaveJob = useUnsaveJob();
+
   const daysLeft = job.closingDate
     ? Math.ceil((new Date(job.closingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
@@ -72,106 +83,168 @@ function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick }
     ? daysLeft < 0 ? "Closed" : daysLeft === 0 ? "Closes today" : `${daysLeft}d left`
     : null;
 
+  const isSaved = savedJobIds?.includes(job.id) ?? false;
+
+  const handleSaveToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!isAuthenticated) {
+      setLocationHref(`/login?returnTo=/jobs/${job.id}`);
+      return;
+    }
+    if (isSaved) {
+      unsaveJob.mutate(job.id, {
+        onSuccess: () => toast({ title: "Job removed from saved" }),
+        onError: () => toast({ title: "Failed to unsave job", variant: "destructive" }),
+      });
+    } else {
+      saveJob.mutate(job.id, {
+        onSuccess: () => toast({ title: "Job saved!" }),
+        onError: () => toast({ title: "Failed to save job", variant: "destructive" }),
+      });
+    }
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const url = `${window.location.origin}/jobs/${job.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      toast({ title: "Link copied!" });
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      toast({ title: "Could not copy link", variant: "destructive" });
+    });
+  };
+
   return (
-    <Card className="group hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 overflow-hidden border border-border" data-testid={`card-job-${job.id}`}>
-      <div className={`h-1 w-full ${deptAccent}`} />
-      <CardContent className="p-5">
-        <div className="flex items-start gap-3">
-          <div className={`${deptAccent} rounded-lg p-2 shrink-0 mt-0.5`}>
-            <Briefcase className="h-4 w-4 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <Link href={`/jobs/${job.id}`}>
-              <h3 className="font-semibold text-sm leading-snug hover:text-primary transition-colors cursor-pointer group-hover:text-primary" data-testid={`link-job-title-${job.id}`}>
+    <div className="relative group" data-testid={`card-job-${job.id}`}>
+      <Link href={`/jobs/${job.id}`} className="absolute inset-0 z-0" aria-label={`View ${job.title}`} />
+      <Card className="hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 overflow-hidden border border-border pointer-events-none">
+        <div className={`h-1 w-full ${deptAccent}`} />
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <div className={`${deptAccent} rounded-lg p-2 shrink-0 mt-0.5`}>
+              <Briefcase className="h-4 w-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-sm leading-snug group-hover:text-primary transition-colors" data-testid={`link-job-title-${job.id}`}>
                 {job.title}
               </h3>
-            </Link>
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {deptName && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Building2 className="h-3 w-3" /> {deptName}
-                </span>
-              )}
-              {(() => {
-                const province = (job as Job & { province?: string; location?: string }).province
-                  || (job as Job & { location?: string }).location;
-                if (!province) return null;
-                return (
-                  <Badge
-                    variant="outline"
-                    className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 ${onLocationClick ? "cursor-pointer hover:bg-teal-100 transition-colors" : ""}`}
-                    data-testid={`badge-province-${job.id}`}
-                    onClick={onLocationClick ? () => onLocationClick(province) : undefined}
-                    title={onLocationClick ? `Filter by ${province}` : undefined}
-                  >
-                    <MapPin className="h-3 w-3" />{province}
-                  </Badge>
-                );
-              })()}
-              {job.closingDate && closingLabel && (
-                <span className={`inline-flex items-center gap-1 text-xs font-medium ${urgency}`}>
-                  <Clock className="h-3 w-3" /> {closingLabel}
-                </span>
-              )}
-            </div>
-            {job.description && (
-              <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">{job.description}</p>
-            )}
-            <div className="flex items-center justify-between mt-3">
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {deptName && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Building2 className="h-3 w-3" /> {deptName}
+                  </span>
+                )}
                 {(() => {
-                  const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType ??
-                    (job as Job & { workType?: string }).workType;
-                  if (!empType) return null;
-                  const label = WORK_TYPE_LABELS[empType] ?? empType;
-                  const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
-                  const clickable = onWorkTypeClick;
+                  const province = (job as Job & { province?: string; location?: string }).province
+                    || (job as Job & { location?: string }).location;
+                  if (!province) return null;
                   return (
                     <Badge
                       variant="outline"
-                      className={`text-xs py-0 gap-1 ${cls} ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
-                      data-testid={`badge-work-type-${job.id}`}
-                      onClick={clickable ? () => onWorkTypeClick!(empType) : undefined}
-                      title={clickable ? `Filter by ${label}` : undefined}
+                      className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 pointer-events-auto ${onLocationClick ? "cursor-pointer hover:bg-teal-100 transition-colors" : ""}`}
+                      data-testid={`badge-province-${job.id}`}
+                      onClick={onLocationClick ? (e) => { e.stopPropagation(); e.preventDefault(); onLocationClick(province); } : undefined}
+                      title={onLocationClick ? `Filter by ${province}` : undefined}
                     >
-                      <Briefcase className="h-3 w-3" />{label}
+                      <MapPin className="h-3 w-3" />{province}
                     </Badge>
                   );
                 })()}
-                {(() => {
-                  const arr = (job as Job & { workArrangement?: string }).workArrangement;
-                  if (!arr) return null;
-                  const label = { remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" }[arr] ?? arr;
-                  return <Badge variant="outline" className="text-xs py-0">{label}</Badge>;
-                })()}
-                {(() => {
-                  const j = job as Job & { salaryMin?: number; salaryMax?: number; salaryCurrency?: string; salaryVisibility?: string };
-                  if (j.salaryVisibility === "public" && (j.salaryMin || j.salaryMax)) {
-                    return (
-                      <Badge variant="outline" className="text-xs py-0 text-emerald-700 border-emerald-300 bg-emerald-50">
-                        {j.salaryCurrency ?? "PGK"} {(j.salaryMin ?? 0).toLocaleString()}{j.salaryMax ? `–${j.salaryMax.toLocaleString()}` : "+"}
-                      </Badge>
-                    );
-                  }
-                  if (j.salaryVisibility === "internal") {
-                    return <Badge variant="outline" className="text-xs py-0">Salary on request</Badge>;
-                  }
-                  return null;
-                })()}
-                {job.closingDate && daysLeft !== null && daysLeft <= 14 && daysLeft >= 0 && (
-                  <Badge variant="outline" className="text-xs py-0 text-amber-700 border-amber-300 bg-amber-50">Closing soon</Badge>
+                {job.closingDate && closingLabel && (
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${urgency}`}>
+                    <Clock className="h-3 w-3" /> {closingLabel}
+                  </span>
                 )}
               </div>
-              <Link href={`/jobs/${job.id}`}>
-                <Button size="sm" className="h-7 text-xs gap-1 group-hover:gap-2 transition-all" data-testid={`button-view-job-${job.id}`}>
-                  View & Apply <ArrowRight className="h-3 w-3" />
-                </Button>
-              </Link>
+              {job.description && (
+                <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">{job.description}</p>
+              )}
+              <div className="flex items-center justify-between mt-3">
+                <div className="flex gap-1.5 flex-wrap">
+                  {(() => {
+                    const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType ??
+                      (job as Job & { workType?: string }).workType;
+                    const label = empType ? (WORK_TYPE_LABELS[empType] ?? empType) : "Public Service";
+                    const cls = empType
+                      ? (WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200")
+                      : "bg-blue-50 text-blue-700 border-blue-200";
+                    const clickable = onWorkTypeClick && empType;
+                    return (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs py-0 gap-1 ${cls} pointer-events-auto ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                        data-testid={`badge-work-type-${job.id}`}
+                        onClick={clickable ? (e) => { e.stopPropagation(); e.preventDefault(); onWorkTypeClick!(empType!); } : undefined}
+                        title={clickable ? `Filter by ${label}` : undefined}
+                      >
+                        <Briefcase className="h-3 w-3" />{label}
+                      </Badge>
+                    );
+                  })()}
+                  {(() => {
+                    const arr = (job as Job & { workArrangement?: string }).workArrangement;
+                    if (!arr) return null;
+                    const label = { remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" }[arr] ?? arr;
+                    return <Badge variant="outline" className="text-xs py-0">{label}</Badge>;
+                  })()}
+                  {(() => {
+                    const j = job as Job & { salaryMin?: number; salaryMax?: number; salaryCurrency?: string; salaryVisibility?: string };
+                    if (j.salaryVisibility === "public" && (j.salaryMin || j.salaryMax)) {
+                      return (
+                        <Badge variant="outline" className="text-xs py-0 text-emerald-700 border-emerald-300 bg-emerald-50">
+                          {j.salaryCurrency ?? "PGK"} {(j.salaryMin ?? 0).toLocaleString()}{j.salaryMax ? `–${j.salaryMax.toLocaleString()}` : "+"}
+                        </Badge>
+                      );
+                    }
+                    if (j.salaryVisibility === "internal") {
+                      return <Badge variant="outline" className="text-xs py-0">Salary on request</Badge>;
+                    }
+                    return null;
+                  })()}
+                  {job.closingDate && daysLeft !== null && daysLeft <= 14 && daysLeft >= 0 && (
+                    <Badge variant="outline" className="text-xs py-0 text-amber-700 border-amber-300 bg-amber-50">Closing soon</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 pointer-events-auto">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    onClick={handleShare}
+                    title="Copy link"
+                    data-testid={`button-share-job-${job.id}`}
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Share2 className="h-3.5 w-3.5" />}
+                  </Button>
+                  {canBookmark && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className={`h-7 w-7 ${isSaved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                      onClick={handleSaveToggle}
+                      title={isSaved ? "Remove from saved" : "Save job"}
+                      data-testid={`button-save-job-${job.id}`}
+                      disabled={saveJob.isPending || unsaveJob.isPending}
+                    >
+                      {isSaved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <Bookmark className="h-3.5 w-3.5" />}
+                    </Button>
+                  )}
+                  <Button size="sm" className="h-7 text-xs gap-1 group-hover:gap-2 transition-all" data-testid={`button-view-job-${job.id}`} asChild>
+                    <Link href={`/jobs/${job.id}`}>
+                      View & Apply <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -212,6 +285,9 @@ export default function LandingPage() {
   const [salaryFilter, setSalaryFilter] = useState("all");
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
+  const { isApplicant } = useRole();
+  const canBookmark = !isAuthenticated || isApplicant;
+  const { data: savedJobIds } = useSavedJobIds(isApplicant);
 
   const jobs = useGetJobs(
     { status: "published" },
@@ -413,6 +489,9 @@ export default function LandingPage() {
                 deptAccent={job.departmentId ? (deptAccentMap[job.departmentId] ?? DEPT_ACCENT_COLORS[0]) : DEPT_ACCENT_COLORS[0]}
                 onLocationClick={setLocationFilter}
                 onWorkTypeClick={setWorkTypeFilter}
+                savedJobIds={savedJobIds}
+                isAuthenticated={isAuthenticated}
+                canBookmark={canBookmark}
               />
             ))}
           </div>

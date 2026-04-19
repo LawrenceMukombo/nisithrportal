@@ -18,6 +18,7 @@ import notificationsRouter from "./notifications";
 import integrationsRouter from "./integrations";
 import pdfRouter from "./pdf";
 import auditLogRouter from "./audit-log";
+import savedJobsRouter from "./saved-jobs";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(notificationsRouter);
 router.use(integrationsRouter);
 router.use(pdfRouter);
 router.use(auditLogRouter);
+router.use(savedJobsRouter);
 
 export default router;

@@ -489,7 +489,7 @@ export default function JobsPage() {
 
         <DataTable
           columns={columns}
-          rows={filtered}
+          rows={sortedFiltered}
           getRowId={(j) => j.id}
           isLoading={jobs.isLoading}
           exportFilename="jobs"

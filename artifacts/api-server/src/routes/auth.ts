@@ -93,7 +93,7 @@ router.post("/auth/applicant-register", async (req, res): Promise<void> => {
   const linked = await db
     .update(candidatesTable)
     .set({ userId: user.id })
-    .where(eq(candidatesTable.email, email))
+    .where(and(eq(candidatesTable.email, email), isNull(candidatesTable.userId)))
     .returning({ id: candidatesTable.id });
 
   if (linked.length > 0) {

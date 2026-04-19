@@ -90,23 +90,36 @@ function QuickMoveButton({
   const { toast } = useToast();
   const update = useUpdateApplicationStatus();
 
-  const MOVE_TARGETS: { status: string; label: string; shortLabel: string }[] = [
-    { status: "screening", label: "CV Screening",   shortLabel: "Review"    },
-    { status: "interview", label: "Interview",      shortLabel: "Interview" },
-    { status: "offer",     label: "Offer Extended", shortLabel: "Offer"     },
-  ];
+  const SHORT_LABELS: Record<string, string> = {
+    screening:        "Review",
+    assessment:       "Assessment",
+    interview:        "Interview",
+    evaluation:       "Evaluation",
+    offer:            "Offer",
+    background_check: "Hired",
+    onboarding:       "Onboarding",
+  };
 
   const currentIndex = WORKFLOW_STAGES.findIndex((s) => s.status === currentStatus);
   const isTerminal = TERMINAL_STATUSES.includes(currentStatus);
   const stageLabel =
     WORKFLOW_STAGES.find((s) => s.status === currentStatus)?.label ?? currentStatus;
 
-  const targetsWithMeta = MOVE_TARGETS.map((t) => {
-    const targetIndex = WORKFLOW_STAGES.findIndex((s) => s.status === t.status);
-    const alreadyAtOrPast =
-      currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
-    return { ...t, targetIndex, alreadyAtOrPast };
-  });
+  const targetsWithMeta = WORKFLOW_STAGES
+    .filter((s) => s.id !== "applied")
+    .map((s) => {
+      const targetIndex = WORKFLOW_STAGES.findIndex((x) => x.id === s.id);
+      const alreadyAtOrPast =
+        currentIndex >= 0 && targetIndex >= 0 && currentIndex >= targetIndex;
+      return {
+        status: s.status,
+        label: s.label,
+        shortLabel: SHORT_LABELS[s.id] ?? s.label,
+        stageId: s.id,
+        targetIndex,
+        alreadyAtOrPast,
+      };
+    });
 
   const defaultTarget =
     targetsWithMeta.find((t) => !t.alreadyAtOrPast) ?? targetsWithMeta[0];
@@ -199,13 +212,13 @@ function QuickMoveButton({
         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           {targetsWithMeta.map((t) => (
             <DropdownMenuItem
-              key={t.status}
+              key={t.stageId}
               disabled={t.alreadyAtOrPast || update.isPending}
               onSelect={() => {
                 if (t.alreadyAtOrPast) return;
                 void moveTo(t.status, t.label);
               }}
-              data-testid={`menu-move-${t.status}-${applicationId}`}
+              data-testid={`menu-move-${t.stageId}-${applicationId}`}
             >
               {t.alreadyAtOrPast ? `✓ ${t.label}` : `→ ${t.label}`}
             </DropdownMenuItem>

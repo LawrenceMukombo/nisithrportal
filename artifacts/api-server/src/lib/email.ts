@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
+import { signUnsubscribeToken } from "./unsubscribeToken";
 
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
@@ -85,14 +86,17 @@ export async function sendOfferLetterEmail(to: string, candidateName: string, po
   }
 }
 
-export async function sendSavedJobClosingEmail(to: string, candidateName: string, jobTitle: string, jobId: number, daysLeft: number, closingDate: string): Promise<void> {
+export async function sendSavedJobClosingEmail(to: string, candidateName: string, jobTitle: string, jobId: number, daysLeft: number, closingDate: string, userId: number): Promise<void> {
   const closingPhrase = daysLeft <= 0
     ? "closes today"
     : daysLeft === 1
       ? "closes tomorrow"
       : `closes in ${daysLeft} days`;
   const subject = `PNG NISIT HR Portal — Saved job ${closingPhrase}: ${jobTitle}`;
-  const text = `Dear ${candidateName},\n\nA job you saved, "${jobTitle}", ${closingPhrase} (${closingDate}). If you intend to apply, please submit your application before the closing date.\n\nView the vacancy: ${process.env.APP_BASE_URL ?? ""}/jobs/${jobId}\n\nRegards,\nPNG NISIT HR Division`;
+  const baseUrl = process.env.APP_BASE_URL ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
+  const unsubToken = signUnsubscribeToken(userId, "saved-job-closing");
+  const unsubscribeUrl = `${baseUrl}/api/auth/unsubscribe/saved-job-closing?token=${unsubToken}`;
+  const text = `Dear ${candidateName},\n\nA job you saved, "${jobTitle}", ${closingPhrase} (${closingDate}). If you intend to apply, please submit your application before the closing date.\n\nView the vacancy: ${baseUrl}/jobs/${jobId}\n\nRegards,\nPNG NISIT HR Division\n\n—\nUnsubscribe from these alerts: ${unsubscribeUrl}`;
   const html = `
     <div style="font-family:sans-serif;max-width:540px;margin:auto">
       <div style="background:#003082;padding:18px 24px">
@@ -104,12 +108,16 @@ export async function sendSavedJobClosingEmail(to: string, candidateName: string
         <p>A vacancy you saved, <strong>${jobTitle}</strong>, <strong>${closingPhrase}</strong> (${closingDate}).</p>
         <p>If you still intend to apply, please submit your application before the closing date.</p>
         <p style="margin:24px 0">
-          <a href="${process.env.APP_BASE_URL ?? ""}/jobs/${jobId}" style="background:#003082;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">
+          <a href="${baseUrl}/jobs/${jobId}" style="background:#003082;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">
             View vacancy
           </a>
         </p>
         <p style="color:#666;font-size:13px">You're receiving this because you saved this job in your applicant account.</p>
       </div>
+      <hr style="border:none;border-top:1px solid #eee"/>
+      <p style="color:#999;font-size:11px;padding:12px 24px;text-align:center">
+        <a href="${unsubscribeUrl}" style="color:#666;text-decoration:underline">Unsubscribe from these alerts</a>
+      </p>
     </div>
   `;
 
@@ -122,6 +130,10 @@ export async function sendSavedJobClosingEmail(to: string, candidateName: string
         subject,
         text,
         html,
+        headers: {
+          "List-Unsubscribe": `<${unsubscribeUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
       });
       logger.info({ to, jobId, daysLeft }, "sendSavedJobClosingEmail: closing-soon email sent");
     } catch (err) {

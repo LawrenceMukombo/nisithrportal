@@ -81,7 +81,7 @@ async function notifyApplicantOfClosingJob(params: {
   });
 
   if (candidateEmail && emailOptIn) {
-    await sendSavedJobClosingEmail(candidateEmail, candidateName, jobTitle, jobId, daysLeft, closingDate);
+    await sendSavedJobClosingEmail(candidateEmail, candidateName, jobTitle, jobId, daysLeft, closingDate, userId);
   }
   return true;
 }

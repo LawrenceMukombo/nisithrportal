@@ -10,6 +10,7 @@ import { authMiddleware, generateToken, requireRole } from "../middlewares/auth"
 import { isStaffDomain } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { sendPasswordResetEmail } from "../lib/email";
+import { verifyUnsubscribeToken } from "../lib/unsubscribeToken";
 import { writeAuditLog } from "../lib/audit";
 import { createNotification } from "../lib/notificationService";
 
@@ -448,6 +449,58 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 
   res.json({ message: "Password updated successfully. You can now sign in." });
 });
+
+/**
+ * One-click unsubscribe for "saved-job closing soon" emails.
+ *
+ * The link is delivered in the email footer with a signed token tied to the
+ * applicant's user id. Clicking it flips `email_saved_job_closing` to false
+ * and redirects the recipient to a confirmation page on the frontend.
+ *
+ * Also accepts POST (per RFC 8058) to support one-click unsubscribe headers.
+ */
+async function handleSavedJobClosingUnsubscribe(req: import("express").Request, res: import("express").Response): Promise<void> {
+  const baseUrl =
+    process.env.APP_BASE_URL ??
+    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
+  const confirmUrl = (status: "ok" | "invalid") =>
+    `${baseUrl}/unsubscribed?type=saved-job-closing&status=${status}`;
+
+  const tokenSource =
+    typeof req.query.token === "string" ? req.query.token :
+    typeof (req.body as Record<string, unknown> | undefined)?.token === "string" ? (req.body as Record<string, string>).token :
+    "";
+
+  if (!tokenSource) {
+    res.redirect(302, confirmUrl("invalid"));
+    return;
+  }
+
+  const userId = verifyUnsubscribeToken(tokenSource, "saved-job-closing");
+  if (userId === null) {
+    logger.warn("auth/unsubscribe/saved-job-closing: invalid or expired token");
+    res.redirect(302, confirmUrl("invalid"));
+    return;
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({ emailSavedJobClosing: false })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id });
+
+  if (!updated) {
+    logger.warn({ userId }, "auth/unsubscribe/saved-job-closing: user not found");
+    res.redirect(302, confirmUrl("invalid"));
+    return;
+  }
+
+  logger.info({ userId }, "auth/unsubscribe/saved-job-closing: applicant unsubscribed via email link");
+  res.redirect(302, confirmUrl("ok"));
+}
+
+router.get("/auth/unsubscribe/saved-job-closing", handleSavedJobClosingUnsubscribe);
+router.post("/auth/unsubscribe/saved-job-closing", handleSavedJobClosingUnsubscribe);
 
 export default router;
 

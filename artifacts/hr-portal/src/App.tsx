@@ -33,6 +33,7 @@ import RecruitmentWorkflowPage from "@/pages/recruitment-workflow";
 import IntegrationBuilderPage from "@/pages/integration-builder";
 import ResetRequestPage from "@/pages/reset-request";
 import ResetPasswordPage from "@/pages/reset-password";
+import UnsubscribedPage from "@/pages/unsubscribed";
 import PipelineSlaSettingsPage from "@/pages/pipeline-sla-settings";
 
 const queryClient = new QueryClient({
@@ -97,6 +98,7 @@ function Router() {
       <Route path="/applicant-register" component={ApplicantRegisterPage} />
       <Route path="/reset-request" component={ResetRequestPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
+      <Route path="/unsubscribed" component={UnsubscribedPage} />
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
         {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}

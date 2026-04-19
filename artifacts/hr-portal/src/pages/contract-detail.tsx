@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2, Eye } from "lucide-react";
 import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
@@ -27,6 +27,14 @@ import { useRole } from "@/contexts/auth-context";
 import { getToken } from "@/lib/api-config";
 import { useQueryClient } from "@tanstack/react-query";
 import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
+
+type DocDeletion = {
+  id: number;
+  performedByEmail: string | null;
+  performedById: number | null;
+  createdAt: string;
+  details: { action?: string | null; previousUrl?: string | null; newUrl?: string | null; via?: string | null } | null;
+};
 
 function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: number; currentEndDate?: string | null; onClose: () => void }) {
   const { toast } = useToast();
@@ -139,6 +147,7 @@ export default function ContractDetailPage() {
   const [signedUploading, setSignedUploading] = useState(false);
   const [showRemoveDoc, setShowRemoveDoc] = useState(false);
   const [removingDoc, setRemovingDoc] = useState(false);
+  const [docDeletions, setDocDeletions] = useState<DocDeletion[]>([]);
   const signedFileRef = useRef<HTMLInputElement>(null);
   const updateContractMutation = useUpdateContract();
   const { canManageContracts } = useRole();
@@ -173,6 +182,25 @@ export default function ContractDetailPage() {
 
   const contractId = match ? parseInt(params!.id) : 0;
 
+  const refreshDocDeletions = async () => {
+    if (!contractId) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/document-deletions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setDocDeletions(await res.json() as DocDeletion[]);
+      }
+    } catch { /* non-fatal */ }
+  };
+
+  useEffect(() => {
+    void refreshDocDeletions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractId]);
+
   async function handleRemoveSigned() {
     if (!contractId) return;
     setRemovingDoc(true);
@@ -184,6 +212,7 @@ export default function ContractDetailPage() {
       queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contractId) });
       toast({ title: "Signed contract removed", description: "You can now upload the correct file." });
       setShowRemoveDoc(false);
+      void refreshDocDeletions();
     } catch {
       toast({ title: "Failed to remove signed contract", variant: "destructive" });
     } finally {
@@ -212,6 +241,7 @@ export default function ContractDetailPage() {
       toast({ title: "Signed contract uploaded", description: "The document has been stored against this contract." });
       queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contractId) });
       if (signedFileRef.current) signedFileRef.current.value = "";
+      void refreshDocDeletions();
     } catch {
       toast({ title: "Failed to upload signed contract", variant: "destructive" });
     } finally {
@@ -393,6 +423,48 @@ export default function ContractDetailPage() {
                 )}
                 <span className="text-xs text-muted-foreground">PDF, DOC, DOCX, JPG, PNG accepted</span>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {docDeletions.length > 0 && (
+          <Card data-testid="card-removed-contract-documents">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-destructive" /> Document History
+                <Badge variant="outline" className="ml-1 text-xs">{docDeletions.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                History of when the signed contract document was cleared or replaced.
+              </p>
+              {docDeletions.map((entry) => {
+                const action = entry.details?.action === "replaced" ? "Replaced" : "Cleared";
+                const via = entry.details?.via === "upload-signed" ? " (via re-upload)" : "";
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-start justify-between gap-3 p-2 rounded-md border bg-muted/20"
+                    data-testid={`row-contract-doc-deletion-${entry.id}`}
+                  >
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Trash2 className="h-4 w-4 text-destructive/70 flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">
+                          {action} signed document{via}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          By <span className="font-medium">{entry.performedByEmail ?? "unknown user"}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap" title={new Date(entry.createdAt).toLocaleString()}>
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}

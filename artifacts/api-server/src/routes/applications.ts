@@ -19,6 +19,7 @@ import {
   notificationsTable,
   agenciesTable,
   usersTable,
+  auditLogTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -1417,6 +1418,46 @@ router.delete(
 
     res.status(204).end();
   }
+);
+
+// GET /applications/:id/document-deletions — list document removals for this application
+// pulled from the central audit log so HR can investigate inline without leaving the page.
+router.get(
+  "/applications/:id/document-deletions",
+  authMiddleware,
+  requireRole("admin", "hr_officer", "hiring_manager"),
+  async (req, res): Promise<void> => {
+    const appId = parseIntParam(req.params.id);
+    if (!appId) { res.status(400).json({ error: "Invalid application id" }); return; }
+
+    const [appRow] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, appId));
+    if (!appRow) { res.status(404).json({ error: "Application not found" }); return; }
+
+    const agencyId = getTenantAgencyId(req);
+    if (agencyId != null) {
+      const jobAgencyId = await getJobAgencyId(appRow.jobId);
+      if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
+    }
+
+    const rows = await db
+      .select({
+        id: auditLogTable.id,
+        performedByEmail: auditLogTable.performedByEmail,
+        performedById: auditLogTable.performedById,
+        createdAt: auditLogTable.createdAt,
+        details: auditLogTable.details,
+      })
+      .from(auditLogTable)
+      .where(and(
+        eq(auditLogTable.actionType, "application_document_delete"),
+        sql`(${auditLogTable.details}->>'applicationId') ~ '^-?[0-9]+$'`,
+        sql`(${auditLogTable.details}->>'applicationId')::int = ${appId}`,
+      ))
+      .orderBy(desc(auditLogTable.createdAt))
+      .limit(200);
+
+    res.json(rows);
+  },
 );
 
 // GET /jobs/:id/di-report — aggregate D&I statistics for a job (no individual data exposed)

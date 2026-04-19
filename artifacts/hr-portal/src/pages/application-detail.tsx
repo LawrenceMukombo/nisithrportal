@@ -244,6 +244,13 @@ function InterviewQuestionsPanel({ jobId, candidateId }: { jobId: number; candid
 
 type ScreeningAnswer = { id: number; questionId: number; answer: string | null; question: string | null; questionType: string | null };
 type AppDocument = { id: number; documentType: string; url: string; fileName: string | null; createdAt: string };
+type DocDeletion = {
+  id: number;
+  performedByEmail: string | null;
+  performedById: number | null;
+  createdAt: string;
+  details: { documentType?: string | null; fileName?: string | null; documentId?: number | null } | null;
+};
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   cv: "CV / Résumé", academic_cert: "Academic Certificate", professional_cert: "Professional Certificate",
@@ -259,8 +266,22 @@ export default function ApplicationDetailPage() {
   const appId = match ? parseInt(params!.id) : 0;
   const [screeningAnswers, setScreeningAnswers] = useState<ScreeningAnswer[]>([]);
   const [appDocuments, setAppDocuments] = useState<AppDocument[]>([]);
+  const [docDeletions, setDocDeletions] = useState<DocDeletion[]>([]);
   const [docToDelete, setDocToDelete] = useState<AppDocument | null>(null);
   const [deletingDoc, setDeletingDoc] = useState(false);
+
+  const refreshDocDeletions = async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/applications/${appId}/document-deletions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setDocDeletions(await res.json() as DocDeletion[]);
+      }
+    } catch { /* non-fatal */ }
+  };
 
   useEffect(() => {
     if (!appId || !(isAdmin || isHR || isHiringManager)) return;
@@ -270,9 +291,11 @@ export default function ApplicationDetailPage() {
     Promise.all([
       fetch(`/api/applications/${appId}/screening-answers`, { headers }).then(r => r.ok ? r.json() as Promise<ScreeningAnswer[]> : []),
       fetch(`/api/applications/${appId}/documents`, { headers }).then(r => r.ok ? r.json() as Promise<AppDocument[]> : []),
-    ]).then(([answers, docs]) => {
+      fetch(`/api/applications/${appId}/document-deletions`, { headers }).then(r => r.ok ? r.json() as Promise<DocDeletion[]> : []),
+    ]).then(([answers, docs, deletions]) => {
       setScreeningAnswers(answers);
       setAppDocuments(docs);
+      setDocDeletions(deletions);
     }).catch(() => { /* non-fatal */ });
   }, [appId, isAdmin, isHR, isHiringManager]);
 
@@ -395,6 +418,7 @@ export default function ApplicationDetailPage() {
       setAppDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
       toast({ title: "Document removed", description: "You can upload a replacement if needed." });
       setDocToDelete(null);
+      void refreshDocDeletions();
     } catch {
       toast({ title: "Failed to delete document", variant: "destructive" });
     } finally {
@@ -884,6 +908,51 @@ export default function ApplicationDetailPage() {
                   </div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {docDeletions.length > 0 && (
+          <Card data-testid="card-removed-documents">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-destructive" /> Removed Documents
+                <Badge variant="outline" className="ml-1 text-xs">{docDeletions.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                History of documents previously deleted from this application.
+              </p>
+              {docDeletions.map((entry) => {
+                const type = entry.details?.documentType ? String(entry.details.documentType) : null;
+                const typeLabel = type ? (DOC_TYPE_LABELS[type] ?? type) : "document";
+                const fileName = entry.details?.fileName ? String(entry.details.fileName) : null;
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex items-start justify-between gap-3 p-2 rounded-md border bg-muted/20"
+                    data-testid={`row-removed-document-${entry.id}`}
+                  >
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Trash2 className="h-4 w-4 text-destructive/70 flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {fileName ?? typeLabel}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {typeLabel}
+                          {" · Deleted by "}
+                          <span className="font-medium">{entry.performedByEmail ?? "unknown user"}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap" title={new Date(entry.createdAt).toLocaleString()}>
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}

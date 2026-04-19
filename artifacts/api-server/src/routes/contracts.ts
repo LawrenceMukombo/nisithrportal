@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, lte, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, lte, gte, sql, desc } from "drizzle-orm";
 import multer from "multer";
-import { db, contractsTable, employeesTable, notificationsTable } from "@workspace/db";
+import { db, contractsTable, employeesTable, notificationsTable, auditLogTable } from "@workspace/db";
 import {
   GetContractsQueryParams,
   CreateContractBody,
@@ -353,5 +353,45 @@ router.post("/contracts/:id/upload-signed", authMiddleware, requireRole("admin",
     res.status(200).json(updated);
   });
 });
+
+// GET /contracts/:id/document-deletions — list audit entries where the signed
+// contract document was cleared or replaced, so HR can see inline who did what.
+router.get(
+  "/contracts/:id/document-deletions",
+  authMiddleware,
+  requireRole("admin", "hr_officer", "executive"),
+  async (req, res): Promise<void> => {
+    const contractId = parseIntParam(req.params.id);
+    if (!contractId) { res.status(400).json({ error: "Invalid contract id" }); return; }
+
+    const [existing] = await db.select().from(contractsTable).where(eq(contractsTable.id, contractId));
+    if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
+
+    const agencyId = getTenantAgencyId(req);
+    if (agencyId != null) {
+      const empAgencyId = await getEmployeeAgencyId(existing.employeeId);
+      if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
+    }
+
+    const rows = await db
+      .select({
+        id: auditLogTable.id,
+        performedByEmail: auditLogTable.performedByEmail,
+        performedById: auditLogTable.performedById,
+        createdAt: auditLogTable.createdAt,
+        details: auditLogTable.details,
+      })
+      .from(auditLogTable)
+      .where(and(
+        eq(auditLogTable.actionType, "contract_document_clear"),
+        sql`(${auditLogTable.details}->>'contractId') ~ '^-?[0-9]+$'`,
+        sql`(${auditLogTable.details}->>'contractId')::int = ${contractId}`,
+      ))
+      .orderBy(desc(auditLogTable.createdAt))
+      .limit(200);
+
+    res.json(rows);
+  },
+);
 
 export default router;

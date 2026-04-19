@@ -519,38 +519,62 @@ export default function ApplicationDetailPage() {
             rejected: "bg-red-100 text-red-700 border-red-200",
             withdrawn: "bg-gray-100 text-gray-600 border-gray-200",
           };
+          const fmtDate = (iso: string) =>
+            new Date(iso).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" });
           const sorted = [...(app.statusHistory as SHItem[])].sort(
             (a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime()
           );
           const breakdown = sorted.map((h, i) => {
-            const exitMs = i + 1 < sorted.length
-              ? new Date(sorted[i + 1].changedAt).getTime()
-              : Date.now();
+            const isCurrent = i === sorted.length - 1;
+            const exitDate = isCurrent ? null : sorted[i + 1].changedAt;
+            const exitMs = exitDate ? new Date(exitDate).getTime() : Date.now();
             const days = Math.max(0, Math.floor((exitMs - new Date(h.changedAt).getTime()) / 86400000));
-            return { status: h.status, changedAt: h.changedAt, days, isCurrent: i === sorted.length - 1 };
+            return { status: h.status, enteredAt: h.changedAt, exitedAt: exitDate, days, isCurrent };
           });
           return (
             <Card data-testid="card-stage-breakdown">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-primary" /> Time in Stage Breakdown
+                  <Clock className="h-4 w-4 text-primary" /> Stage Duration Breakdown
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {breakdown.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${BADGE_CLASS[item.status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                        {STATUS_LABEL[item.status] ?? item.status}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        {new Date(item.changedAt).toLocaleDateString("en-PG", { day: "numeric", month: "short" })}
-                      </span>
-                      <span className={`text-xs font-semibold tabular-nums ${item.isCurrent ? "text-primary" : "text-muted-foreground"}`}>
-                        {item.isCurrent ? `${item.days}d (current)` : `${item.days}d`}
-                      </span>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground border-b">
+                        <th className="text-left pb-2 font-medium">Stage</th>
+                        <th className="text-left pb-2 font-medium">Entered</th>
+                        <th className="text-left pb-2 font-medium">Exited</th>
+                        <th className="text-right pb-2 font-medium">Days</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {breakdown.map((item, i) => (
+                        <tr key={i} className={item.isCurrent ? "bg-primary/5" : ""}>
+                          <td className="py-2 pr-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${BADGE_CLASS[item.status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                              {STATUS_LABEL[item.status] ?? item.status}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground tabular-nums">
+                            {fmtDate(item.enteredAt)}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {item.isCurrent
+                              ? <span className="text-primary font-medium">Current</span>
+                              : <span className="text-muted-foreground tabular-nums">{fmtDate(item.exitedAt!)}</span>
+                            }
+                          </td>
+                          <td className="py-2 text-right">
+                            <span className={`font-semibold tabular-nums ${item.isCurrent ? "text-primary" : "text-foreground"}`}>
+                              {item.days}d
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </CardContent>
             </Card>

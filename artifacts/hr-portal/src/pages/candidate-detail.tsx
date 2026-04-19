@@ -21,19 +21,24 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
+import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
 
-const STATUS_COLORS: Record<string, string> = {
-  applied:    "bg-blue-100 text-blue-700",
-  screening:  "bg-yellow-100 text-yellow-700",
-  interview:  "bg-purple-100 text-purple-700",
-  offer:      "bg-green-100 text-green-700",
-  hired:      "bg-teal-100 text-teal-700",
-  onboarding: "bg-emerald-100 text-emerald-700",
-  rejected:   "bg-red-100 text-red-700",
-  withdrawn:  "bg-gray-100 text-gray-600",
-  shortlisted: "bg-yellow-100 text-yellow-700",
-  offered:    "bg-green-100 text-green-700",
+const STATUS_ALIAS: Record<string, string> = {
+  shortlisted: "screening",
+  offered:     "offer",
+  selected:    "offer",
 };
+
+function getStatusBadgeClasses(status: string): string {
+  const resolved = STATUS_ALIAS[status] ?? status;
+  const stage = WORKFLOW_STAGES.find((s) => s.status === resolved);
+  if (stage) {
+    const colors = STAGE_COLOR_MAP[stage.color];
+    if (colors) return `${colors.bg} ${colors.text}`;
+  }
+  if (resolved === "rejected") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-600";
+}
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -326,7 +331,7 @@ export default function CandidateDetailPage() {
                                 <Progress value={score.score ? parseFloat(score.score) : 0} className="w-16 h-1.5" />
                               </div>
                             )}
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[app.status] ?? "bg-gray-100 text-gray-700"}`}>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getStatusBadgeClasses(app.status)}`}>
                               {app.status}
                             </span>
                           </div>

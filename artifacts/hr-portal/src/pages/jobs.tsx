@@ -274,9 +274,12 @@ export default function JobsPage() {
       }
     };
     window.addEventListener("storage", onStorage);
+    const onDraftCleared = () => setDraftRefreshTick((t) => t + 1);
+    window.addEventListener("draft_cleared", onDraftCleared);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("draft_cleared", onDraftCleared);
     };
   }, []);
 

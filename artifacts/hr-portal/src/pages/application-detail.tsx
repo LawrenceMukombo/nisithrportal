@@ -543,6 +543,7 @@ export default function ApplicationDetailPage() {
             const days = Math.max(0, Math.floor((exitMs - new Date(h.changedAt).getTime()) / 86400000));
             return { status: h.status, enteredAt: h.changedAt, exitedAt: exitDate, days, isCurrent };
           });
+          const maxDays = Math.max(1, ...breakdown.map((b) => b.days));
           return (
             <Card data-testid="card-stage-breakdown">
               <CardHeader>
@@ -558,6 +559,7 @@ export default function ApplicationDetailPage() {
                         <th className="text-left pb-2 font-medium">Stage</th>
                         <th className="text-left pb-2 font-medium">Entered</th>
                         <th className="text-left pb-2 font-medium">Exited</th>
+                        <th className="text-left pb-2 font-medium w-[28%]">Duration</th>
                         <th className="text-right pb-2 font-medium">Days</th>
                       </tr>
                     </thead>
@@ -577,6 +579,22 @@ export default function ApplicationDetailPage() {
                               ? <span className="text-primary font-medium">Current</span>
                               : <span className="text-muted-foreground tabular-nums">{fmtDate(item.exitedAt!)}</span>
                             }
+                          </td>
+                          <td className="py-2 pr-3">
+                            <div
+                              className="h-1.5 rounded-full bg-muted overflow-hidden"
+                              role="progressbar"
+                              aria-valuenow={item.days}
+                              aria-valuemin={0}
+                              aria-valuemax={maxDays}
+                              aria-label={`${item.days} days, ${Math.round((item.days / maxDays) * 100)}% of longest stage`}
+                              data-testid={`bar-stage-duration-${i}`}
+                            >
+                              <div
+                                className={`h-full rounded-full ${item.isCurrent ? "bg-primary" : "bg-primary/40"}`}
+                                style={{ width: `${Math.max(2, (item.days / maxDays) * 100)}%` }}
+                              />
+                            </div>
                           </td>
                           <td className="py-2 text-right">
                             <span className={`font-semibold tabular-nums ${item.isCurrent ? "text-primary" : "text-foreground"}`}>

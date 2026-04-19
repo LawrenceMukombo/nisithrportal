@@ -36,6 +36,20 @@
       "when": 1745625600000,
       "tag": "0004_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776470400000,
+      "tag": "0005_saved_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776556800000,
+      "tag": "0006_applications_active_unique",
+      "breakpoints": true
     }
   ]
 }

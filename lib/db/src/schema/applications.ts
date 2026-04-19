@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { jobsTable } from "./jobs";
@@ -36,7 +37,13 @@ export const applicationsTable = pgTable("applications", {
   dataPrivacyConsent: boolean("data_privacy_consent"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (t) => ({
+  // Database-level guard: prevent multiple non-withdrawn applications by the same candidate
+  // for the same job. Withdrawn rows are excluded so an applicant may reapply after withdrawing.
+  candidateJobActiveUnique: uniqueIndex("applications_candidate_job_active_unique")
+    .on(t.candidateId, t.jobId)
+    .where(sql`${t.status} <> 'withdrawn'`),
+}));
 
 export const applicationStatusHistoryTable = pgTable("application_status_history", {
   id: serial("id").primaryKey(),

@@ -580,7 +580,9 @@ router.post("/applications", async (req, res): Promise<void> => {
     return;
   }
 
-  const [application] = await db.insert(applicationsTable).values({
+  let application: typeof applicationsTable.$inferSelect;
+  try {
+    [application] = await db.insert(applicationsTable).values({
     jobId,
     candidateId: candidate.id,
     status: "applied",
@@ -604,7 +606,17 @@ router.post("/applications", async (req, res): Promise<void> => {
       criminalRecord: ext.criminalRecord ?? null,
       dataPrivacyConsent: ext.dataPrivacyConsent ?? null,
     } : {}),
-  }).returning();
+    }).returning();
+  } catch (err: unknown) {
+    // Map the partial-unique-index violation (applications_candidate_job_active_unique)
+    // to a friendly 422 — handles races that slip past the application-level guard above.
+    const e = err as { code?: string; constraint?: string };
+    if (e?.code === "23505" && e?.constraint === "applications_candidate_job_active_unique") {
+      res.status(422).json({ error: "You have already applied to this position." });
+      return;
+    }
+    throw err;
+  }
 
   await db.insert(applicationStatusHistoryTable).values({
     applicationId: application.id,

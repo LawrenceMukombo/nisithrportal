@@ -16,6 +16,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import PDFDocument from "pdfkit";
 import { sendOfferLetterEmail } from "../lib/email";
 import { logger } from "../lib/logger";
+import { createNotification, notifyAdmins } from "../lib/notificationService";
 import nisitLogoDataUrl from "../assets/nisit-logo.png";
 
 const router: IRouter = Router();
@@ -365,6 +366,18 @@ router.post(
     try {
       await sendOfferLetterEmail(candidateEmail, candidateName, position, pdfBuffer, applicationId);
       logger.info({ applicationId, to: candidateEmail }, "Offer letter emailed to candidate");
+
+      const notifMessage = `Offer letter for "${position}" (application #${applicationId}) was emailed to ${candidateName} <${candidateEmail}>.`;
+      const notifType = "offer_letter_sent";
+
+      const promises: Promise<void>[] = [];
+      if (req.user?.userId) {
+        promises.push(createNotification({ userId: req.user.userId, type: notifType, message: notifMessage }));
+      }
+      const agencyIdForNotif = job?.agencyId ?? req.user?.agencyId ?? null;
+      promises.push(notifyAdmins(agencyIdForNotif, notifType, notifMessage));
+      await Promise.allSettled(promises);
+
       res.json({ success: true, sentTo: candidateEmail });
     } catch (err) {
       logger.error({ err, applicationId }, "Failed to send offer letter email");

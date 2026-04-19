@@ -8,6 +8,7 @@ import { getTenantAgencyId } from "../middlewares/tenant";
 import { isStaffDomain, STAFF_ROLES } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { writeAuditLog } from "../lib/audit";
+import { createNotification } from "../lib/notificationService";
 
 const router: IRouter = Router();
 
@@ -272,7 +273,19 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
       createdAt: usersTable.createdAt,
     });
 
-  if (body.data.roleId != null) {
+  if (body.data.name != null && body.data.name !== existing.name) {
+    try {
+      await createNotification({
+        userId: id,
+        type: "profile_updated",
+        message: `Your account display name has been updated to "${body.data.name}" by an administrator.`,
+      });
+    } catch (err) {
+      logger.warn({ err, targetUserId: id }, "users PATCH: failed to create name-change notification");
+    }
+  }
+
+  if (body.data.roleId != null && body.data.roleId !== existing.roleId) {
     const oldRoles = await db.select({ name: rolesTable.name }).from(rolesTable).where(eq(rolesTable.id, existing.roleId!));
     const oldRoleName = oldRoles[0]?.name ?? null;
     logger.info({ targetUserId: id, email: existing.email, oldRoleName, newRoleName, adminId: req.user?.userId }, "AUDIT role-change: user role updated");
@@ -286,6 +299,16 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
       details: { oldRole: oldRoleName, newRole: newRoleName },
       agencyId: agencyId ?? null,
     });
+    // Notify the affected user of the role change
+    try {
+      await createNotification({
+        userId: id,
+        type: "account_updated",
+        message: `Your account role has been updated to "${newRoleName ?? "unknown"}".`,
+      });
+    } catch (err) {
+      logger.warn({ err, targetUserId: id }, "users PATCH: failed to create role-change notification");
+    }
   }
   if (body.data.status != null && body.data.status !== existing.status) {
     logger.info({ targetUserId: id, email: existing.email, oldStatus: existing.status, newStatus: body.data.status, adminId: req.user?.userId }, "AUDIT status-change: user status updated");
@@ -299,6 +322,15 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
       details: { oldStatus: existing.status, newStatus: body.data.status },
       agencyId: agencyId ?? null,
     });
+    // Notify the affected user of the account status change
+    try {
+      const statusMsg = body.data.status === "inactive"
+        ? "Your account has been deactivated by an administrator."
+        : "Your account has been reactivated by an administrator.";
+      await createNotification({ userId: id, type: "account_updated", message: statusMsg });
+    } catch (err) {
+      logger.warn({ err, targetUserId: id }, "users PATCH: failed to create status-change notification");
+    }
   }
   if (body.data.email != null && body.data.email !== existing.email) {
     logger.info({ targetUserId: id, oldEmail: existing.email, newEmail: body.data.email, adminId: req.user?.userId }, "AUDIT email-change: admin updated user email");
@@ -312,6 +344,16 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
       details: { oldEmail: existing.email, newEmail: body.data.email },
       agencyId: agencyId ?? null,
     });
+    // Notify the affected user of the email change
+    try {
+      await createNotification({
+        userId: id,
+        type: "email_changed",
+        message: `Your account email address has been updated to ${body.data.email} by an administrator.`,
+      });
+    } catch (err) {
+      logger.warn({ err, targetUserId: id }, "users PATCH: failed to create email-change notification");
+    }
   }
 
   res.json(updated);
@@ -350,6 +392,18 @@ router.patch("/users/:id/password", authMiddleware, requireRole("admin"), async 
     outcome: "success",
     agencyId: agencyId ?? null,
   });
+
+  // Notify the affected user that their password was reset by an admin
+  try {
+    await createNotification({
+      userId: id,
+      type: "password_changed",
+      message: "Your account password has been reset by an administrator. If you did not request this, contact support immediately.",
+    });
+  } catch (err) {
+    logger.warn({ err, targetUserId: id }, "users PATCH password: failed to create password-reset notification");
+  }
+
   res.json({ ok: true });
 });
 

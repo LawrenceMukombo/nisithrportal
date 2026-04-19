@@ -3,6 +3,7 @@ import { DRAFT_KEY_PREFIX, DRAFT_KEY, draftRelativeTime, isDraftExpired } from "
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { format } from "date-fns";
 import { getToken, decodeToken } from "@/lib/api-config";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,14 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, ArrowRight, Send, Save, Plus, Trash2, Upload,
   User, Phone, MapPin, BookOpen, Briefcase, Wrench, FileText, HelpCircle, Users, CheckSquare, Heart,
-  Loader2, Check, Sparkles, X, Cloud
+  Loader2, Check, Sparkles, X, Cloud, CalendarIcon
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -65,7 +69,212 @@ type RefereeEntry = { name: string; relationship: string; organisation: string; 
 type DocumentEntry = { documentType: string; url: string; fileName: string };
 type ScreeningAnswerEntry = { questionId: number; answer: string };
 
-// ─── Wizard schema ────────────────────────────────────────────────────────────
+// ─── Country list ─────────────────────────────────────────────────────────────
+
+const COUNTRY_OPTIONS = [
+  { value: "Afghan", label: "Afghan" },
+  { value: "Albanian", label: "Albanian" },
+  { value: "Algerian", label: "Algerian" },
+  { value: "American", label: "American" },
+  { value: "Andorran", label: "Andorran" },
+  { value: "Angolan", label: "Angolan" },
+  { value: "Antiguan", label: "Antiguan" },
+  { value: "Argentine", label: "Argentine" },
+  { value: "Armenian", label: "Armenian" },
+  { value: "Australian", label: "Australian" },
+  { value: "Austrian", label: "Austrian" },
+  { value: "Azerbaijani", label: "Azerbaijani" },
+  { value: "Bahamian", label: "Bahamian" },
+  { value: "Bahraini", label: "Bahraini" },
+  { value: "Bangladeshi", label: "Bangladeshi" },
+  { value: "Barbadian", label: "Barbadian" },
+  { value: "Belarusian", label: "Belarusian" },
+  { value: "Belgian", label: "Belgian" },
+  { value: "Belizean", label: "Belizean" },
+  { value: "Beninese", label: "Beninese" },
+  { value: "Bhutanese", label: "Bhutanese" },
+  { value: "Bolivian", label: "Bolivian" },
+  { value: "Bosnian", label: "Bosnian" },
+  { value: "Botswanan", label: "Botswanan" },
+  { value: "Brazilian", label: "Brazilian" },
+  { value: "British", label: "British" },
+  { value: "Bruneian", label: "Bruneian" },
+  { value: "Bulgarian", label: "Bulgarian" },
+  { value: "Burkinabe", label: "Burkinabe" },
+  { value: "Burundian", label: "Burundian" },
+  { value: "Cabo Verdean", label: "Cabo Verdean" },
+  { value: "Cambodian", label: "Cambodian" },
+  { value: "Cameroonian", label: "Cameroonian" },
+  { value: "Canadian", label: "Canadian" },
+  { value: "Central African", label: "Central African" },
+  { value: "Chadian", label: "Chadian" },
+  { value: "Chilean", label: "Chilean" },
+  { value: "Chinese", label: "Chinese" },
+  { value: "Colombian", label: "Colombian" },
+  { value: "Comorian", label: "Comorian" },
+  { value: "Congolese", label: "Congolese" },
+  { value: "Costa Rican", label: "Costa Rican" },
+  { value: "Croatian", label: "Croatian" },
+  { value: "Cuban", label: "Cuban" },
+  { value: "Cypriot", label: "Cypriot" },
+  { value: "Czech", label: "Czech" },
+  { value: "Danish", label: "Danish" },
+  { value: "Djiboutian", label: "Djiboutian" },
+  { value: "Dominican", label: "Dominican" },
+  { value: "Ecuadorian", label: "Ecuadorian" },
+  { value: "Egyptian", label: "Egyptian" },
+  { value: "Emirati", label: "Emirati" },
+  { value: "Equatorial Guinean", label: "Equatorial Guinean" },
+  { value: "Eritrean", label: "Eritrean" },
+  { value: "Estonian", label: "Estonian" },
+  { value: "Eswatini", label: "Eswatini" },
+  { value: "Ethiopian", label: "Ethiopian" },
+  { value: "Fijian", label: "Fijian" },
+  { value: "Finnish", label: "Finnish" },
+  { value: "French", label: "French" },
+  { value: "Gabonese", label: "Gabonese" },
+  { value: "Gambian", label: "Gambian" },
+  { value: "Georgian", label: "Georgian" },
+  { value: "German", label: "German" },
+  { value: "Ghanaian", label: "Ghanaian" },
+  { value: "Greek", label: "Greek" },
+  { value: "Grenadian", label: "Grenadian" },
+  { value: "Guatemalan", label: "Guatemalan" },
+  { value: "Guinean", label: "Guinean" },
+  { value: "Guinea-Bissauan", label: "Guinea-Bissauan" },
+  { value: "Guyanese", label: "Guyanese" },
+  { value: "Haitian", label: "Haitian" },
+  { value: "Honduran", label: "Honduran" },
+  { value: "Hungarian", label: "Hungarian" },
+  { value: "Icelandic", label: "Icelandic" },
+  { value: "Indian", label: "Indian" },
+  { value: "Indonesian", label: "Indonesian" },
+  { value: "Iranian", label: "Iranian" },
+  { value: "Iraqi", label: "Iraqi" },
+  { value: "Irish", label: "Irish" },
+  { value: "Israeli", label: "Israeli" },
+  { value: "Italian", label: "Italian" },
+  { value: "Ivorian", label: "Ivorian" },
+  { value: "Jamaican", label: "Jamaican" },
+  { value: "Japanese", label: "Japanese" },
+  { value: "Jordanian", label: "Jordanian" },
+  { value: "Kazakhstani", label: "Kazakhstani" },
+  { value: "Kenyan", label: "Kenyan" },
+  { value: "Kiribati", label: "Kiribati" },
+  { value: "Korean", label: "Korean" },
+  { value: "Kuwaiti", label: "Kuwaiti" },
+  { value: "Kyrgyz", label: "Kyrgyz" },
+  { value: "Lao", label: "Lao" },
+  { value: "Latvian", label: "Latvian" },
+  { value: "Lebanese", label: "Lebanese" },
+  { value: "Lesothan", label: "Lesothan" },
+  { value: "Liberian", label: "Liberian" },
+  { value: "Libyan", label: "Libyan" },
+  { value: "Liechtensteiner", label: "Liechtensteiner" },
+  { value: "Lithuanian", label: "Lithuanian" },
+  { value: "Luxembourgish", label: "Luxembourgish" },
+  { value: "Malagasy", label: "Malagasy" },
+  { value: "Malawian", label: "Malawian" },
+  { value: "Malaysian", label: "Malaysian" },
+  { value: "Maldivian", label: "Maldivian" },
+  { value: "Malian", label: "Malian" },
+  { value: "Maltese", label: "Maltese" },
+  { value: "Marshallese", label: "Marshallese" },
+  { value: "Mauritanian", label: "Mauritanian" },
+  { value: "Mauritian", label: "Mauritian" },
+  { value: "Mexican", label: "Mexican" },
+  { value: "Micronesian", label: "Micronesian" },
+  { value: "Moldovan", label: "Moldovan" },
+  { value: "Monacan", label: "Monacan" },
+  { value: "Mongolian", label: "Mongolian" },
+  { value: "Montenegrin", label: "Montenegrin" },
+  { value: "Moroccan", label: "Moroccan" },
+  { value: "Mozambican", label: "Mozambican" },
+  { value: "Namibian", label: "Namibian" },
+  { value: "Nauruan", label: "Nauruan" },
+  { value: "Nepali", label: "Nepali" },
+  { value: "New Zealander", label: "New Zealander" },
+  { value: "Nicaraguan", label: "Nicaraguan" },
+  { value: "Nigerian", label: "Nigerian" },
+  { value: "Nigerien", label: "Nigerien" },
+  { value: "Norwegian", label: "Norwegian" },
+  { value: "Omani", label: "Omani" },
+  { value: "Pakistani", label: "Pakistani" },
+  { value: "Palauan", label: "Palauan" },
+  { value: "Panamanian", label: "Panamanian" },
+  { value: "Papua New Guinean", label: "Papua New Guinean" },
+  { value: "Paraguayan", label: "Paraguayan" },
+  { value: "Peruvian", label: "Peruvian" },
+  { value: "Filipino", label: "Filipino" },
+  { value: "Polish", label: "Polish" },
+  { value: "Portuguese", label: "Portuguese" },
+  { value: "Qatari", label: "Qatari" },
+  { value: "Romanian", label: "Romanian" },
+  { value: "Russian", label: "Russian" },
+  { value: "Rwandan", label: "Rwandan" },
+  { value: "Saint Kitts and Nevis", label: "Saint Kitts and Nevis" },
+  { value: "Saint Lucian", label: "Saint Lucian" },
+  { value: "Vincentian", label: "Vincentian" },
+  { value: "Samoan", label: "Samoan" },
+  { value: "San Marinese", label: "San Marinese" },
+  { value: "Saudi Arabian", label: "Saudi Arabian" },
+  { value: "Senegalese", label: "Senegalese" },
+  { value: "Serbian", label: "Serbian" },
+  { value: "Sierra Leonean", label: "Sierra Leonean" },
+  { value: "Singaporean", label: "Singaporean" },
+  { value: "Slovak", label: "Slovak" },
+  { value: "Slovenian", label: "Slovenian" },
+  { value: "Solomon Islander", label: "Solomon Islander" },
+  { value: "Somali", label: "Somali" },
+  { value: "South African", label: "South African" },
+  { value: "South Sudanese", label: "South Sudanese" },
+  { value: "Spanish", label: "Spanish" },
+  { value: "Sri Lankan", label: "Sri Lankan" },
+  { value: "Sudanese", label: "Sudanese" },
+  { value: "Surinamese", label: "Surinamese" },
+  { value: "Swedish", label: "Swedish" },
+  { value: "Swiss", label: "Swiss" },
+  { value: "Syrian", label: "Syrian" },
+  { value: "Taiwanese", label: "Taiwanese" },
+  { value: "Tajik", label: "Tajik" },
+  { value: "Tanzanian", label: "Tanzanian" },
+  { value: "Thai", label: "Thai" },
+  { value: "Timorese", label: "Timorese" },
+  { value: "Togolese", label: "Togolese" },
+  { value: "Tongan", label: "Tongan" },
+  { value: "Trinidadian", label: "Trinidadian" },
+  { value: "Tunisian", label: "Tunisian" },
+  { value: "Turkish", label: "Turkish" },
+  { value: "Turkmen", label: "Turkmen" },
+  { value: "Tuvaluan", label: "Tuvaluan" },
+  { value: "Ugandan", label: "Ugandan" },
+  { value: "Ukrainian", label: "Ukrainian" },
+  { value: "Uruguayan", label: "Uruguayan" },
+  { value: "Uzbek", label: "Uzbek" },
+  { value: "Vanuatuan", label: "Vanuatuan" },
+  { value: "Venezuelan", label: "Venezuelan" },
+  { value: "Vietnamese", label: "Vietnamese" },
+  { value: "Yemeni", label: "Yemeni" },
+  { value: "Zambian", label: "Zambian" },
+  { value: "Zimbabwean", label: "Zimbabwean" },
+];
+
+// ─── Date-of-birth helpers ────────────────────────────────────────────────────
+
+function calcAge(dob: Date): number {
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+const dobMin = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
+const dobMax = new Date(today.getFullYear() - 16, today.getMonth(), today.getDate());
+
+// ─── Wizard schema ─────────────────────────────────────────────────────────────
 
 const wizardSchema = z.object({
   // Step 1 - Personal Info
@@ -73,14 +282,47 @@ const wizardSchema = z.object({
   lastName: z.string().min(1, "Last name required"),
   otherNames: z.string().optional(),
   gender: z.string().optional(),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: z.string()
+    .optional()
+    .refine(v => {
+      if (!v) return true;
+      const parts = v.split("-");
+      if (parts.length !== 3) return false;
+      const [y, m, d] = parts.map(Number);
+      if (!y || !m || !d) return false;
+      const date = new Date(y, m - 1, d);
+      return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+    }, "Invalid date — please use the date picker")
+    .refine(v => {
+      if (!v) return true;
+      const [y, m, d] = v.split("-").map(Number);
+      const dob = new Date(y, m - 1, d);
+      return dob <= today;
+    }, "Date of birth cannot be in the future")
+    .refine(v => {
+      if (!v) return true;
+      const [y, m, d] = v.split("-").map(Number);
+      return calcAge(new Date(y, m - 1, d)) >= 16;
+    }, "Applicant must be at least 16 years old")
+    .refine(v => {
+      if (!v) return true;
+      const [y, m, d] = v.split("-").map(Number);
+      return calcAge(new Date(y, m - 1, d)) <= 80;
+    }, "Applicant must be 80 years old or younger"),
   nationality: z.string().optional(),
-  nationalId: z.string().optional(),
+  nationalId: z.string()
+    .optional()
+    .refine(v => !v || v.trim().length >= 4, "ID/Passport must be at least 4 characters")
+    .refine(v => !v || /^[A-Za-z0-9\-\/\s]+$/.test(v.trim()), "ID/Passport contains invalid characters"),
   maritalStatus: z.string().optional(),
   // Step 2 - Contact
   candidateEmail: z.string().email("Valid email required"),
-  candidatePhone: z.string().optional(),
-  alternativePhone: z.string().optional(),
+  candidatePhone: z.string()
+    .optional()
+    .refine(v => !v || /^[\+\d\s\-\(\)]{7,20}$/.test(v.trim()), "Enter a valid phone number"),
+  alternativePhone: z.string()
+    .optional()
+    .refine(v => !v || /^[\+\d\s\-\(\)]{7,20}$/.test(v.trim()), "Enter a valid phone number"),
   physicalAddress: z.string().optional(),
   city: z.string().optional(),
   province: z.string().optional(),
@@ -203,6 +445,7 @@ async function uploadFile(file: File, jobId: number): Promise<string> {
 // ─── Step Components ──────────────────────────────────────────────────────────
 
 function Step1Personal({ form }: { form: ReturnType<typeof useForm<WizardValues>> }) {
+  const [dobOpen, setDobOpen] = useState(false);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -241,40 +484,66 @@ function Step1Personal({ form }: { form: ReturnType<typeof useForm<WizardValues>
             </Select>
           </FormItem>
         )} />
-        <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Date of Birth</FormLabel>
-            <FormControl><Input type="date" {...field} /></FormControl>
-          </FormItem>
-        )} />
+        <FormField control={form.control} name="dateOfBirth" render={({ field }) => {
+          const selectedDate = field.value ? new Date(field.value + "T12:00:00") : undefined;
+          return (
+            <FormItem className="flex flex-col">
+              <FormLabel>Date of Birth</FormLabel>
+              <Popover open={dobOpen} onOpenChange={setDobOpen}>
+                <PopoverTrigger asChild>
+                  <FormControl>
+                    <Button
+                      variant="outline"
+                      className={`justify-start text-left font-normal h-9 ${!field.value ? "text-muted-foreground" : ""}`}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      {field.value ? format(selectedDate!, "dd/MM/yyyy") : <span>Pick a date</span>}
+                    </Button>
+                  </FormControl>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(date) => {
+                      field.onChange(date ? format(date, "yyyy-MM-dd") : "");
+                      setDobOpen(false);
+                    }}
+                    defaultMonth={selectedDate ?? new Date(today.getFullYear() - 30, 0, 1)}
+                    fromDate={dobMin}
+                    toDate={dobMax}
+                    captionLayout="dropdown"
+                  />
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">Must be between 16 and 80 years of age</p>
+              <FormMessage />
+            </FormItem>
+          );
+        }} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <FormField control={form.control} name="nationality" render={({ field }) => (
           <FormItem>
             <FormLabel>Nationality</FormLabel>
-            <Select onValueChange={field.onChange} value={field.value ?? ""}>
-              <FormControl><SelectTrigger><SelectValue placeholder="Select nationality" /></SelectTrigger></FormControl>
-              <SelectContent>
-                <SelectItem value="Papua New Guinean">Papua New Guinean</SelectItem>
-                <SelectItem value="Australian">Australian</SelectItem>
-                <SelectItem value="New Zealander">New Zealander</SelectItem>
-                <SelectItem value="Fijian">Fijian</SelectItem>
-                <SelectItem value="Solomon Islander">Solomon Islander</SelectItem>
-                <SelectItem value="Vanuatuan">Vanuatuan</SelectItem>
-                <SelectItem value="Filipino">Filipino</SelectItem>
-                <SelectItem value="Chinese">Chinese</SelectItem>
-                <SelectItem value="Indian">Indian</SelectItem>
-                <SelectItem value="British">British</SelectItem>
-                <SelectItem value="American">American</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+            <FormControl>
+              <SearchableSelect
+                value={field.value ?? ""}
+                onValueChange={field.onChange}
+                options={COUNTRY_OPTIONS}
+                placeholder="Select nationality"
+                searchPlaceholder="Search countries…"
+                triggerClassName="w-full"
+              />
+            </FormControl>
+            <FormMessage />
           </FormItem>
         )} />
         <FormField control={form.control} name="nationalId" render={({ field }) => (
           <FormItem>
             <FormLabel>National ID / Passport No.</FormLabel>
             <FormControl><Input placeholder="ID number" {...field} /></FormControl>
+            <FormMessage />
           </FormItem>
         )} />
       </div>
@@ -312,6 +581,7 @@ function Step2Contact({ form }: { form: ReturnType<typeof useForm<WizardValues>>
           <FormItem>
             <FormLabel>Primary Phone</FormLabel>
             <FormControl><Input placeholder="+675 ..." {...field} /></FormControl>
+            <FormMessage />
           </FormItem>
         )} />
       </div>
@@ -319,6 +589,7 @@ function Step2Contact({ form }: { form: ReturnType<typeof useForm<WizardValues>>
         <FormItem>
           <FormLabel>Alternative Phone</FormLabel>
           <FormControl><Input placeholder="+675 ..." {...field} /></FormControl>
+          <FormMessage />
         </FormItem>
       )} />
       <FormField control={form.control} name="physicalAddress" render={({ field }) => (
@@ -1264,7 +1535,7 @@ export function ApplyWizard({
     resolver: zodResolver(wizardSchema),
     mode: "onTouched",
     defaultValues: {
-      firstName: "", lastName: "", otherNames: "", gender: "", dateOfBirth: "", nationality: "",
+      firstName: "", lastName: "", otherNames: "", gender: "", dateOfBirth: "", nationality: "Papua New Guinean",
       nationalId: "", maritalStatus: "", candidateEmail: "", candidatePhone: "", alternativePhone: "",
       physicalAddress: "", city: "", province: "", district: "", postalAddress: "",
       vacancyRefNumber: `NISIT-VAC-${jobId}`,
@@ -1409,6 +1680,27 @@ export function ApplyWizard({
   const handleNext = async () => {
     const valid = await validateCurrentStep();
     if (!valid) return;
+
+    // Additional validation for the screening step: enforce required questions
+    if (STEPS[currentStep]?.id === "screening" && screeningQuestions.length > 0) {
+      const answers = form.getValues("screeningAnswers");
+      const missing = screeningQuestions.filter(q => {
+        if (!q.required) return false;
+        const entry = answers.find((a: ScreeningAnswerEntry) => a.questionId === q.id);
+        return !entry?.answer || entry.answer.trim() === "";
+      });
+      if (missing.length > 0) {
+        // Set errors on the first unanswered required field
+        missing.forEach((q) => {
+          const idx = screeningQuestions.findIndex(sq => sq.id === q.id);
+          if (idx >= 0) {
+            form.setError(`screeningAnswers.${idx}.answer`, { message: "This question is required" });
+          }
+        });
+        return;
+      }
+    }
+
     saveDraftLocally();
     setCurrentStep(s => Math.min(s + 1, totalSteps - 1));
   };

@@ -16,7 +16,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import PDFDocument from "pdfkit";
 import { sendOfferLetterEmail } from "../lib/email";
 import { logger } from "../lib/logger";
-import { createNotification, notifyAdmins } from "../lib/notificationService";
+import { createNotification, getUserIdByEmail, notifyAdmins } from "../lib/notificationService";
 import nisitLogoDataUrl from "../assets/nisit-logo.png";
 
 const router: IRouter = Router();
@@ -376,6 +376,17 @@ router.post(
       }
       const agencyIdForNotif = job?.agencyId ?? req.user?.agencyId ?? null;
       promises.push(notifyAdmins(agencyIdForNotif, notifType, notifMessage));
+
+      // Notify the applicant that they have been sent an offer letter
+      const applicantUserId = candidateEmail ? await getUserIdByEmail(candidateEmail) : null;
+      if (applicantUserId) {
+        promises.push(createNotification({
+          userId: applicantUserId,
+          type: "offer_letter_sent",
+          message: `A letter of offer for the position of "${position}" has been emailed to you. Please check your inbox.`,
+        }));
+      }
+
       await Promise.allSettled(promises);
 
       res.json({ success: true, sentTo: candidateEmail });

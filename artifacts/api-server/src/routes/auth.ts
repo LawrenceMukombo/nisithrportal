@@ -11,6 +11,7 @@ import { isStaffDomain } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { sendPasswordResetEmail } from "../lib/email";
 import { writeAuditLog } from "../lib/audit";
+import { createNotification } from "../lib/notificationService";
 
 const router: IRouter = Router();
 
@@ -241,6 +242,17 @@ router.patch("/auth/me/email", authMiddleware, requireRole("applicant"), async (
   // Keep linked candidate records in sync
   await db.update(candidatesTable).set({ email: normalised }).where(eq(candidatesTable.userId, user.id));
 
+  // Notify the user that their email was changed
+  try {
+    await createNotification({
+      userId: user.id,
+      type: "email_changed",
+      message: `Your email address has been updated to ${normalised}.`,
+    });
+  } catch (err) {
+    logger.warn({ err, userId: user.id }, "auth/me/email: failed to create email-change notification");
+  }
+
   logger.info({ userId: user.id, newEmail: normalised }, "auth/me/email: applicant email updated");
   res.json({ message: "Email address updated successfully.", email: normalised });
 });
@@ -372,6 +384,17 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 
   await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, user.id));
   await db.update(passwordResetTokensTable).set({ used: true }).where(eq(passwordResetTokensTable.id, record.id));
+
+  // Notify the applicant that their password was reset
+  try {
+    await createNotification({
+      userId: user.id,
+      type: "password_changed",
+      message: "Your password has been successfully reset. If you did not request this, contact support immediately.",
+    });
+  } catch (err) {
+    logger.warn({ err, userId: user.id }, "auth/reset-password: failed to create password-reset notification");
+  }
 
   res.json({ message: "Password updated successfully. You can now sign in." });
 });

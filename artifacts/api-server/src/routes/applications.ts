@@ -654,6 +654,28 @@ router.post("/applications", async (req, res): Promise<void> => {
         await notifyHrOfficers(job.agencyId, "new_application", message);
       }
     }
+    // Notify the applicant that their submission was received.
+    // Detect reapplication: check for a prior withdrawn application from same candidate+job.
+    const applicantUserId = await getUserIdByEmail(candidateEmail);
+    if (applicantUserId && job) {
+      const [priorWithdrawn] = await db
+        .select({ id: applicationsTable.id })
+        .from(applicationsTable)
+        .where(and(
+          eq(applicationsTable.candidateId, application.candidateId!),
+          eq(applicationsTable.jobId, jobId),
+          eq(applicationsTable.status, "withdrawn"),
+        ))
+        .limit(1);
+      const isReapply = Boolean(priorWithdrawn);
+      await createNotification({
+        userId: applicantUserId,
+        type: isReapply ? "application_reapplied" : "application_submitted",
+        message: isReapply
+          ? `Your re-application for "${job.title}" has been submitted successfully. Reference #${application.id}.`
+          : `Your application for "${job.title}" has been submitted successfully. Reference #${application.id}.`,
+      });
+    }
   } catch (err) {
     console.error("[applications] New application HR notification failed:", err);
   }
@@ -765,6 +787,7 @@ router.patch("/applications/:id", authMiddleware, requireRole("applicant"), asyn
 
   // Notify the responsible HR officer (job poster) about the withdrawal.
   // If the job has no assigned poster, fall back to all HR officers in the agency.
+  // Also notify the applicant to confirm the withdrawal.
   try {
     const [job] = await db
       .select({ agencyId: jobsTable.agencyId, title: jobsTable.title, createdBy: jobsTable.createdBy })
@@ -778,6 +801,15 @@ router.patch("/applications/:id", authMiddleware, requireRole("applicant"), asyn
       } else {
         await notifyHrOfficers(job.agencyId, "application_withdrawn", message);
       }
+    }
+    // Confirm withdrawal to the applicant.
+    const applicantUserId = await getUserIdByEmail(candidate.email);
+    if (applicantUserId && job) {
+      await createNotification({
+        userId: applicantUserId,
+        type: "application_withdrawn",
+        message: `Your application for "${job.title}" has been successfully withdrawn.`,
+      });
     }
   } catch (err) {
     console.error("[applications] Withdrawal HR notification failed:", err);

@@ -1208,6 +1208,10 @@ export const BulkUpdateApplicationStatusBody = zod.object({
 
 export const BulkUpdateApplicationStatusResponse = zod.object({
   updated: zod.number().optional(),
+  skipped: zod.array(zod.object({
+    id: zod.number().int(),
+    reason: zod.enum(["not_found", "access_denied"]),
+  })).default([]),
 });
 
 /**
@@ -1225,6 +1229,10 @@ export const BulkUpdateApplicationStatusByFilterBody = zod.object({
 export const BulkUpdateApplicationStatusByFilterResponse = zod.object({
   updated: zod.number().optional(),
   matched: zod.number().optional(),
+  skipped: zod.array(zod.object({
+    id: zod.number().int(),
+    reason: zod.enum(["not_found", "access_denied"]),
+  })).default([]),
 });
 
 /**

@@ -825,8 +825,9 @@ function isDefaultBulkTransitionAllowed(from: string, to: string): boolean {
   return toIdx - fromIdx === 1; // forward exactly one step
 }
 
+type BulkSkippedEntry = { id: number; reason: "not_found" | "access_denied" };
 type BulkUpdateOutcome =
-  | { ok: true; updated: number }
+  | { ok: true; updated: number; skipped: BulkSkippedEntry[] }
   | { ok: false; blocked: { id: number; status: string }[]; canOverride: boolean };
 
 // Apply a status update to a tenant-scoped set of application IDs in a single
@@ -845,7 +846,7 @@ async function applyBulkStatusUpdate(
   agencyId: number | null,
   options: { override?: boolean; isAdmin?: boolean } = {},
 ): Promise<BulkUpdateOutcome> {
-  if (candidateIds.length === 0) return { ok: true, updated: 0 };
+  if (candidateIds.length === 0) return { ok: true, updated: 0, skipped: [] };
 
   const existing = await db
     .select({
@@ -862,10 +863,22 @@ async function applyBulkStatusUpdate(
     ? existing.filter((a) => a.jobAgencyId === agencyId)
     : existing;
 
-  if (accessible.length === 0) return { ok: true, updated: 0 };
+  // Track which input IDs were silently dropped so HR can diagnose partial
+  // failures rather than only seeing a count. "not_found" covers IDs missing
+  // from the DB (deleted or never existed); "access_denied" covers IDs that
+  // exist but belong to a different agency than the caller.
+  const existingIds = new Set(existing.map((a) => a.id));
+  const accessibleIds = new Set(accessible.map((a) => a.id));
+  const skipped: BulkSkippedEntry[] = [];
+  for (const id of candidateIds) {
+    if (!existingIds.has(id)) skipped.push({ id, reason: "not_found" });
+    else if (!accessibleIds.has(id)) skipped.push({ id, reason: "access_denied" });
+  }
+
+  if (accessible.length === 0) return { ok: true, updated: 0, skipped };
 
   const changedApps = accessible.filter((a) => a.status !== status);
-  if (changedApps.length === 0) return { ok: true, updated: 0 };
+  if (changedApps.length === 0) return { ok: true, updated: 0, skipped };
 
   // Workflow guard: validate every (from -> to) transition unless an admin has
   // explicitly opted to bypass. Custom per-agency allow-lists win over defaults.
@@ -947,7 +960,7 @@ async function applyBulkStatusUpdate(
     console.error("[applications] Bulk notification trigger failed:", err);
   }
 
-  return { ok: true, updated: changedApps.length };
+  return { ok: true, updated: changedApps.length, skipped };
 }
 
 // Translate a blocked-bulk outcome into the standard 422 error response shape.
@@ -988,7 +1001,7 @@ router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "
     sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
     return;
   }
-  res.json({ updated: result.updated });
+  res.json({ updated: result.updated, skipped: result.skipped });
 });
 
 // PATCH /applications/bulk-status-by-filter — apply a status change to every
@@ -1008,7 +1021,7 @@ router.patch("/applications/bulk-status-by-filter", authMiddleware, requireRole(
   const agencyId = getTenantAgencyId(req);
   const matchedIds = await resolveApplicationIdsForFilters(agencyId, filters.status ?? null, filters.search ?? null);
   if (matchedIds.length === 0) {
-    res.json({ updated: 0, matched: 0 });
+    res.json({ updated: 0, matched: 0, skipped: [] });
     return;
   }
   const result = await applyBulkStatusUpdate(matchedIds, status, agencyId, { override, isAdmin });
@@ -1016,7 +1029,7 @@ router.patch("/applications/bulk-status-by-filter", authMiddleware, requireRole(
     sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
     return;
   }
-  res.json({ updated: result.updated, matched: matchedIds.length });
+  res.json({ updated: result.updated, matched: matchedIds.length, skipped: result.skipped });
 });
 
 router.patch("/applications/:id", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {

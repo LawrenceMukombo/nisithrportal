@@ -46,6 +46,31 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   withdrawn: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
+const SKIPPED_REASON_LABELS: Record<"not_found" | "access_denied", string> = {
+  not_found: "not found",
+  access_denied: "access denied",
+};
+
+// Format the bulk-update skipped list into a one-line breakdown for the toast,
+// e.g. "2 access denied (#12, #14), 1 not found (#9)". Keeps the message
+// actionable without dumping every ID when the list is long.
+function describeSkipped(
+  skipped: { id: number; reason: "not_found" | "access_denied" }[],
+): string | undefined {
+  if (skipped.length === 0) return undefined;
+  const byReason: Record<string, number[]> = {};
+  for (const s of skipped) (byReason[s.reason] ??= []).push(s.id);
+  const parts: string[] = [];
+  for (const reason of ["access_denied", "not_found"] as const) {
+    const ids = byReason[reason];
+    if (!ids?.length) continue;
+    const sample = ids.slice(0, 3).map((i) => `#${i}`).join(", ");
+    const more = ids.length > 3 ? `, +${ids.length - 3} more` : "";
+    parts.push(`${ids.length} ${SKIPPED_REASON_LABELS[reason]} (${sample}${more})`);
+  }
+  return parts.join("; ");
+}
+
 const BULK_ACTIONS: DataTableBulkAction[] = [
   { label: "Move to Review", value: "screening" },
   { label: "Shortlist", value: "interview" },
@@ -199,10 +224,18 @@ export default function ApplicationsPage() {
           });
           return;
         }
-        const { updated } = await res.json() as { updated: number };
+        const { updated, skipped = [] } = await res.json() as {
+          updated: number;
+          skipped?: { id: number; reason: "not_found" | "access_denied" }[];
+        };
         setBulkProgress({ done: meta.totalRows, total: meta.totalRows });
         await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
-        toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
+        const skippedDescription = describeSkipped(skipped);
+        toast({
+          title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"${skipped.length > 0 ? ` — ${skipped.length} skipped` : ""}`,
+          description: skippedDescription,
+          variant: skipped.length > 0 ? "destructive" : undefined,
+        });
       } finally {
         setBulkProgress(null);
       }
@@ -216,6 +249,7 @@ export default function ApplicationsPage() {
     const total = ids.length;
     setBulkProgress({ done: 0, total });
     let updatedTotal = 0;
+    const skippedAll: { id: number; reason: "not_found" | "access_denied" }[] = [];
     try {
       for (let i = 0; i < total; i += BATCH_SIZE) {
         const chunk = ids.slice(i, i + BATCH_SIZE);
@@ -238,13 +272,20 @@ export default function ApplicationsPage() {
           });
           return;
         }
-        const { updated } = (await res.json()) as { updated: number };
+        const { updated, skipped = [] } = (await res.json()) as {
+          updated: number;
+          skipped?: { id: number; reason: "not_found" | "access_denied" }[];
+        };
         updatedTotal += updated;
+        skippedAll.push(...skipped);
         setBulkProgress({ done: Math.min(i + chunk.length, total), total });
       }
       await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+      const skippedDescription = describeSkipped(skippedAll);
       toast({
-        title: `${updatedTotal} application${updatedTotal !== 1 ? "s" : ""} updated to "${actionLabel}"`,
+        title: `${updatedTotal} application${updatedTotal !== 1 ? "s" : ""} updated to "${actionLabel}"${skippedAll.length > 0 ? ` — ${skippedAll.length} skipped` : ""}`,
+        description: skippedDescription,
+        variant: skippedAll.length > 0 ? "destructive" : undefined,
       });
     } finally {
       setBulkProgress(null);

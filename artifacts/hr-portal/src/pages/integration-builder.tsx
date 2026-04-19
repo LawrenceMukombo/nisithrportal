@@ -4,6 +4,9 @@ import {
   Sparkles, CheckCircle2, XCircle, Clock, Eye, EyeOff, Pencil, TestTube2, X,
   AlertTriangle, Activity, TrendingUp, Zap, Download, Bell,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +96,16 @@ interface IntegrationStats {
   avgDurationMs: number;
   perConfig: PerConfigHealth[];
   recentFailures: RecentFailure[];
+}
+
+interface DailyBucket {
+  date: string;
+  success: number;
+  error: number;
+}
+
+interface IntegrationConfigStats {
+  daily: DailyBucket[];
 }
 
 const HEALTH_META = {
@@ -277,6 +290,57 @@ function MiniTrendChart({ logs }: { logs: IntegrationLog[] }) {
         );
       })}
     </svg>
+  );
+}
+
+function DailyTrendChart({ data }: { data: DailyBucket[] }) {
+  const hasAnyData = data.some(d => d.success > 0 || d.error > 0);
+
+  const formatted = data.map(d => ({
+    ...d,
+    label: new Date(d.date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+  }));
+
+  if (!hasAnyData) {
+    return (
+      <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
+        No executions in the last 7 days
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={110}>
+      <BarChart data={formatted} barSize={14} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: "var(--muted-foreground, #6b7280)" }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          allowDecimals={false}
+          tick={{ fontSize: 10, fill: "var(--muted-foreground, #6b7280)" }}
+          axisLine={false}
+          tickLine={false}
+          width={28}
+        />
+        <Tooltip
+          contentStyle={{ fontSize: 11, padding: "4px 8px", borderRadius: 6 }}
+          cursor={{ fill: "rgba(0,0,0,0.04)" }}
+          formatter={(value: number, name: string) => [value, name === "success" ? "Success" : "Error"]}
+          labelFormatter={(label: string) => label}
+        />
+        <Legend
+          iconType="circle"
+          iconSize={7}
+          wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+          formatter={(value) => value === "success" ? "Success" : "Error"}
+        />
+        <Bar dataKey="success" stackId="a" fill="#34d399" radius={[2, 2, 0, 0]} name="success" />
+        <Bar dataKey="error" stackId="a" fill="#f87171" radius={[2, 2, 0, 0]} name="error" />
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -905,6 +969,13 @@ function IntegrationConfigCard({
     enabled: showLogs,
   });
 
+  const statsQuery = useQuery({
+    queryKey: ["integration-config-stats", config.id],
+    queryFn: () => apiFetch<IntegrationConfigStats>(`/api/integration-config/${config.id}/stats`),
+    enabled: expanded,
+    staleTime: 60_000,
+  });
+
   const toggleMutation = useMutation({
     mutationFn: (enabled: boolean) =>
       apiFetch(`/api/integration-config/${config.id}`, {
@@ -1069,6 +1140,19 @@ function IntegrationConfigCard({
               </div>
             </div>
           )}
+
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-3.5 w-3.5 text-primary" />
+              <p className="text-xs font-semibold">7-Day Daily Trend</p>
+              {statsQuery.isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground ml-auto" />}
+            </div>
+            {statsQuery.data ? (
+              <DailyTrendChart data={statsQuery.data.daily} />
+            ) : statsQuery.isError ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Could not load trend data.</p>
+            ) : null}
+          </div>
 
           <AlertThresholdsPanel
             config={config}

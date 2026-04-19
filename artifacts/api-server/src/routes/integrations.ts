@@ -539,6 +539,65 @@ Only include mappings where you are reasonably confident. Skip uncertain mapping
   }
 });
 
+// ─── GET /integration-config/:id/stats — daily bucketed trend for last 7 days ──
+
+router.get("/integration-config/:id/stats", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const id = parseInt(req.params["id"] as string, 10);
+    if (!Number.isFinite(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+    const [cfg] = await db
+      .select({ agencyId: integrationConfigsTable.agencyId })
+      .from(integrationConfigsTable)
+      .where(eq(integrationConfigsTable.id, id));
+    if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Fetch all logs in the last 7 days for this config
+    const logs = await db
+      .select({
+        status: integrationLogsTable.status,
+        createdAt: integrationLogsTable.createdAt,
+      })
+      .from(integrationLogsTable)
+      .where(
+        and(
+          eq(integrationLogsTable.integrationConfigId, id),
+          gte(integrationLogsTable.createdAt, since7d),
+        )
+      )
+      .orderBy(integrationLogsTable.createdAt);
+
+    // Build a map of the last 7 days (date string → { success, error })
+    const buckets: Record<string, { date: string; success: number; error: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      buckets[key] = { date: key, success: 0, error: 0 };
+    }
+
+    for (const log of logs) {
+      const key = log.createdAt?.toISOString().slice(0, 10);
+      if (key && buckets[key]) {
+        if (log.status === "success") {
+          buckets[key].success += 1;
+        } else {
+          buckets[key].error += 1;
+        }
+      }
+    }
+
+    const daily = Object.values(buckets);
+    res.json({ daily });
+  } catch (err) {
+    logger.error(err, "Failed to get integration config stats");
+    res.status(500).json({ error: "Failed to get integration config stats" });
+  }
+});
+
 // ─── GET /integration-stats ────────────────────────────────────────────────────
 
 router.get("/integration-stats", authMiddleware, requireRole("admin"), async (req, res) => {

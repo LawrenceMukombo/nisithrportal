@@ -147,7 +147,11 @@ export default function ApplicantRegisterPage() {
                   disabled={isPending || showGovWarning}
                   data-testid="button-submit"
                 >
-                  {isPending ? "Creating account..." : "Create Account"}
+                  {isPending
+                    ? "Creating account..."
+                    : showGovWarning
+                    ? "Staff accounts must sign in directly"
+                    : "Create Account"}
                 </Button>
               </form>
             </Form>

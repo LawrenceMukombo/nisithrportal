@@ -432,9 +432,10 @@ function StageCard({
                 : app.createdAt
                   ? new Date(app.createdAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
                   : null;
+              const enteredLabel = entryDate ? `Entered: ${entryDate}` : null;
               const stageTooltip = isStale
-                ? `Stalled — ${days} days (threshold: ${stage.staleDaysThreshold}d)${entryDate ? ` · entered ${entryDate}` : ""}`
-                : `${days} day${days !== 1 ? "s" : ""} in this stage${entryDate ? ` · entered ${entryDate}` : ""}`;
+                ? `${enteredLabel ? `${enteredLabel} · ` : ""}Stalled — ${days} days in stage (threshold: ${stage.staleDaysThreshold}d)`
+                : `${enteredLabel ? `${enteredLabel} · ` : ""}${days} day${days !== 1 ? "s" : ""} in this stage`;
               return (
                 <div
                   key={app.id}
@@ -463,9 +464,9 @@ function StageCard({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     {isStale ? (
-                      <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" aria-label="Stalled" />
+                      <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" aria-label="Stalled" title={stageTooltip} />
                     ) : (
-                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      <Clock className="h-3 w-3 text-muted-foreground" title={stageTooltip} />
                     )}
                     <span
                       className={`text-xs font-semibold tabular-nums ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}

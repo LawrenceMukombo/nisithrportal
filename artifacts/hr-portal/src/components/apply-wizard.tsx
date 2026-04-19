@@ -1062,7 +1062,18 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
           headers: { "Content-Type": "application/json", ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
           body: JSON.stringify({ cvUrl: url }),
         });
-        if (parseRes.ok) {
+        if (parseRes.status === 429) {
+          const retryAfterHeader = parseRes.headers.get("Retry-After");
+          const retrySeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+          const waitHint = Number.isFinite(retrySeconds) && retrySeconds > 0
+            ? ` Please try again in ${retrySeconds === 1 ? "1 second" : `${retrySeconds} seconds`}.`
+            : " Please wait a minute and try again.";
+          toast({
+            title: "Too many CV uploads",
+            description: `You've uploaded CVs too quickly for our auto-fill to keep up.${waitHint} Your CV is saved — you can fill in the form manually in the meantime.`,
+            variant: "destructive",
+          });
+        } else if (parseRes.ok) {
           const parsed = await parseRes.json() as {
             name?: string | null; email?: string | null; phone?: string | null;
             skills?: string[]; summary?: string | null;

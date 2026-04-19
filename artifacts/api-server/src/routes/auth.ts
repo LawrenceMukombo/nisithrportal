@@ -10,6 +10,7 @@ import { authMiddleware, generateToken, requireRole } from "../middlewares/auth"
 import { isStaffDomain } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { sendPasswordResetEmail } from "../lib/email";
+import { writeAuditLog } from "../lib/audit";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,12 @@ router.post("/auth/applicant-register", async (req, res): Promise<void> => {
   const { name, email, password } = parsed.data;
 
   if (isStaffDomain(email)) {
+    await writeAuditLog({
+      targetEmail: email,
+      actionType: "domain_violation",
+      outcome: "rejected",
+      details: { reason: "gov_email_for_applicant_self_registration", context: "applicant_register" },
+    });
     res.status(400).json({
       error: "Government email addresses cannot be used for applicant self-registration. Please use a personal email address.",
     });

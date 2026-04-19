@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Users, Search, UserPlus, AlertTriangle, Shield, Key, User, Check, X } from "lucide-react";
+import { Users, Search, UserPlus, AlertTriangle, Shield, Key, User, Check, X, ClipboardList, RefreshCw } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
 import { isStaffDomain, STAFF_ROLES } from "@/lib/emailDomain";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -64,6 +64,19 @@ type FullUser = UserRow & {
   permissions: PermMap | null;
   updatedAt?: string | null;
 };
+
+interface AuditLogEntry {
+  id: number;
+  performedById: number | null;
+  performedByEmail: string | null;
+  targetUserId: number | null;
+  targetEmail: string | null;
+  actionType: string;
+  outcome: string;
+  details: Record<string, unknown> | null;
+  agencyId: number | null;
+  createdAt: string;
+}
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const token = getToken();
@@ -551,11 +564,176 @@ function CreateUserDialog({
   );
 }
 
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  user_create: "User Created",
+  role_change: "Role Changed",
+  status_change: "Status Changed",
+  email_change: "Email Changed",
+  password_reset: "Password Reset",
+  domain_violation: "Domain Violation",
+};
+
+function formatDetails(entry: AuditLogEntry): string {
+  const d = entry.details ?? {};
+  switch (entry.actionType) {
+    case "role_change":
+      return `${d.oldRole ?? "—"} → ${d.newRole ?? "—"}`;
+    case "status_change":
+      return `${d.oldStatus ?? "—"} → ${d.newStatus ?? "—"}`;
+    case "email_change":
+      return `${d.oldEmail ?? "—"} → ${d.newEmail ?? "—"}`;
+    case "domain_violation":
+      if (d.reason === "non_gov_email_for_staff_role") return `Non-gov email rejected for "${d.attemptedRole}" role`;
+      if (d.reason === "gov_email_for_applicant_role") return "Gov email rejected for applicant role";
+      if (d.reason === "gov_email_for_applicant_self_registration") return "Gov email blocked at self-registration";
+      return String(d.reason ?? "");
+    case "user_create":
+      return `Role: ${d.roleName ?? "—"}`;
+    case "password_reset":
+      return "Admin reset password";
+    default:
+      return "";
+  }
+}
+
+function AuditLogPanel() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionTypeFilter, setActionTypeFilter] = useState("all");
+  const [outcomeFilter, setOutcomeFilter] = useState("all");
+  const { toast } = useToast();
+
+  const fetchEntries = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "200" });
+      if (actionTypeFilter !== "all") params.set("actionType", actionTypeFilter);
+      if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
+      const data: AuditLogEntry[] = await apiFetch(`/audit-log?${params.toString()}`);
+      setEntries(data);
+    } catch {
+      toast({ title: "Failed to load audit log", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [actionTypeFilter, outcomeFilter, toast]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3 items-center">
+        <Select value={actionTypeFilter} onValueChange={setActionTypeFilter}>
+          <SelectTrigger className="w-48 h-9 text-sm">
+            <SelectValue placeholder="All Action Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Action Types</SelectItem>
+            {Object.entries(ACTION_TYPE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
+          <SelectTrigger className="w-36 h-9 text-sm">
+            <SelectValue placeholder="All Outcomes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Outcomes</SelectItem>
+            <SelectItem value="success">Success</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {(actionTypeFilter !== "all" || outcomeFilter !== "all") && (
+          <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setActionTypeFilter("all"); setOutcomeFilter("all"); }}>
+            Clear filters
+          </Button>
+        )}
+
+        <Button size="sm" variant="outline" className="h-9 ml-auto" onClick={fetchEntries} disabled={loading}>
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No audit log entries found.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b">
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Timestamp</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Action</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Outcome</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Performed By</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">Target</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry, i) => (
+                  <tr key={entry.id} className={`border-t ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
+                    <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap text-xs">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <Badge
+                        variant={entry.actionType === "domain_violation" ? "destructive" : "outline"}
+                        className="text-xs"
+                      >
+                        {ACTION_TYPE_LABELS[entry.actionType] ?? entry.actionType}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <Badge
+                        variant={entry.outcome === "success" ? "default" : "destructive"}
+                        className="text-xs"
+                      >
+                        {entry.outcome}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2.5 text-sm text-muted-foreground max-w-[180px] truncate" title={entry.performedByEmail ?? undefined}>
+                      {entry.performedByEmail ?? <span className="italic text-muted-foreground/60">system</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-sm max-w-[180px] truncate" title={entry.targetEmail ?? undefined}>
+                      {entry.targetEmail ?? "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[240px] truncate" title={formatDetails(entry)}>
+                      {formatDetails(entry)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-3 py-2 border-t bg-muted/20 text-xs text-muted-foreground">
+            {entries.length} entr{entries.length === 1 ? "y" : "ies"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [pageTab, setPageTab] = useState("users");
 
   const { toast } = useToast();
   const { user: me } = useAuth();
@@ -717,66 +895,88 @@ export default function UsersPage() {
             <Users className="h-5 w-5 text-primary" />
             <h1 className="text-2xl font-bold" data-testid="heading-users">User Management</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              {filtered.length} of {users.length} user{users.length !== 1 ? "s" : ""}
-            </p>
-            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-create-user">
-              <UserPlus className="h-4 w-4 mr-1" /> Invite Staff
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search name, email or agency..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              data-testid="input-search-users"
-            />
-          </div>
-          <Select value={roleFilter} onValueChange={setRoleFilter}>
-            <SelectTrigger className="w-44 h-9 text-sm" data-testid="select-filter-role">
-              <SelectValue placeholder="All Roles" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {(search || roleFilter !== "all") && (
-            <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setRoleFilter("all"); }}>
-              Clear filters
-            </Button>
+          {pageTab === "users" && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                {filtered.length} of {users.length} user{users.length !== 1 ? "s" : ""}
+              </p>
+              <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-create-user">
+                <UserPlus className="h-4 w-4 mr-1" /> Invite Staff
+              </Button>
+            </div>
           )}
         </div>
 
-        {loadingUsers || loadingRoles ? (
-          <div className="space-y-2">
-            {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            rows={filtered}
-            getRowId={(u) => u.id}
-            bulkActions={BULK_ACTIONS}
-            onBulkAction={handleBulkAction}
-            exportFilename="users"
-            data-testid="table-users"
-            emptyState="No users found"
-            rowProps={(u) => ({
-              className: "cursor-pointer",
-              onClick: () => setSelectedUserId(u.id),
-              "data-testid": "row-user",
-            } as React.HTMLAttributes<HTMLTableRowElement>)}
-          />
-        )}
+        {/* Page-level Tabs */}
+        <Tabs value={pageTab} onValueChange={setPageTab}>
+          <TabsList>
+            <TabsTrigger value="users">
+              <Users className="h-3.5 w-3.5 mr-1.5" />Users
+            </TabsTrigger>
+            <TabsTrigger value="audit-log">
+              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />Audit Log
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── USERS TAB ──────────────────────────────── */}
+          <TabsContent value="users" className="space-y-4 mt-4">
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search name, email or agency..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  data-testid="input-search-users"
+                />
+              </div>
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-44 h-9 text-sm" data-testid="select-filter-role">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(search || roleFilter !== "all") && (
+                <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setRoleFilter("all"); }}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
+
+            {loadingUsers || loadingRoles ? (
+              <div className="space-y-2">
+                {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                rows={filtered}
+                getRowId={(u) => u.id}
+                bulkActions={BULK_ACTIONS}
+                onBulkAction={handleBulkAction}
+                exportFilename="users"
+                data-testid="table-users"
+                emptyState="No users found"
+                rowProps={(u) => ({
+                  className: "cursor-pointer",
+                  onClick: () => setSelectedUserId(u.id),
+                  "data-testid": "row-user",
+                } as React.HTMLAttributes<HTMLTableRowElement>)}
+              />
+            )}
+          </TabsContent>
+
+          {/* ── AUDIT LOG TAB ───────────────────────────── */}
+          <TabsContent value="audit-log" className="mt-4">
+            <AuditLogPanel />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <UserDetailSheet

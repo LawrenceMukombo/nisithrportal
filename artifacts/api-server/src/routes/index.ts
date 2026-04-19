@@ -17,6 +17,7 @@ import storageRouter from "./storage";
 import notificationsRouter from "./notifications";
 import integrationsRouter from "./integrations";
 import pdfRouter from "./pdf";
+import auditLogRouter from "./audit-log";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(storageRouter);
 router.use(notificationsRouter);
 router.use(integrationsRouter);
 router.use(pdfRouter);
+router.use(auditLogRouter);
 
 export default router;

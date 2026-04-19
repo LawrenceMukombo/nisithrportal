@@ -10,6 +10,7 @@ import {
   useGetAiScores, getGetAiScoresQueryKey,
   useGetCandidates, getGetCandidatesQueryKey,
   useUpdateApplicationStatus, getGetApplicationsQueryKey,
+  useGetMyApplications, getGetMyApplicationsQueryKey,
 } from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -479,7 +480,7 @@ export default function JobDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const { isAuthenticated } = useAuth();
-  const { isAdmin, isHR, isHiringManager, canManageJobs } = useRole();
+  const { isAdmin, isHR, isHiringManager, canManageJobs, isApplicant } = useRole();
   const [wizardOpen, setWizardOpen] = useState(() => new URLSearchParams(searchString).get("apply") === "1");
 
   const jobId = match ? parseInt(params!.id) : 0;
@@ -491,6 +492,16 @@ export default function JobDetailPage() {
   const isPublished = job?.status === "published";
   const screeningQuestions = useScreeningQuestions(jobId, isPublished);
   const canViewPipeline = isAuthenticated && (isAdmin || isHR || isHiringManager);
+
+  const { data: myApplications = [] } = useGetMyApplications({
+    query: {
+      enabled: isAuthenticated && isApplicant && !!jobId,
+      queryKey: getGetMyApplicationsQueryKey(),
+    },
+  });
+  const existingApplication = myApplications.find(
+    (a) => a.jobId === jobId && a.status !== "withdrawn",
+  );
 
   const showSalary = job?.salaryVisibility === "public" && (job.salaryMin || job.salaryMax);
 
@@ -592,16 +603,28 @@ export default function JobDetailPage() {
             </div>
 
             <div className="flex items-center gap-3 flex-shrink-0">
-              {isPublished && (
+              {isPublished && existingApplication ? (
+                <Link href="/my-applications">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="gap-2 text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-800"
+                    data-testid="button-already-applied"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Applied — View your application
+                  </Button>
+                </Link>
+              ) : isPublished ? (
                 <Button size="lg" onClick={() => setWizardOpen(true)} data-testid="button-apply-now">
                   <Send className="h-4 w-4 mr-2" /> Apply Now
                 </Button>
-              )}
+              ) : null}
             </div>
           </div>
 
           {/* Draft resume banner */}
-          {isPublished && (
+          {isPublished && !existingApplication && (
             <DraftBanner jobId={jobId} onResume={() => setWizardOpen(true)} />
           )}
 
@@ -739,13 +762,15 @@ export default function JobDetailPage() {
         </div>
 
         {/* Apply Wizard */}
-        <ApplyWizard
-          jobId={job.id}
-          jobTitle={job.title}
-          screeningQuestions={screeningQuestions}
-          open={wizardOpen}
-          onOpenChange={setWizardOpen}
-        />
+        {!existingApplication && (
+          <ApplyWizard
+            jobId={job.id}
+            jobTitle={job.title}
+            screeningQuestions={screeningQuestions}
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+          />
+        )}
       </div>
     </AppLayout>
   );

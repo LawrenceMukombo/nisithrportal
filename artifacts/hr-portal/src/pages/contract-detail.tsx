@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, RefreshCw, FileDown, Loader2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2 } from "lucide-react";
 import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -124,8 +124,11 @@ export default function ContractDetailPage() {
   const [showRenew, setShowRenew] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
   const [contractPdfLoading, setContractPdfLoading] = useState(false);
+  const [signedUploading, setSignedUploading] = useState(false);
+  const signedFileRef = useRef<HTMLInputElement>(null);
   const { canManageContracts } = useRole();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   async function downloadContractPdf(contractId: number) {
     setContractPdfLoading(true);
@@ -154,6 +157,34 @@ export default function ContractDetailPage() {
   }
 
   const contractId = match ? parseInt(params!.id) : 0;
+
+  async function handleSignedUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !contractId) return;
+    setSignedUploading(true);
+    try {
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/contracts/${contractId}/upload-signed`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to upload signed contract", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Signed contract uploaded", description: "The document has been stored against this contract." });
+      queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contractId) });
+      if (signedFileRef.current) signedFileRef.current.value = "";
+    } catch {
+      toast({ title: "Failed to upload signed contract", variant: "destructive" });
+    } finally {
+      setSignedUploading(false);
+    }
+  }
 
   const { data: contract, isLoading } = useGetContract(contractId, {
     query: { enabled: !!contractId && !isNaN(contractId), queryKey: getGetContractQueryKey(contractId) },
@@ -255,6 +286,62 @@ export default function ContractDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {canManageContracts && (
+          <Card data-testid="card-upload-signed-contract">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Upload className="h-4 w-4 text-primary" /> Upload Signed Contract
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {contract.documentUrl ? (
+                <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2 dark:bg-green-950 dark:border-green-800 dark:text-green-300" data-testid="banner-signed-uploaded">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>
+                    {contract.documentUrl.startsWith("/api/storage/")
+                      ? "Signed contract uploaded —"
+                      : "Contract document on file —"}
+                  </span>
+                  <a href={contract.documentUrl} target="_blank" rel="noreferrer" className="underline font-medium">
+                    View Document
+                  </a>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-300" data-testid="banner-signed-missing">
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span>No signed contract uploaded yet</span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Upload the physically signed contract PDF to complete the document lifecycle.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={signedFileRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={handleSignedUpload}
+                  className="hidden"
+                  data-testid="input-signed-contract-upload"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={signedUploading}
+                  onClick={() => signedFileRef.current?.click()}
+                  data-testid="button-upload-signed-contract"
+                >
+                  {signedUploading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading...</>
+                    : <><Upload className="h-3.5 w-3.5 mr-1.5" />{contract.documentUrl ? "Replace Signed Contract" : "Upload Signed Contract"}</>
+                  }
+                </Button>
+                <span className="text-xs text-muted-foreground">PDF, DOC, DOCX, JPG, PNG accepted</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isExpiredOrExpiring && contract.status === "active" && (
           <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-800">

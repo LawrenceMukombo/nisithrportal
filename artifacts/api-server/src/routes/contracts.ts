@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, inArray, lte, gte, sql } from "drizzle-orm";
+import multer from "multer";
 import { db, contractsTable, employeesTable, notificationsTable } from "@workspace/db";
 import {
   GetContractsQueryParams,
@@ -233,6 +234,73 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
   }
 
   res.json(contract);
+});
+
+// POST /contracts/:id/upload-signed — upload a physically signed contract PDF and store it against the contract
+const signedContractUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ALLOWED = new Set([
+      "application/pdf", "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/jpeg", "image/png",
+    ]);
+    if (ALLOWED.has(file.mimetype)) cb(null, true);
+    else cb(new Error("Unsupported file type. Allowed: PDF, DOC, DOCX, JPG, PNG"));
+  },
+});
+
+router.post("/contracts/:id/upload-signed", authMiddleware, requireRole("admin", "hr_officer"), (req, res): void => {
+  signedContractUpload.single("file")(req, res, async (err) => {
+    if (err) {
+      res.status(400).json({ error: err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE" ? "File too large (max 15 MB)" : (err as Error).message });
+      return;
+    }
+    if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+    const contractId = parseIntParam(req.params.id);
+    if (!contractId) { res.status(400).json({ error: "Invalid contract id" }); return; }
+
+    const [existing] = await db.select().from(contractsTable).where(eq(contractsTable.id, contractId));
+    if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
+
+    const agencyId = getTenantAgencyId(req);
+    const empAgencyId = await getEmployeeAgencyId(existing.employeeId);
+    if (!assertTenantAccess(res, empAgencyId, agencyId)) return;
+
+    const resolvedAgencyId = agencyId ?? empAgencyId;
+
+    const svc = new ObjectStorageService();
+    let fileUrl: string;
+    try {
+      const uploadURL = await svc.getObjectEntityUploadURL();
+      const objectPath = svc.normalizeObjectEntityPath(uploadURL);
+      const uploadRes = await fetch(uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": req.file.mimetype },
+        body: new Uint8Array(req.file.buffer),
+      });
+      if (!uploadRes.ok) { res.status(500).json({ error: "Failed to store file" }); return; }
+      if (resolvedAgencyId != null) {
+        const objectFile = await svc.getObjectEntityFile(objectPath);
+        await setObjectAclPolicy(objectFile, { owner: String(resolvedAgencyId), visibility: "private" });
+      }
+      fileUrl = `/api/storage${objectPath}`;
+    } catch (uploadErr) {
+      req.log.error({ err: uploadErr }, "Signed contract upload to storage failed");
+      res.status(500).json({ error: "Failed to upload file to storage" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(contractsTable)
+      .set({ documentUrl: fileUrl })
+      .where(eq(contractsTable.id, contractId))
+      .returning();
+
+    res.status(200).json(updated);
+  });
 });
 
 export default router;

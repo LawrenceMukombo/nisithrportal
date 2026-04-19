@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Download, Printer, Columns3, CheckSquare } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Printer, Columns3, CheckSquare } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -107,6 +108,55 @@ function downloadCSV(csv: string, filename: string) {
   a.download = `${filename}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function PageJumpInput({
+  currentPage,
+  totalPages,
+  onJump,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onJump: (page: number) => void;
+}) {
+  const [value, setValue] = useState(String(currentPage));
+  useEffect(() => {
+    setValue(String(currentPage));
+  }, [currentPage]);
+
+  function commit() {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed)) {
+      setValue(String(currentPage));
+      return;
+    }
+    const clamped = Math.min(Math.max(1, parsed), totalPages);
+    if (clamped !== currentPage) onJump(clamped);
+    setValue(String(clamped));
+  }
+
+  return (
+    <Input
+      type="number"
+      min={1}
+      max={totalPages}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === "Escape") {
+          setValue(String(currentPage));
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      aria-label="Jump to page"
+      data-testid="input-page-jump"
+      className="h-7 w-14 px-1.5 text-xs text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
+  );
 }
 
 export function DataTable<T>({
@@ -589,9 +639,17 @@ export function DataTable<T>({
                 <option value={100}>100</option>
               </select>
             </label>
-            <span className="text-xs text-muted-foreground" data-testid="pagination-page-label">
-              Page {safePageIndex + 1} of {totalPages}
-            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={() => setPageIndex(0)}
+              disabled={safePageIndex === 0}
+              aria-label="First page"
+              data-testid="button-first-page"
+            >
+              <ChevronsLeft className="h-3.5 w-3.5" />
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -603,6 +661,15 @@ export function DataTable<T>({
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="pagination-page-label">
+              Page
+              <PageJumpInput
+                currentPage={safePageIndex + 1}
+                totalPages={totalPages}
+                onJump={(p) => setPageIndex(p - 1)}
+              />
+              of {totalPages}
+            </span>
             <Button
               size="sm"
               variant="outline"
@@ -613,6 +680,17 @@ export function DataTable<T>({
               data-testid="button-next-page"
             >
               <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={() => setPageIndex(totalPages - 1)}
+              disabled={safePageIndex >= totalPages - 1}
+              aria-label="Last page"
+              data-testid="button-last-page"
+            >
+              <ChevronsRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>

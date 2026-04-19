@@ -209,7 +209,8 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
         endDate: body.data.endDate ?? undefined,
         type: body.data.type,
         status: body.data.status,
-        documentUrl: body.data.documentUrl ?? undefined,
+        // Distinguish absent (undefined → leave alone) from explicit null (clear the field).
+        documentUrl: body.data.documentUrl === undefined ? undefined : body.data.documentUrl,
       })
       .where(eq(contractsTable.id, params.data.id))
       .returning();

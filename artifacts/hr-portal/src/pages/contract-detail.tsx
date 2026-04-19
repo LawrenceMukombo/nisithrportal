@@ -1,12 +1,22 @@
 import { useState, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2 } from "lucide-react";
 import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -125,7 +135,10 @@ export default function ContractDetailPage() {
   const [showStatus, setShowStatus] = useState(false);
   const [contractPdfLoading, setContractPdfLoading] = useState(false);
   const [signedUploading, setSignedUploading] = useState(false);
+  const [showRemoveDoc, setShowRemoveDoc] = useState(false);
+  const [removingDoc, setRemovingDoc] = useState(false);
   const signedFileRef = useRef<HTMLInputElement>(null);
+  const updateContractMutation = useUpdateContract();
   const { canManageContracts } = useRole();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -157,6 +170,24 @@ export default function ContractDetailPage() {
   }
 
   const contractId = match ? parseInt(params!.id) : 0;
+
+  async function handleRemoveSigned() {
+    if (!contractId) return;
+    setRemovingDoc(true);
+    try {
+      await updateContractMutation.mutateAsync({
+        id: contractId,
+        data: { documentUrl: null },
+      });
+      queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contractId) });
+      toast({ title: "Signed contract removed", description: "You can now upload the correct file." });
+      setShowRemoveDoc(false);
+    } catch {
+      toast({ title: "Failed to remove signed contract", variant: "destructive" });
+    } finally {
+      setRemovingDoc(false);
+    }
+  }
 
   async function handleSignedUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -337,11 +368,45 @@ export default function ContractDetailPage() {
                     : <><Upload className="h-3.5 w-3.5 mr-1.5" />{contract.documentUrl ? "Replace Signed Contract" : "Upload Signed Contract"}</>
                   }
                 </Button>
+                {contract.documentUrl && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={removingDoc}
+                    onClick={() => setShowRemoveDoc(true)}
+                    data-testid="button-remove-signed-contract"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />Remove
+                  </Button>
+                )}
                 <span className="text-xs text-muted-foreground">PDF, DOC, DOCX, JPG, PNG accepted</span>
               </div>
             </CardContent>
           </Card>
         )}
+
+        <AlertDialog open={showRemoveDoc} onOpenChange={(open) => !removingDoc && setShowRemoveDoc(open)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove signed contract?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will clear the document attached to this contract. You can upload a replacement afterwards. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={removingDoc}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); void handleRemoveSigned(); }}
+                disabled={removingDoc}
+                data-testid="button-confirm-remove-signed-contract"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {removingDoc ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Removing...</> : "Remove"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {isExpiredOrExpiring && contract.status === "active" && (
           <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-800">

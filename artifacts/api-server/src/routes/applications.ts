@@ -1245,6 +1245,51 @@ router.post("/applications/:id/documents", authMiddleware, requireRole("admin", 
   });
 });
 
+// DELETE /applications/:id/documents/:docId — remove a previously uploaded document
+// (e.g. an incorrectly uploaded signed contract). Best-effort deletes the underlying
+// stored object as well, but always removes the DB record so HR can re-upload.
+router.delete(
+  "/applications/:id/documents/:docId",
+  authMiddleware,
+  requireRole("admin", "hr_officer"),
+  async (req, res): Promise<void> => {
+    const appId = parseIntParam(req.params.id);
+    const docId = parseIntParam(req.params.docId);
+    if (!appId || !docId) { res.status(400).json({ error: "Invalid id" }); return; }
+
+    const [appRow] = await db
+      .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId })
+      .from(applicationsTable)
+      .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+      .where(eq(applicationsTable.id, appId));
+    if (!appRow) { res.status(404).json({ error: "Application not found" }); return; }
+    if (!assertTenantAccess(res, appRow.agencyId, getTenantAgencyId(req))) return;
+
+    const [doc] = await db.select().from(applicationDocumentsTable)
+      .where(and(
+        eq(applicationDocumentsTable.id, docId),
+        eq(applicationDocumentsTable.applicationId, appId),
+      ));
+    if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+
+    // Best-effort: delete the underlying stored object if it's an internal storage URL.
+    if (doc.url && doc.url.startsWith(INTERNAL_OBJECT_PREFIX)) {
+      try {
+        const svc = new ObjectStorageService();
+        const objectPath = "/objects/" + doc.url.slice(INTERNAL_OBJECT_PREFIX.length);
+        const file = await svc.getObjectEntityFile(objectPath);
+        await file.delete({ ignoreNotFound: true });
+      } catch (storageErr) {
+        // Non-fatal: still remove the DB record so HR isn't blocked.
+        req.log.warn({ err: storageErr, docId }, "Failed to delete stored object for document");
+      }
+    }
+
+    await db.delete(applicationDocumentsTable).where(eq(applicationDocumentsTable.id, docId));
+    res.status(204).end();
+  }
+);
+
 // GET /jobs/:id/di-report — aggregate D&I statistics for a job (no individual data exposed)
 router.get("/jobs/:id/di-report", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const jobId = parseIntParam(req.params.id);

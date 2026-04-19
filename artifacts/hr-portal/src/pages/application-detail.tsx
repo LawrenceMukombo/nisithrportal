@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2 } from "lucide-react";
 import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
@@ -31,6 +31,16 @@ import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/auth-context";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
 import { ApplicationTimeline } from "@/components/application-timeline";
@@ -248,6 +258,8 @@ export default function ApplicationDetailPage() {
   const appId = match ? parseInt(params!.id) : 0;
   const [screeningAnswers, setScreeningAnswers] = useState<ScreeningAnswer[]>([]);
   const [appDocuments, setAppDocuments] = useState<AppDocument[]>([]);
+  const [docToDelete, setDocToDelete] = useState<AppDocument | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
 
   useEffect(() => {
     if (!appId || !(isAdmin || isHR || isHiringManager)) return;
@@ -344,6 +356,30 @@ export default function ApplicationDetailPage() {
       toast({ title: "Failed to send offer letter", variant: "destructive" });
     } finally {
       setSendOfferLoading(false);
+    }
+  }
+
+  async function handleDeleteDocument() {
+    if (!docToDelete || !appId) return;
+    setDeletingDoc(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/applications/${appId}/documents/${docToDelete.id}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to delete document", variant: "destructive" });
+        return;
+      }
+      setAppDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
+      toast({ title: "Document removed", description: "You can upload a replacement if needed." });
+      setDocToDelete(null);
+    } catch {
+      toast({ title: "Failed to delete document", variant: "destructive" });
+    } finally {
+      setDeletingDoc(false);
     }
   }
 
@@ -784,16 +820,53 @@ export default function ApplicationDetailPage() {
                       <p className="text-xs text-muted-foreground">{DOC_TYPE_LABELS[doc.documentType] ?? doc.documentType}</p>
                     </div>
                   </div>
-                  <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                    <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs flex-shrink-0">
-                      <ExternalLink className="h-3 w-3" /> Open
-                    </Button>
-                  </a>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                      <Button type="button" size="sm" variant="outline" className="h-7 gap-1 text-xs">
+                        <ExternalLink className="h-3 w-3" /> Open
+                      </Button>
+                    </a>
+                    {(isAdmin || isHR) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                        onClick={() => setDocToDelete(doc)}
+                        data-testid={`button-delete-document-${doc.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </CardContent>
           </Card>
         )}
+
+        <AlertDialog open={docToDelete != null} onOpenChange={(open) => { if (!open && !deletingDoc) setDocToDelete(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {docToDelete?.fileName ?? DOC_TYPE_LABELS[docToDelete?.documentType ?? ""] ?? docToDelete?.documentType}
+                {" "}will be permanently removed from this application. You can upload a replacement afterwards. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletingDoc}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); void handleDeleteDocument(); }}
+                disabled={deletingDoc}
+                data-testid="button-confirm-delete-document"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletingDoc ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Deleting...</> : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {app.status === "hired" && canUpdateStatus && (
           <Card data-testid="card-signed-contract">

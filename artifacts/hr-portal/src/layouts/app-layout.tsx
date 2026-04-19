@@ -66,6 +66,9 @@ function useNavItems() {
   if (isAdmin) {
     items.push({ label: "User Management", href: "/users", icon: Settings });
     items.push({ label: "Integration Builder", href: "/integrations", icon: Puzzle });
+  }
+
+  if (isAdmin || isHrOfficer || isHiringManager) {
     items.push({ label: "Pipeline SLA", href: "/settings/pipeline-sla", icon: Clock });
   }
 

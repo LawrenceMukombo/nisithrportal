@@ -115,7 +115,7 @@ router.put("/agencies/:id", authMiddleware, requireRole("admin"), async (req, re
 });
 
 // ─── GET /api/agencies/settings/stale-thresholds ──────────────────────────────
-router.get("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+router.get("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const agencyId = getTenantAgencyId(req);
   if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
   const [agency] = await db.select({ configuration: agenciesTable.configuration })
@@ -126,7 +126,7 @@ router.get("/agencies/settings/stale-thresholds", authMiddleware, requireRole("a
 });
 
 // ─── PUT /api/agencies/settings/stale-thresholds ──────────────────────────────
-router.put("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+router.put("/agencies/settings/stale-thresholds", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const agencyId = getTenantAgencyId(req);
   if (!agencyId) { res.status(403).json({ error: "Agency context required" }); return; }
   const parsed = ThresholdsBody.safeParse(req.body);

@@ -164,7 +164,7 @@ function Router() {
         {() => <ProtectedRoute component={IntegrationBuilderPage} roles={["admin"]} />}
       </Route>
       <Route path="/settings/pipeline-sla">
-        {() => <ProtectedRoute component={PipelineSlaSettingsPage} roles={["admin"]} />}
+        {() => <ProtectedRoute component={PipelineSlaSettingsPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

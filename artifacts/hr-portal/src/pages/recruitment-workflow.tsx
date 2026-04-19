@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   GitBranch,
@@ -44,6 +45,21 @@ const SHARED_STATUS_STAGES = new Set(
     WORKFLOW_STAGES.filter((o) => o.status === s.status).length > 1
   ).map((s) => s.id)
 );
+
+function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("hr_portal_token");
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers as Record<string, string> | undefined),
+    },
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(res.statusText);
+    return res.json() as Promise<T>;
+  });
+}
 
 function daysSince(dateStr: string | null | undefined): number {
   if (!dateStr) return 0;
@@ -327,6 +343,7 @@ function StageCard({
   isSlowest,
   staleCount,
   searchQuery,
+  threshold,
 }: {
   stage: typeof WORKFLOW_STAGES[number];
   apps: Application[];
@@ -338,6 +355,7 @@ function StageCard({
   isSlowest: boolean;
   staleCount: number;
   searchQuery: string;
+  threshold: number;
 }) {
   const [, setLocation] = useLocation();
   const colors = STAGE_COLOR_MAP[stage.color];
@@ -367,7 +385,7 @@ function StageCard({
                 <Badge
                   className="tabular-nums bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-100"
                   data-testid={`stale-badge-${stage.id}`}
-                  title={`${staleCount} application${staleCount !== 1 ? "s" : ""} stuck ≥${stage.staleDaysThreshold} days`}
+                  title={`${staleCount} application${staleCount !== 1 ? "s" : ""} stuck ≥${threshold} days`}
                 >
                   ⚠ {staleCount} stalled
                 </Badge>
@@ -395,7 +413,7 @@ function StageCard({
           <div className="flex items-center gap-1.5 mt-1 rounded-md bg-amber-50 dark:bg-amber-950/20 px-2 py-1 border border-amber-200 dark:border-amber-900/40" data-testid={`stale-banner-${stage.id}`}>
             <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
             <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-              {staleCount} {staleCount === 1 ? "application" : "applications"} stuck ≥{stage.staleDaysThreshold}d — needs attention
+              {staleCount} {staleCount === 1 ? "application" : "applications"} stuck ≥{threshold}d — needs attention
             </p>
           </div>
         )}
@@ -425,7 +443,7 @@ function StageCard({
               const name = candidate?.name ?? `Candidate #${app.candidateId}`;
               const position = job?.title ?? `Job #${app.jobId}`;
               const days = daysInStage(app, stage.status);
-              const isStale = days >= stage.staleDaysThreshold;
+              const isStale = days >= threshold;
               const entryItem = lastEntryForStatus(app.statusHistory, stage.status);
               const entryDate = entryItem
                 ? new Date(entryItem.changedAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
@@ -434,7 +452,7 @@ function StageCard({
                   : null;
               const enteredLabel = entryDate ? `Entered: ${entryDate}` : null;
               const stageTooltip = isStale
-                ? `${enteredLabel ? `${enteredLabel} · ` : ""}Stalled — ${days} days in stage (threshold: ${stage.staleDaysThreshold}d)`
+                ? `${enteredLabel ? `${enteredLabel} · ` : ""}Stalled — ${days} days in stage (threshold: ${threshold}d)`
                 : `${enteredLabel ? `${enteredLabel} · ` : ""}${days} day${days !== 1 ? "s" : ""} in this stage`;
               return (
                 <div
@@ -516,6 +534,16 @@ export default function RecruitmentWorkflowPage() {
     { query: { queryKey: getGetJobsQueryKey() } }
   );
 
+  const { data: savedThresholds } = useQuery({
+    queryKey: ["stale-thresholds"],
+    queryFn: () => apiFetch<Record<string, number>>("/api/agencies/settings/stale-thresholds"),
+  });
+
+  const dbThresholds: Record<string, number> = {};
+  for (const stage of WORKFLOW_STAGES) {
+    dbThresholds[stage.status] = savedThresholds?.[stage.status] ?? stage.staleDaysThreshold;
+  }
+
   const isLoading = appsLoading || candidatesLoading || jobsLoading;
 
   const candidateMap = new Map<number, Candidate>(candidates.map((c) => [c.id, c]));
@@ -548,7 +576,8 @@ export default function RecruitmentWorkflowPage() {
   const stageAvgDays = WORKFLOW_STAGES.map((stage) => {
     const allApps = stageApps(stage);
     const filtered = allApps.filter(matchesSearch);
-    const staleCount = allApps.filter((a) => daysInStage(a, stage.status) >= stage.staleDaysThreshold).length;
+    const stageThreshold = dbThresholds[stage.status] ?? stage.staleDaysThreshold;
+    const staleCount = allApps.filter((a) => daysInStage(a, stage.status) >= stageThreshold).length;
     return {
       stage,
       apps: filtered,
@@ -562,7 +591,7 @@ export default function RecruitmentWorkflowPage() {
   // so shared-status stages (screening/assessment, interview/evaluation) don't double-count.
   const thresholdByStatus: Record<string, number> = {};
   for (const stage of WORKFLOW_STAGES) {
-    if (!(stage.status in thresholdByStatus)) thresholdByStatus[stage.status] = stage.staleDaysThreshold;
+    if (!(stage.status in thresholdByStatus)) thresholdByStatus[stage.status] = dbThresholds[stage.status] ?? stage.staleDaysThreshold;
   }
   const totalStalled = activeApps.filter((app) => {
     const threshold = thresholdByStatus[app.status ?? ""];
@@ -734,7 +763,8 @@ export default function RecruitmentWorkflowPage() {
                     const status = app.status ?? "";
                     const stage = WORKFLOW_STAGES.find((s) => s.status === status);
                     const days = stage ? daysInStage(app, status) : daysSince(app.createdAt);
-                    const isStale = stage ? days >= stage.staleDaysThreshold : false;
+                    const stageThreshold = stage ? (dbThresholds[stage.status] ?? stage.staleDaysThreshold) : undefined;
+                    const isStale = stageThreshold !== undefined ? days >= stageThreshold : false;
                     const entryItem = stage ? lastEntryForStatus(app.statusHistory, status) : undefined;
                     const entryDate = entryItem ? new Date(entryItem.changedAt).toISOString().slice(0, 10)
                       : app.createdAt ? new Date(app.createdAt).toISOString().slice(0, 10) : "";
@@ -857,6 +887,7 @@ export default function RecruitmentWorkflowPage() {
                     isSlowest={isSlowest}
                     staleCount={staleCount}
                     searchQuery={search}
+                    threshold={dbThresholds[stage.status] ?? stage.staleDaysThreshold}
                   />
                 );
               })}

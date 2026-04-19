@@ -1,10 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db, usersTable, rolesTable, agenciesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
-import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { getTenantAgencyId } from "../middlewares/tenant";
 import { isStaffDomain, STAFF_ROLES } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 
@@ -19,8 +19,14 @@ const CreateUserBody = z.object({
 
 const UpdateUserBody = z.object({
   name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
   roleId: z.number().int().positive().optional(),
+  agencyId: z.number().int().positive().nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
+});
+
+const ResetPasswordBody = z.object({
+  password: z.string().min(8),
 });
 
 router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
@@ -104,6 +110,45 @@ router.get("/users", authMiddleware, requireRole("admin"), async (_req, res): Pr
   res.json(result);
 });
 
+router.get("/users/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const id = parseIntParam(req.params.id);
+  if (id == null || isNaN(id)) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
+
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      roleId: usersTable.roleId,
+      agencyId: usersTable.agencyId,
+      agencyName: agenciesTable.name,
+      status: usersTable.status,
+      createdAt: usersTable.createdAt,
+      updatedAt: usersTable.updatedAt,
+    })
+    .from(usersTable)
+    .leftJoin(agenciesTable, eq(usersTable.agencyId, agenciesTable.id))
+    .where(eq(usersTable.id, id));
+
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  let roleName: string | null = null;
+  let permissions: unknown = null;
+  if (user.roleId != null) {
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId));
+    roleName = role?.name ?? null;
+    permissions = role?.permissions ?? null;
+  }
+
+  res.json({ ...user, roleName, permissions });
+});
+
 router.get("/roles", authMiddleware, requireRole("admin"), async (_req, res): Promise<void> => {
   const roles = await db.select().from(rolesTable).orderBy(rolesTable.name);
   res.json(roles);
@@ -122,38 +167,45 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
     return;
   }
 
-  const agencyId = getTenantAgencyId(req);
-  if (!assertTenantAccess(res, existing.agencyId, agencyId)) return;
-
   const body = UpdateUserBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
     return;
   }
 
+  const emailToCheck = body.data.email ?? existing.email;
+
   let newRoleName: string | null = null;
   if (body.data.roleId != null) {
     const newRoles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
     newRoleName = newRoles[0]?.name ?? null;
-    if (newRoleName && STAFF_ROLES.has(newRoleName) && !isStaffDomain(existing.email)) {
-      logger.warn({ targetUserId: id, email: existing.email, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: non-gov email rejected for staff role on role update");
+    if (newRoleName && STAFF_ROLES.has(newRoleName) && !isStaffDomain(emailToCheck)) {
+      logger.warn({ targetUserId: id, email: emailToCheck, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: non-gov email rejected for staff role on role update");
       res.status(400).json({
-        error: `Staff role "${newRoleName}" requires a government email domain. The user's email (${existing.email}) does not qualify. Update their email or choose a different role.`,
+        error: `Staff role "${newRoleName}" requires a government email domain. The email (${emailToCheck}) does not qualify. Update the email or choose a different role.`,
       });
       return;
     }
-    if (newRoleName === "applicant" && isStaffDomain(existing.email)) {
-      logger.warn({ targetUserId: id, email: existing.email, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: gov email rejected for applicant role on role update");
-      res.status(400).json({
-        error: "Government domain emails cannot be assigned the applicant role.",
-      });
+    if (newRoleName === "applicant" && isStaffDomain(emailToCheck)) {
+      logger.warn({ targetUserId: id, email: emailToCheck, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: gov email rejected for applicant role on role update");
+      res.status(400).json({ error: "Government domain emails cannot be assigned the applicant role." });
+      return;
+    }
+  }
+
+  if (body.data.email != null && body.data.email !== existing.email) {
+    const clash = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, body.data.email));
+    if (clash.length > 0) {
+      res.status(409).json({ error: "Email already in use by another account." });
       return;
     }
   }
 
   const updates: Record<string, unknown> = {};
   if (body.data.name != null) updates.name = body.data.name;
+  if (body.data.email != null) updates.email = body.data.email;
   if (body.data.roleId != null) updates.roleId = body.data.roleId;
+  if (body.data.agencyId !== undefined) updates.agencyId = body.data.agencyId;
   if (body.data.status != null) updates.status = body.data.status;
 
   const [updated] = await db.update(usersTable)
@@ -177,8 +229,37 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
   if (body.data.status != null && body.data.status !== existing.status) {
     logger.info({ targetUserId: id, email: existing.email, oldStatus: existing.status, newStatus: body.data.status, adminId: req.user?.userId }, "AUDIT status-change: user status updated");
   }
+  if (body.data.email != null && body.data.email !== existing.email) {
+    logger.info({ targetUserId: id, oldEmail: existing.email, newEmail: body.data.email, adminId: req.user?.userId }, "AUDIT email-change: admin updated user email");
+  }
 
   res.json(updated);
+});
+
+router.patch("/users/:id/password", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const id = parseIntParam(req.params.id);
+  if (id == null || isNaN(id)) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
+
+  const [existing] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const body = ResetPasswordBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Password must be at least 8 characters." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(body.data.password, 10);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, id));
+
+  logger.info({ targetUserId: id, email: existing.email, adminId: req.user?.userId }, "AUDIT password-reset: admin reset user password");
+  res.json({ ok: true });
 });
 
 export default router;

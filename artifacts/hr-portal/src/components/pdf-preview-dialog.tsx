@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ interface PdfPreviewDialogProps {
   url: string;
   title: string;
   downloadFilename: string;
+  footerActions?: ReactNode;
 }
 
 export function PdfPreviewDialog({
@@ -18,6 +19,7 @@ export function PdfPreviewDialog({
   url,
   title,
   downloadFilename,
+  footerActions,
 }: PdfPreviewDialogProps) {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,16 +75,20 @@ export function PdfPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-3 pr-14">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <DialogTitle data-testid="text-pdf-preview-title">{title}</DialogTitle>
-            <Button
-              size="sm"
-              onClick={handleDownload}
-              disabled={!pdfBlobUrl || loading}
-              data-testid="button-download-pdf-preview"
-            >
-              <Download className="h-3.5 w-3.5 mr-1.5" /> Download
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDownload}
+                disabled={!pdfBlobUrl || loading}
+                data-testid="button-download-pdf-preview"
+              >
+                <Download className="h-3.5 w-3.5 mr-1.5" /> Download
+              </Button>
+              {footerActions}
+            </div>
           </div>
         </DialogHeader>
         <div className="flex-1 overflow-hidden border-t bg-muted/30">

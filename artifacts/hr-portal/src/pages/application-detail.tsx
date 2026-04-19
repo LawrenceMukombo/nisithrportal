@@ -353,8 +353,8 @@ export default function ApplicationDetailPage() {
     }
   }
 
-  async function sendOfferLetterEmail() {
-    if (!appId) return;
+  async function sendOfferLetterEmail(): Promise<boolean> {
+    if (!appId) return false;
     setSendOfferLoading(true);
     try {
       const token = getToken();
@@ -365,11 +365,13 @@ export default function ApplicationDetailPage() {
       const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
       if (!res.ok) {
         toast({ title: body.error ?? "Failed to send offer letter", variant: "destructive" });
-        return;
+        return false;
       }
       toast({ title: "Offer letter sent to candidate", description: body.message });
+      return true;
     } catch {
       toast({ title: "Failed to send offer letter", variant: "destructive" });
+      return false;
     } finally {
       setSendOfferLoading(false);
     }
@@ -965,6 +967,23 @@ export default function ApplicationDetailPage() {
           url={`/api/pdf/offer-letter/${appId}`}
           title={`Offer Letter — Application #${appId}`}
           downloadFilename={`offer-letter-${appId}.pdf`}
+          footerActions={
+            <Button
+              size="sm"
+              onClick={async () => {
+                const ok = await sendOfferLetterEmail();
+                if (ok) setShowOfferPreview(false);
+              }}
+              disabled={sendOfferLoading}
+              data-testid="button-send-offer-letter-from-preview"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {sendOfferLoading
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
+                : <><Mail className="h-3.5 w-3.5 mr-1.5" />Send to Candidate</>
+              }
+            </Button>
+          }
         />
       )}
     </AppLayout>

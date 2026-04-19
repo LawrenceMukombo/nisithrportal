@@ -1,17 +1,20 @@
 # PNG NISIT HR Portal
-## AI-Enabled Government Recruitment & Workforce Management Platform
+## AI-Enabled Recruitment & Workforce Management Platform
 
-**Prepared for:** Stakeholders, Partners & Client Agencies
-**Version:** 1.0
+**Prepared for:** PNG NISIT Stakeholders, Partners & Clients
+**Version:** 1.1
 **Date:** April 2026
+**Deployment Mode:** Single-tenant — exclusively for the Papua New Guinea National Institute of Standards and Industrial Technology (PNG NISIT)
 
 ---
 
 ## 1. Executive Summary
 
-The PNG NISIT HR Portal is a secure, multi-tenant recruitment and workforce management platform purpose-built for Papua New Guinea government agencies. It modernises the entire hiring lifecycle — from public job advertising through to employee onboarding and contract management — while applying AI to reduce manual screening effort and improve decision quality.
+The PNG NISIT HR Portal is a secure recruitment and workforce management platform purpose-built and exclusively deployed for the Papua New Guinea National Institute of Standards and Industrial Technology (PNG NISIT). It modernises the entire hiring lifecycle — from public job advertising through to employee onboarding and contract management — while applying AI to reduce manual screening effort and improve decision quality.
 
-The platform consolidates what is typically managed across spreadsheets, email inboxes and disparate tools into a single auditable system, with role-based access, full data isolation between agencies, and government-grade audit logging.
+The platform consolidates what is typically managed across spreadsheets, email inboxes and disparate tools into a single auditable system, with role-based access and government-grade audit logging.
+
+> **Single-tenant deployment.** This release of the platform is locked to PNG NISIT. All jobs, applications, candidates, employees and contracts in the system belong to NISIT. The underlying architecture supports multi-agency operation and can be re-enabled in a future phase if PNG NISIT chooses to extend the platform to partner agencies.
 
 ---
 
@@ -19,18 +22,18 @@ The platform consolidates what is typically managed across spreadsheets, email i
 
 | Audience | Primary Benefit |
 |---|---|
-| **Government Agencies (HR Teams)** | Streamlined hiring, less paperwork, defensible audit trails |
-| **Hiring Managers** | Faster shortlists, AI-ranked candidates, better interview prep |
-| **Executive Leadership** | Real-time workforce visibility, attrition forecasting |
-| **System Administrators** | Multi-tenant control, integrations, compliance reporting |
-| **Job Applicants (Public)** | Modern, mobile-friendly application experience |
+| **PNG NISIT HR Team** | Streamlined hiring, less paperwork, defensible audit trails |
+| **PNG NISIT Hiring Managers** | Faster shortlists, AI-ranked candidates, better interview prep |
+| **PNG NISIT Executive Leadership** | Real-time workforce visibility, attrition forecasting |
+| **System Administrators** | User & integration management, compliance reporting |
+| **Job Applicants (Public)** | Modern, mobile-friendly application experience for NISIT vacancies |
 
 ---
 
 ## 3. Key Feature Highlights
 
 ### 3.1 Public Career Portal & Application Wizard
-- Branded public landing page listing all open vacancies across participating agencies
+- NISIT-branded public landing page listing all open NISIT vacancies
 - Filtering by department, location and employment type
 - "Save Job" feature with optional closing-soon email reminders (configurable: 3, 7 or 14 days ahead)
 - 8-step guided application wizard covering personal details, experience, education, documents, screening questions and legal declarations
@@ -74,14 +77,14 @@ The platform consolidates what is typically managed across spreadsheets, email i
 - In-app notification bell for HR (new applications, contract expiry, etc.)
 - Per-user notification preferences
 
-### 3.7 Multi-Tenant Agency Support
-- Strict data isolation between agencies (jobs, applications, employees, documents)
-- Agency-specific branding and configuration
-- Cross-tenant candidate profile (applicants apply once, can be considered by multiple agencies)
-- Per-agency administrators with scoped access
+### 3.7 Single-Tenant Deployment for PNG NISIT
+- Platform locked to PNG NISIT — every job, application, employee and contract belongs to NISIT
+- All API endpoints enforce the NISIT agency scope server-side, regardless of caller
+- Public job board, application portal and admin tools are all branded and scoped to NISIT
+- Underlying multi-tenant architecture is preserved in the codebase, allowing PNG NISIT to extend the platform to partner agencies in a future phase without re-engineering
 
 ### 3.8 Role-Based Access Control (RBAC)
-- **System Admin** — full oversight, multi-tenant management, integrations
+- **System Admin** — full oversight, user management, integrations
 - **HR Officer** — day-to-day recruitment operations and contract administration
 - **Hiring Manager** — review shortlists and AI-ranked candidates for their roles
 - **Executive Leadership** — workforce analytics and forecasting dashboards
@@ -119,24 +122,24 @@ The platform consolidates what is typically managed across spreadsheets, email i
 
 | | Traditional HR Systems | PNG NISIT HR Portal |
 |---|---|---|
-| **Setup for PNG Government** | Generic, requires customisation | Built specifically for PNG agencies |
+| **Setup for NISIT** | Generic, requires customisation | Built specifically for PNG NISIT |
 | **AI Screening** | Add-on or absent | Built-in CV parsing, ranking, interview prep |
-| **Multi-Agency Isolation** | Usually single-tenant | Native multi-tenant from day one |
 | **Audit Logging** | Often partial | Comprehensive, with reason capture |
 | **Public Application UX** | Long, single-page forms | Modern 8-step wizard with auto-save |
 | **Offer Letter Workflow** | Manual Word documents | Branded PDF, tracked, one-click send |
 | **Notifications** | Bulk, no opt-out | Per-user controls, RFC 8058 unsubscribe |
+| **Future-proofing** | Locked architecture | Multi-agency capable if NISIT later expands scope |
 
 ---
 
 ## 5. Security & Compliance
 
 - Encrypted secrets and credentials via managed environment variables
-- Tenant-scoped data access enforced at the API layer
+- All data access scoped to PNG NISIT and enforced at the API layer
 - All sensitive document operations recorded with actor, timestamp and reason
 - Role-based access enforced on every endpoint
 - Rate limiting and signed tokens on public-facing actions (e.g. unsubscribe)
-- Object storage with per-tenant ACLs
+- Object storage with access-control policies
 
 ---
 
@@ -159,6 +162,7 @@ The platform consolidates what is typically managed across spreadsheets, email i
 - Additional integration connectors (payroll, identity providers)
 - Advanced workforce planning scenarios
 - Localisation for additional languages
+- Optional future expansion to partner government agencies (multi-agency mode), should PNG NISIT choose to extend the platform
 
 ---
 
@@ -168,4 +172,4 @@ For demonstrations, onboarding, or partnership enquiries, please contact the PNG
 
 ---
 
-*This document is intended for stakeholder distribution. Feature availability may vary by deployment configuration and agency subscription tier.*
+*This document is intended for stakeholder distribution. The current release is a single-tenant deployment exclusively for PNG NISIT.*

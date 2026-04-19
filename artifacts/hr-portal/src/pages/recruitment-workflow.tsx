@@ -746,7 +746,7 @@ export default function RecruitmentWorkflowPage() {
                 }}
               >
                 <Download className="h-3.5 w-3.5" />
-                Export Full Pipeline
+                Export Full Pipeline ({totalActive})
               </Button>
               <Button
                 size="sm"

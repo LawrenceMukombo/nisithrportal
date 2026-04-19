@@ -682,6 +682,46 @@ export default function RecruitmentWorkflowPage() {
                 size="sm"
                 variant="outline"
                 className="h-8 gap-1.5 text-xs"
+                data-testid="btn-export-full-pipeline"
+                disabled={isLoading}
+                title="Download one row per active application"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const esc = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+                  const header = "Candidate Name,Job Title,Current Stage,Days in Stage,Status,Applied Date";
+                  const rows = activeApps.map((app) => {
+                    const cand = app.candidateId != null ? candidateMap.get(app.candidateId) : undefined;
+                    const job = jobMap.get(app.jobId);
+                    const status = app.status ?? "";
+                    const stage = WORKFLOW_STAGES.find((s) => s.status === status);
+                    const days = stage ? daysInStage(app, status) : daysSince(app.createdAt);
+                    const appliedDate = app.createdAt ? new Date(app.createdAt).toISOString().slice(0, 10) : "";
+                    return [
+                      esc(cand?.name ?? `Candidate #${app.candidateId}`),
+                      esc(job?.title ?? `Job #${app.jobId}`),
+                      esc(stage?.label ?? status),
+                      days,
+                      esc(status),
+                      appliedDate,
+                    ].join(",");
+                  });
+                  const csv = [header, ...rows].join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `pipeline-detail-${today}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Full Pipeline
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
                 data-testid="btn-export-pipeline-csv"
                 onClick={() => {
                   const today = new Date().toISOString().slice(0, 10);

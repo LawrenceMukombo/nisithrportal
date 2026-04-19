@@ -6,6 +6,10 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Trust the first proxy hop so express-rate-limit reads the real client IP
+// from X-Forwarded-For rather than the Replit proxy address.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

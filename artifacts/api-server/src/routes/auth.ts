@@ -22,6 +22,14 @@ const resetRateLimit = rateLimit({
   message: { error: "Too many password-reset requests — please try again in 15 minutes." },
 });
 
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts — please try again in 15 minutes." },
+});
+
 router.post("/auth/register", (_req, res): void => {
   res.status(404).json({ error: "Not found" });
 });
@@ -106,7 +114,7 @@ router.post("/auth/applicant-register", async (req, res): Promise<void> => {
   });
 });
 
-router.post("/auth/login", async (req, res): Promise<void> => {
+router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

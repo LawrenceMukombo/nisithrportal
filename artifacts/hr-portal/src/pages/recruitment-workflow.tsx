@@ -13,7 +13,9 @@ import {
   Search,
   X,
   Settings,
+  History,
 } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
   useGetApplications,
   useGetCandidates,
@@ -35,7 +37,7 @@ import {
   TooltipContent as UITooltipContent,
   TooltipTrigger as UITooltipTrigger,
 } from "@/components/ui/tooltip";
-import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
+import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES, ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
 import {
   LineChart,
   Line,
@@ -84,6 +86,52 @@ function sortedHistory(history: Application["statusHistory"]): StatusHistoryItem
 
 function lastEntryForStatus(history: Application["statusHistory"], status: string): StatusHistoryItem | undefined {
   return [...sortedHistory(history)].reverse().find((h) => h.status === status);
+}
+
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  ALL_STATUS_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+function formatHistoryDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function StageHistoryTimeline({ app }: { app: Application }) {
+  const history = sortedHistory(app.statusHistory);
+  if (history.length === 0) {
+    return <p className="text-xs text-muted-foreground">No stage history recorded.</p>;
+  }
+  return (
+    <ol className="space-y-3" data-testid={`history-timeline-${app.id}`}>
+      {history.map((item, idx) => {
+        const next = history[idx + 1];
+        const endMs = next ? new Date(next.changedAt).getTime() : Date.now();
+        const days = Math.max(0, Math.floor((endMs - new Date(item.changedAt).getTime()) / (1000 * 60 * 60 * 24)));
+        const isCurrent = !next;
+        const label = STATUS_LABELS[item.status] ?? item.status;
+        return (
+          <li key={`${item.id}-${idx}`} className="flex gap-3" data-testid={`history-item-${app.id}-${idx}`}>
+            <div className="flex flex-col items-center pt-0.5">
+              <div className={`h-2 w-2 rounded-full ${isCurrent ? "bg-primary ring-2 ring-primary/30" : "bg-muted-foreground/50"}`} />
+              {idx < history.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
+            </div>
+            <div className="flex-1 min-w-0 pb-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-xs font-medium text-foreground truncate">{label}</p>
+                <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
+                  {days}d{isCurrent ? " (current)" : ""}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground tabular-nums">{formatHistoryDate(item.changedAt)}</p>
+              {item.note && (
+                <p className="text-[11px] text-muted-foreground/80 italic mt-0.5 line-clamp-2">{item.note}</p>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 /**
@@ -520,6 +568,34 @@ function StageCard({
                         {stageTooltip}
                       </UITooltipContent>
                     </UITooltip>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); }}
+                          onKeyDown={(e) => { e.stopPropagation(); }}
+                          className="rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                          aria-label="View stage history"
+                          title="View full stage history"
+                          data-testid={`history-btn-${app.id}`}
+                        >
+                          <History className="h-3 w-3" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="end"
+                        className="w-72 max-h-80 overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        data-testid={`history-popover-${app.id}`}
+                      >
+                        <div className="mb-2">
+                          <p className="text-xs font-semibold text-foreground truncate">{name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">Stage history</p>
+                        </div>
+                        <StageHistoryTimeline app={app} />
+                      </PopoverContent>
+                    </Popover>
                     <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>

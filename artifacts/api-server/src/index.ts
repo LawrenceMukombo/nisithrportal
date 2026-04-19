@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedInitialData } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { verifySMTPConnection } from "./lib/email";
@@ -42,6 +42,14 @@ app.listen(port, (err) => {
   if (process.env["SEED_ON_STARTUP"] !== "false") {
     seedInitialData().catch((e) => logger.error(e, "Seed error"));
   }
+
+  // Always run the legacy job back-fill, independent of SEED_ON_STARTUP.
+  // It is idempotent (only updates rows where employmentType/province IS NULL)
+  // so it is safe to run on every boot, including in production where seeding
+  // is disabled.
+  backfillMissingJobFields().catch((e) =>
+    logger.error(e, "backfillMissingJobFields failed"),
+  );
 
   // Run an initial contract expiry check on startup, then every 6 hours.
   triggerContractExpiryNotifications().catch((e) =>

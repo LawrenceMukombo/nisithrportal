@@ -1,4 +1,4 @@
-import { eq, count } from "drizzle-orm";
+import { eq, count, isNull, or } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger";
@@ -699,6 +699,56 @@ export async function seedInitialData(): Promise<void> {
     await seedCompleteData();
   } catch (err) {
     logger.error(err, "Seed failed (non-fatal)");
+  }
+}
+
+/**
+ * One-time back-fill for jobs created before employmentType / province were
+ * required fields. Sets sensible defaults so the public job board and admin
+ * list stop showing "missing field" warnings on legacy rows.
+ *
+ * Defaults:
+ *   - employmentType: "full_time" (most NISIT roles are permanent)
+ *   - province:       "National Capital District" (NISIT head office)
+ *
+ * Idempotent: only updates rows where the column is NULL.
+ */
+export async function backfillMissingJobFields(): Promise<void> {
+  try {
+    const missing = await db
+      .select({ id: jobsTable.id, employmentType: jobsTable.employmentType, province: jobsTable.province })
+      .from(jobsTable)
+      .where(or(isNull(jobsTable.employmentType), isNull(jobsTable.province)));
+
+    if (missing.length === 0) {
+      logger.info("backfillMissingJobFields: no jobs require back-fill");
+      return;
+    }
+
+    let employmentTypeFilled = 0;
+    let provinceFilled = 0;
+
+    for (const row of missing) {
+      const updates: { employmentType?: string; province?: string } = {};
+      if (row.employmentType == null) {
+        updates.employmentType = "full_time";
+        employmentTypeFilled++;
+      }
+      if (row.province == null) {
+        updates.province = "National Capital District";
+        provinceFilled++;
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.update(jobsTable).set(updates).where(eq(jobsTable.id, row.id));
+      }
+    }
+
+    logger.info(
+      { jobsUpdated: missing.length, employmentTypeFilled, provinceFilled },
+      "backfillMissingJobFields: legacy jobs back-filled with defaults",
+    );
+  } catch (err) {
+    logger.error(err, "backfillMissingJobFields: failed (non-fatal)");
   }
 }
 

@@ -7,7 +7,9 @@ function createTransport() {
   const host = process.env.SMTP_HOST;
   const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
   const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  // Gmail App Passwords are displayed with spaces for readability but must be
+  // submitted without them. Strip all whitespace to handle both forms.
+  const pass = process.env.SMTP_PASS?.replace(/\s/g, "");
 
   if (host && user && pass) {
     return nodemailer.createTransport({

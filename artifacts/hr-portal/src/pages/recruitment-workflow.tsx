@@ -28,6 +28,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip as UITooltip,
+  TooltipContent as UITooltipContent,
+  TooltipTrigger as UITooltipTrigger,
+} from "@/components/ui/tooltip";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
   LineChart,
@@ -481,18 +486,38 @@ function StageCard({
                     <p className="text-xs text-muted-foreground truncate">{position}</p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    {isStale ? (
-                      <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" aria-label="Stalled" title={stageTooltip} />
-                    ) : (
-                      <Clock className="h-3 w-3 text-muted-foreground" title={stageTooltip} />
-                    )}
-                    <span
-                      className={`text-xs font-semibold tabular-nums ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
-                      title={stageTooltip}
-                      data-testid={`days-badge-${app.id}`}
-                    >
-                      {days}d
-                    </span>
+                    <UITooltip>
+                      <UITooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }}
+                          aria-label={stageTooltip}
+                          data-testid={`days-tooltip-trigger-${app.id}`}
+                        >
+                          {isStale ? (
+                            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" aria-label="Stalled" />
+                          ) : (
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                          )}
+                          <span
+                            className={`text-xs font-semibold tabular-nums ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+                            data-testid={`days-badge-${app.id}`}
+                          >
+                            {days}d
+                          </span>
+                        </button>
+                      </UITooltipTrigger>
+                      <UITooltipContent side="top" align="end">
+                        {stageTooltip}
+                      </UITooltipContent>
+                    </UITooltip>
                     <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>

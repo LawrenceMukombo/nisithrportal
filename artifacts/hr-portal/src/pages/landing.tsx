@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAuth } from "@/contexts/auth-context";
 
 const WORK_TYPE_LABELS: Record<string, string> = {
@@ -318,17 +319,18 @@ export default function LandingPage() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
             <MapPin className="h-4 w-4" /> Filter:
           </div>
-          <Select value={deptFilter} onValueChange={setDeptFilter}>
-            <SelectTrigger className="h-9 w-44 text-sm" data-testid="select-filter-dept">
-              <SelectValue placeholder="All Departments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              {(depts.data ?? []).map(d => (
-                <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={deptFilter}
+            onValueChange={setDeptFilter}
+            options={[
+              { value: "all", label: "All Departments" },
+              ...(depts.data ?? []).map(d => ({ value: String(d.id), label: d.name })),
+            ]}
+            placeholder="All Departments"
+            searchPlaceholder="Search departments…"
+            triggerClassName="h-9 w-44 text-sm"
+            data-testid="select-filter-dept"
+          />
           <Select value={workTypeFilter} onValueChange={setWorkTypeFilter}>
             <SelectTrigger className="h-9 w-44 text-sm" data-testid="select-filter-worktype">
               <SelectValue placeholder="Employment Type" />
@@ -341,28 +343,30 @@ export default function LandingPage() {
               <SelectItem value="casual">Casual</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={locationFilter} onValueChange={setLocationFilter}>
-            <SelectTrigger className="h-9 w-48 text-sm" data-testid="select-filter-location">
-              <SelectValue placeholder="All Locations" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
-              {PNG_PROVINCES.map(p => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={salaryFilter} onValueChange={setSalaryFilter}>
-            <SelectTrigger className="h-9 w-48 text-sm" data-testid="select-filter-salary">
-              <SelectValue placeholder="Salary Range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Salary Ranges</SelectItem>
-              {SALARY_BANDS.map(b => (
-                <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={locationFilter}
+            onValueChange={setLocationFilter}
+            options={[
+              { value: "all", label: "All Locations" },
+              ...PNG_PROVINCES.map(p => ({ value: p, label: p })),
+            ]}
+            placeholder="All Locations"
+            searchPlaceholder="Search provinces…"
+            triggerClassName="h-9 w-48 text-sm"
+            data-testid="select-filter-location"
+          />
+          <SearchableSelect
+            value={salaryFilter}
+            onValueChange={setSalaryFilter}
+            options={[
+              { value: "all", label: "All Salary Ranges" },
+              ...SALARY_BANDS.map(b => ({ value: b.value, label: b.label })),
+            ]}
+            placeholder="Salary Range"
+            searchPlaceholder="Search salary bands…"
+            triggerClassName="h-9 w-48 text-sm"
+            data-testid="select-filter-salary"
+          />
           {hasFilters && (
             <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setSalaryFilter("all"); }}>
               Clear filters

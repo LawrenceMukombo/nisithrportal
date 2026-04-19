@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Download, Printer, Columns3, CheckSquare } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Download, Printer, Columns3, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -127,10 +127,13 @@ export function DataTable<T>({
   // In this mode bulk actions apply to every server-matching record (resolved by the caller),
   // not just the loaded subset. Cleared when filters change or selection is cleared.
   const [selectAllResults, setSelectAllResults] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageIndex, setPageIndex] = useState(0);
 
   useEffect(() => {
     setSelectAllResults(false);
     setSelectedIds(new Set());
+    setPageIndex(0);
   }, [filterToken]);
 
   const defaultHiddenKeys = useMemo(
@@ -197,6 +200,20 @@ export function DataTable<T>({
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDir, columns]);
+
+  const totalRows = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePageIndex = Math.min(pageIndex, totalPages - 1);
+  useEffect(() => {
+    if (pageIndex !== safePageIndex) setPageIndex(safePageIndex);
+  }, [pageIndex, safePageIndex]);
+  const pageStart = totalRows === 0 ? 0 : safePageIndex * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, totalRows);
+  const showPagination = totalRows > pageSize;
+  const pageRows = useMemo(
+    () => (showPagination ? sorted.slice(pageStart, pageEnd) : sorted),
+    [sorted, pageStart, pageEnd, showPagination]
+  );
 
   const rowIds = useMemo(() => sorted.map(getRowId), [sorted, getRowId]);
   // In select-all-results mode every loaded row is conceptually part of the selection,
@@ -478,7 +495,7 @@ export function DataTable<T>({
                   </td>
                 </tr>
               ) : (
-                sorted.map((row, idx) => {
+                pageRows.map((row, idx) => {
                   const id = getRowId(row);
                   const extra = rowProps?.(row) ?? {};
                   return (
@@ -517,6 +534,63 @@ export function DataTable<T>({
           </table>
         )}
       </div>
+
+      {/* Pagination footer — hidden on print, only shown when total exceeds page size */}
+      {showPagination && (
+        <div
+          className="flex items-center justify-between gap-2 flex-wrap pt-1 print:hidden"
+          data-testid="pagination-controls"
+        >
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span data-testid="pagination-range">
+              Showing {pageStart + 1}–{pageEnd} of {totalRows}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Rows per page</span>
+              <select
+                className="h-7 rounded-md border border-input bg-background px-1.5 text-xs"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPageIndex(0);
+                }}
+                data-testid="select-page-size"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+            <span className="text-xs text-muted-foreground" data-testid="pagination-page-label">
+              Page {safePageIndex + 1} of {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+              disabled={safePageIndex === 0}
+              aria-label="Previous page"
+              data-testid="button-prev-page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={() => setPageIndex((i) => Math.min(totalPages - 1, i + 1))}
+              disabled={safePageIndex >= totalPages - 1}
+              aria-label="Next page"
+              data-testid="button-next-page"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

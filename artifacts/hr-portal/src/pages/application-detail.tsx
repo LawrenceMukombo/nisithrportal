@@ -346,6 +346,7 @@ export default function ApplicationDetailPage() {
   const [offerLetterLoading, setOfferLetterLoading] = useState(false);
   const [sendOfferLoading, setSendOfferLoading] = useState(false);
   const [showOfferPreview, setShowOfferPreview] = useState(false);
+  const [confirmSendOffer, setConfirmSendOffer] = useState(false);
   const [contractUploading, setContractUploading] = useState(false);
   const contractFileRef = useRef<HTMLInputElement>(null);
 
@@ -1055,10 +1056,7 @@ export default function ApplicationDetailPage() {
           footerActions={
             <Button
               size="sm"
-              onClick={async () => {
-                const ok = await sendOfferLetterEmail();
-                if (ok) setShowOfferPreview(false);
-              }}
+              onClick={() => setConfirmSendOffer(true)}
               disabled={sendOfferLoading}
               data-testid="button-send-offer-letter-from-preview"
               className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -1071,6 +1069,41 @@ export default function ApplicationDetailPage() {
           }
         />
       )}
+      <AlertDialog
+        open={confirmSendOffer}
+        onOpenChange={(open) => { if (!open && !sendOfferLoading) setConfirmSendOffer(false); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send this offer letter?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {candidate?.email
+                ? <>This will email the offer letter to <span className="font-medium text-foreground">{candidate?.name ?? "the candidate"}</span> at <span className="font-medium text-foreground" data-testid="text-confirm-send-offer-email">{candidate.email}</span>.</>
+                : <>No email address is on file for {candidate?.name ?? "this candidate"}, so the offer letter can't be sent.</>}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sendOfferLoading} data-testid="button-confirm-send-offer-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sendOfferLoading || !candidate?.email}
+              onClick={async (e) => {
+                e.preventDefault();
+                const ok = await sendOfferLetterEmail();
+                if (ok) {
+                  setConfirmSendOffer(false);
+                  setShowOfferPreview(false);
+                }
+              }}
+              data-testid="button-confirm-send-offer-confirm"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {sendOfferLoading
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
+                : <>Send offer letter</>}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRole } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -326,17 +327,18 @@ export default function JobsPage() {
                 />
               </div>
               {departments.length > 0 && (
-                <Select value={deptFilter} onValueChange={setDeptFilter}>
-                  <SelectTrigger className="w-44" data-testid="select-dept-filter">
-                    <SelectValue placeholder="Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All departments</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={deptFilter}
+                  onValueChange={setDeptFilter}
+                  options={[
+                    { value: "all", label: "All departments" },
+                    ...departments.map((d) => ({ value: d.id.toString(), label: d.name })),
+                  ]}
+                  placeholder="Department"
+                  searchPlaceholder="Search departments…"
+                  triggerClassName="w-44"
+                  data-testid="select-dept-filter"
+                />
               )}
               <Select value={workTypeFilter} onValueChange={setWorkTypeFilter}>
                 <SelectTrigger className="w-44" data-testid="select-worktype-filter">
@@ -350,28 +352,30 @@ export default function JobsPage() {
                   <SelectItem value="casual">Casual</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger className="w-48" data-testid="select-location-filter">
-                  <SelectValue placeholder="Location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {PNG_PROVINCES_JOBS.map(p => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={salaryFilter} onValueChange={setSalaryFilter}>
-                <SelectTrigger className="w-48" data-testid="select-salary-filter">
-                  <SelectValue placeholder="Salary Range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Salary Ranges</SelectItem>
-                  {SALARY_BANDS_JOBS.map(b => (
-                    <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={locationFilter}
+                onValueChange={setLocationFilter}
+                options={[
+                  { value: "all", label: "All Locations" },
+                  ...PNG_PROVINCES_JOBS.map((p) => ({ value: p, label: p })),
+                ]}
+                placeholder="Location"
+                searchPlaceholder="Search provinces…"
+                triggerClassName="w-48"
+                data-testid="select-location-filter"
+              />
+              <SearchableSelect
+                value={salaryFilter}
+                onValueChange={setSalaryFilter}
+                options={[
+                  { value: "all", label: "All Salary Ranges" },
+                  ...SALARY_BANDS_JOBS.map((b) => ({ value: b.value, label: b.label })),
+                ]}
+                placeholder="Salary Range"
+                searchPlaceholder="Search salary bands…"
+                triggerClassName="w-48"
+                data-testid="select-salary-filter"
+              />
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-36" data-testid="select-status-filter">
                   <SelectValue placeholder="Status" />

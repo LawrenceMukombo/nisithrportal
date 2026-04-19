@@ -350,40 +350,50 @@ router.get("/integration-config/:id/logs", authMiddleware, requireRole("admin"),
   }
 });
 
-// ─── Export logs for an integration config as CSV ──────────────────────────────
+// ─── Export logs for an integration config as CSV ─────────────────────────────
 
 router.get("/integration-config/:id/logs/export", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     const id = parseInt(req.params["id"] as string);
-    const [cfg] = await db.select({ agencyId: integrationConfigsTable.agencyId, name: integrationConfigsTable.name })
-      .from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    const [cfg] = await db
+      .select({ agencyId: integrationConfigsTable.agencyId, name: integrationConfigsTable.name })
+      .from(integrationConfigsTable)
+      .where(eq(integrationConfigsTable.id, id));
     if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-    const logs = await db.select().from(integrationLogsTable)
+
+    const logs = await db
+      .select()
+      .from(integrationLogsTable)
       .where(eq(integrationLogsTable.integrationConfigId, id))
       .orderBy(desc(integrationLogsTable.createdAt))
       .limit(1000);
 
-    const header = ["ID", "Integration ID", "Status", "Duration (ms)", "Request Payload", "Response Body", "Error Message", "Created At"];
-    const rows = logs.map((l) => [
-      l.id,
-      l.integrationConfigId,
-      l.status,
-      l.durationMs ?? "",
-      (l.requestPayload ? JSON.stringify(l.requestPayload) : "").replace(/"/g, '""'),
-      (l.responseBody ? JSON.stringify(l.responseBody) : "").replace(/"/g, '""'),
-      (l.errorMessage ?? "").replace(/"/g, '""'),
+    const headers = ["id", "integration_config_id", "timestamp", "status", "duration_ms", "triggered_by", "request_payload", "response_payload", "error_message"];
+    const rows = logs.map(l => [
+      String(l.id),
+      String(l.integrationConfigId ?? ""),
       l.createdAt?.toISOString() ?? "",
+      l.status,
+      l.durationMs != null ? String(l.durationMs) : "",
+      l.triggeredBy ?? "",
+      l.requestPayload ? JSON.stringify(l.requestPayload) : "",
+      l.responsePayload ? JSON.stringify(l.responsePayload) : "",
+      l.errorMessage ?? "",
     ]);
 
-    const csvLines = [header, ...rows].map((row) =>
-      row.map((cell) => `"${cell}"`).join(",")
-    );
-    const csv = csvLines.join("\r\n");
-    const safeName = (cfg.name ?? `integration-${id}`).replace(/[^a-z0-9_-]/gi, "_").toLowerCase();
-    const filename = `${safeName}-logs-${new Date().toISOString().split("T")[0]}.csv`;
+    const escape = (v: string) =>
+      v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v;
+
+    const csv = [headers, ...rows]
+      .map(row => row.map(escape).join(","))
+      .join("\r\n");
+
+    const safeName = (cfg.name ?? `integration-${id}`).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `integration-logs-${safeName}-${date}.csv`;
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

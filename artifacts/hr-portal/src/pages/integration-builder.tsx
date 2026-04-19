@@ -277,24 +277,18 @@ function MiniTrendChart({ logs }: { logs: IntegrationLog[] }) {
   );
 }
 
-function downloadLogsCSV(logs: IntegrationLog[], configName: string) {
-  const headers = ["id", "status", "duration_ms", "error", "triggered_by", "created_at"];
-  const rows = logs.map(l => [
-    l.id,
-    l.status,
-    l.durationMs ?? "",
-    (l.errorMessage ?? "").replace(/"/g, '""'),
-    l.triggeredBy ?? "",
-    l.createdAt,
-  ]);
-  const csv = [headers, ...rows]
-    .map(r => r.map(v => (String(v).includes(",") || String(v).includes('"') || String(v).includes("\n") ? `"${v}"` : v)).join(","))
-    .join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
+async function exportLogsCSV(configId: number, configName: string) {
+  const token = localStorage.getItem("hr_portal_token");
+  const res = await fetch(`/api/integration-config/${configId}/logs/export`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return;
+  const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `integration-logs-${configName.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+  const date = new Date().toISOString().slice(0, 10);
+  a.download = `integration-logs-${configName.toLowerCase().replace(/\s+/g, "-")}-${date}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -987,18 +981,16 @@ function IntegrationConfigCard({
               {showLogs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               Execution Logs {logQuery.data ? `(${logQuery.data.length})` : ""}
             </Button>
-            {logQuery.data && logQuery.data.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs h-7 gap-1 text-muted-foreground"
-                onClick={() => downloadLogsCSV(logQuery.data!, config.name)}
-                title="Download logs as CSV"
-                data-testid={`button-export-logs-${config.id}`}
-              >
-                <Download className="h-3 w-3" /> CSV
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 gap-1 text-muted-foreground ml-auto"
+              onClick={() => exportLogsCSV(config.id, config.name)}
+              title="Export execution logs as CSV"
+              data-testid={`button-export-logs-${config.id}`}
+            >
+              <Download className="h-3 w-3" /> Export Logs
+            </Button>
           </div>
           {showLogs && (
             <div className="rounded-md border bg-muted/20 p-2 space-y-2">

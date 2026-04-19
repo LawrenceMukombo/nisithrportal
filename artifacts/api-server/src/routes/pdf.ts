@@ -378,6 +378,12 @@ router.post(
       await sendOfferLetterEmail(candidateEmail, candidateName, position, pdfBuffer, applicationId);
       logger.info({ applicationId, to: candidateEmail }, "Offer letter emailed to candidate");
 
+      const sentAt = new Date();
+      await db
+        .update(applicationsTable)
+        .set({ offerLetterSentAt: sentAt })
+        .where(eq(applicationsTable.id, applicationId));
+
       const notifMessage = `Offer letter for "${position}" (application #${applicationId}) was emailed to ${candidateName} <${candidateEmail}>.`;
       const notifType = "offer_letter_sent";
 
@@ -400,7 +406,7 @@ router.post(
 
       await Promise.allSettled(promises);
 
-      res.json({ success: true, sentTo: candidateEmail });
+      res.json({ success: true, sentTo: candidateEmail, offerLetterSentAt: sentAt.toISOString() });
     } catch (err) {
       logger.error({ err, applicationId }, "Failed to send offer letter email");
       res.status(500).json({ error: "Failed to send offer letter email. Check SMTP configuration." });

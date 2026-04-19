@@ -35,6 +35,8 @@ export const applicationsTable = pgTable("applications", {
   conflictOfInterest: boolean("conflict_of_interest"),
   criminalRecord: boolean("criminal_record"),
   dataPrivacyConsent: boolean("data_privacy_consent"),
+  // Offer letter tracking
+  offerLetterSentAt: timestamp("offer_letter_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (t) => ({

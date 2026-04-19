@@ -25,6 +25,10 @@ import type {
   Application,
   ApplicationTrackResult,
   AuthResponse,
+  BulkUpdateApplicationStatus200,
+  BulkUpdateApplicationStatusByFilter200,
+  BulkUpdateApplicationStatusByFilterRequest,
+  BulkUpdateApplicationStatusRequest,
   Candidate,
   CandidateProfile,
   ConfirmUpload200,
@@ -3440,6 +3444,189 @@ export function useGetApplication<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Bulk update application statuses by ID list
+ */
+export const getBulkUpdateApplicationStatusUrl = () => {
+  return `/api/applications/bulk-status`;
+};
+
+export const bulkUpdateApplicationStatus = async (
+  bulkUpdateApplicationStatusRequest: BulkUpdateApplicationStatusRequest,
+  options?: RequestInit,
+): Promise<BulkUpdateApplicationStatus200> => {
+  return customFetch<BulkUpdateApplicationStatus200>(
+    getBulkUpdateApplicationStatusUrl(),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkUpdateApplicationStatusRequest),
+    },
+  );
+};
+
+export const getBulkUpdateApplicationStatusMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>,
+    TError,
+    { data: BodyType<BulkUpdateApplicationStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>,
+  TError,
+  { data: BodyType<BulkUpdateApplicationStatusRequest> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateApplicationStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>,
+    { data: BodyType<BulkUpdateApplicationStatusRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateApplicationStatus(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateApplicationStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>
+>;
+export type BulkUpdateApplicationStatusMutationBody =
+  BodyType<BulkUpdateApplicationStatusRequest>;
+export type BulkUpdateApplicationStatusMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Bulk update application statuses by ID list
+ */
+export const useBulkUpdateApplicationStatus = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>,
+    TError,
+    { data: BodyType<BulkUpdateApplicationStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatus>>,
+  TError,
+  { data: BodyType<BulkUpdateApplicationStatusRequest> },
+  TContext
+> => {
+  return useMutation(getBulkUpdateApplicationStatusMutationOptions(options));
+};
+
+/**
+ * @summary Bulk update application statuses matching the given filters
+ */
+export const getBulkUpdateApplicationStatusByFilterUrl = () => {
+  return `/api/applications/bulk-status-by-filter`;
+};
+
+export const bulkUpdateApplicationStatusByFilter = async (
+  bulkUpdateApplicationStatusByFilterRequest: BulkUpdateApplicationStatusByFilterRequest,
+  options?: RequestInit,
+): Promise<BulkUpdateApplicationStatusByFilter200> => {
+  return customFetch<BulkUpdateApplicationStatusByFilter200>(
+    getBulkUpdateApplicationStatusByFilterUrl(),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkUpdateApplicationStatusByFilterRequest),
+    },
+  );
+};
+
+export const getBulkUpdateApplicationStatusByFilterMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>,
+    TError,
+    { data: BodyType<BulkUpdateApplicationStatusByFilterRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>,
+  TError,
+  { data: BodyType<BulkUpdateApplicationStatusByFilterRequest> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdateApplicationStatusByFilter"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>,
+    { data: BodyType<BulkUpdateApplicationStatusByFilterRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdateApplicationStatusByFilter(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdateApplicationStatusByFilterMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>
+>;
+export type BulkUpdateApplicationStatusByFilterMutationBody =
+  BodyType<BulkUpdateApplicationStatusByFilterRequest>;
+export type BulkUpdateApplicationStatusByFilterMutationError =
+  ErrorType<unknown>;
+
+/**
+ * @summary Bulk update application statuses matching the given filters
+ */
+export const useBulkUpdateApplicationStatusByFilter = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>,
+    TError,
+    { data: BodyType<BulkUpdateApplicationStatusByFilterRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdateApplicationStatusByFilter>>,
+  TError,
+  { data: BodyType<BulkUpdateApplicationStatusByFilterRequest> },
+  TContext
+> => {
+  return useMutation(
+    getBulkUpdateApplicationStatusByFilterMutationOptions(options),
+  );
+};
 
 /**
  * @summary Update application status

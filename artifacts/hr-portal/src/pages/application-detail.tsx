@@ -368,6 +368,7 @@ export default function ApplicationDetailPage() {
         return false;
       }
       toast({ title: "Offer letter sent to candidate", description: body.message });
+      queryClient.invalidateQueries({ queryKey: getGetApplicationQueryKey(appId) });
       return true;
     } catch {
       toast({ title: "Failed to send offer letter", variant: "destructive" });
@@ -481,19 +482,34 @@ export default function ApplicationDetailPage() {
                   : <><FileDown className="h-3.5 w-3.5 mr-1.5" />Generate Offer Letter</>
                 }
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={sendOfferLetterEmail}
-                disabled={sendOfferLoading}
-                data-testid="button-send-offer-letter"
-                className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"
-              >
-                {sendOfferLoading
-                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
-                  : <><Mail className="h-3.5 w-3.5 mr-1.5" />Send to Candidate</>
-                }
-              </Button>
+              <div className="flex flex-col items-start gap-0.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={sendOfferLetterEmail}
+                  disabled={sendOfferLoading}
+                  data-testid="button-send-offer-letter"
+                  className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"
+                >
+                  {sendOfferLoading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
+                    : app.offerLetterSentAt
+                      ? <><Mail className="h-3.5 w-3.5 mr-1.5" />Resend Offer Letter</>
+                      : <><Mail className="h-3.5 w-3.5 mr-1.5" />Send to Candidate</>
+                  }
+                </Button>
+                {app.offerLetterSentAt && (
+                  <span
+                    className="text-[11px] text-muted-foreground pl-1"
+                    data-testid="text-offer-letter-last-sent"
+                  >
+                    Last sent: {new Date(app.offerLetterSentAt).toLocaleString("en-PG", {
+                      day: "numeric", month: "short", year: "numeric",
+                      hour: "numeric", minute: "2-digit",
+                    })}
+                  </span>
+                )}
+              </div>
               <Button
                 variant="outline"
                 size="sm"

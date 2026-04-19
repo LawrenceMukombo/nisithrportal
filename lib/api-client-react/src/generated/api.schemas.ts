@@ -513,6 +513,8 @@ export interface Application {
   criminalRecord?: boolean | null;
   /** @nullable */
   dataPrivacyConsent?: boolean | null;
+  /** @nullable */
+  offerLetterSentAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   statusHistory?: ApplicationStatusHistoryItem[];
@@ -624,6 +626,25 @@ export interface UpdateApplicationStatusRequest {
   notes?: string | null;
   /** @nullable */
   score?: string | null;
+}
+
+export interface BulkUpdateApplicationStatusRequest {
+  ids: number[];
+  status: string;
+  override?: boolean;
+}
+
+export type BulkUpdateApplicationStatusByFilterRequestFilters = {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  search?: string | null;
+};
+
+export interface BulkUpdateApplicationStatusByFilterRequest {
+  filters: BulkUpdateApplicationStatusByFilterRequestFilters;
+  status: string;
+  override?: boolean;
 }
 
 export interface Employee {
@@ -964,6 +985,15 @@ export type GetApplicationsParams = {
   job_id?: number;
   candidate_id?: number;
   status?: string;
+};
+
+export type BulkUpdateApplicationStatus200 = {
+  updated?: number;
+};
+
+export type BulkUpdateApplicationStatusByFilter200 = {
+  updated?: number;
+  matched?: number;
 };
 
 export type GetApplicationDraftParams = {

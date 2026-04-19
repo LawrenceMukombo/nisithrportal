@@ -962,6 +962,7 @@ export const GetMyApplicationsResponseItem = zod.object({
   conflictOfInterest: zod.boolean().nullish(),
   criminalRecord: zod.boolean().nullish(),
   dataPrivacyConsent: zod.boolean().nullish(),
+  offerLetterSentAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   statusHistory: zod
@@ -1015,6 +1016,7 @@ export const GetApplicationsResponseItem = zod.object({
   conflictOfInterest: zod.boolean().nullish(),
   criminalRecord: zod.boolean().nullish(),
   dataPrivacyConsent: zod.boolean().nullish(),
+  offerLetterSentAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   statusHistory: zod
@@ -1178,6 +1180,7 @@ export const GetApplicationResponse = zod.object({
   conflictOfInterest: zod.boolean().nullish(),
   criminalRecord: zod.boolean().nullish(),
   dataPrivacyConsent: zod.boolean().nullish(),
+  offerLetterSentAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   statusHistory: zod
@@ -1195,6 +1198,36 @@ export const GetApplicationResponse = zod.object({
 });
 
 /**
+ * @summary Bulk update application statuses by ID list
+ */
+export const BulkUpdateApplicationStatusBody = zod.object({
+  ids: zod.array(zod.number()),
+  status: zod.string(),
+  override: zod.boolean().optional(),
+});
+
+export const BulkUpdateApplicationStatusResponse = zod.object({
+  updated: zod.number().optional(),
+});
+
+/**
+ * @summary Bulk update application statuses matching the given filters
+ */
+export const BulkUpdateApplicationStatusByFilterBody = zod.object({
+  filters: zod.object({
+    status: zod.string().nullish(),
+    search: zod.string().nullish(),
+  }),
+  status: zod.string(),
+  override: zod.boolean().optional(),
+});
+
+export const BulkUpdateApplicationStatusByFilterResponse = zod.object({
+  updated: zod.number().optional(),
+  matched: zod.number().optional(),
+});
+
+/**
  * @summary Update application status
  */
 export const UpdateApplicationStatusParams = zod.object({
@@ -1205,23 +1238,6 @@ export const UpdateApplicationStatusBody = zod.object({
   status: zod.string(),
   notes: zod.string().nullish(),
   score: zod.string().nullish(),
-});
-
-export const BulkUpdateApplicationStatusBody = zod.object({
-  ids: zod.array(zod.number().int().positive()).min(1).max(5000),
-  status: zod.enum(["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn", "onboarding"]),
-});
-
-export const BulkUpdateApplicationStatusResponse = zod.object({
-  updated: zod.number(),
-});
-
-export const BulkUpdateApplicationStatusByFilterBody = zod.object({
-  filters: zod.object({
-    status: zod.string().nullish(),
-    search: zod.string().nullish(),
-  }),
-  status: zod.enum(["applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn", "onboarding"]),
 });
 
 export const UpdateApplicationStatusResponse = zod.object({
@@ -1249,6 +1265,7 @@ export const UpdateApplicationStatusResponse = zod.object({
   conflictOfInterest: zod.boolean().nullish(),
   criminalRecord: zod.boolean().nullish(),
   dataPrivacyConsent: zod.boolean().nullish(),
+  offerLetterSentAt: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
   statusHistory: zod

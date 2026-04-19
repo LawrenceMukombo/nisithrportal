@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, integrationConfigsTable, integrationLogsTable } from "@workspace/db";
+import { db, integrationConfigsTable, integrationLogsTable, notificationsTable, usersTable, rolesTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
@@ -16,6 +16,81 @@ import {
 } from "../lib/connectors";
 
 const router: IRouter = Router();
+
+// ─── Integration failure alerting ─────────────────────────────────────────────
+
+const CONSECUTIVE_FAILURE_THRESHOLD = 3;
+
+async function alertAdminsOnConsecutiveFailures(configId: number, agencyId: number | null): Promise<void> {
+  try {
+    // Fetch the last N logs for this config
+    const recentLogs = await db
+      .select({ status: integrationLogsTable.status })
+      .from(integrationLogsTable)
+      .where(eq(integrationLogsTable.integrationConfigId, configId))
+      .orderBy(desc(integrationLogsTable.createdAt))
+      .limit(CONSECUTIVE_FAILURE_THRESHOLD);
+
+    // Only alert if all recent logs are errors
+    if (recentLogs.length < CONSECUTIVE_FAILURE_THRESHOLD) return;
+    if (recentLogs.some((l) => l.status !== "error")) return;
+
+    // Find the config name for the alert message
+    const [cfg] = await db
+      .select({ name: integrationConfigsTable.name })
+      .from(integrationConfigsTable)
+      .where(eq(integrationConfigsTable.id, configId));
+    const cfgName = cfg?.name ?? `Integration #${configId}`;
+
+    // Find admin role ID
+    const [adminRole] = await db
+      .select({ id: rolesTable.id })
+      .from(rolesTable)
+      .where(eq(rolesTable.name, "admin"));
+    if (!adminRole) return;
+
+    // Find all admin users in this agency (or all admins if agencyId is null)
+    const adminQuery = db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(
+        agencyId != null
+          ? and(eq(usersTable.roleId, adminRole.id), eq(usersTable.agencyId, agencyId))
+          : eq(usersTable.roleId, adminRole.id)
+      );
+    const adminUsers = await adminQuery;
+    if (adminUsers.length === 0) return;
+
+    const message = `Integration "${cfgName}" has failed ${CONSECUTIVE_FAILURE_THRESHOLD} times in a row. Check the integration logs and verify the endpoint is reachable.`;
+
+    // Dedup: skip if an identical notification was inserted in the last hour
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    const [existing] = await db
+      .select({ id: notificationsTable.id })
+      .from(notificationsTable)
+      .where(
+        and(
+          eq(notificationsTable.type, "integration_failure"),
+          eq(notificationsTable.message, message),
+          gte(notificationsTable.createdAt, oneHourAgo)
+        )
+      )
+      .limit(1);
+    if (existing) return;
+
+    await db.insert(notificationsTable).values(
+      adminUsers.map((u) => ({
+        userId: u.id,
+        type: "integration_failure",
+        message,
+        read: false,
+      }))
+    );
+    logger.warn({ configId, cfgName, adminCount: adminUsers.length }, "Integration failure alert sent to admins");
+  } catch (err) {
+    logger.warn(err, "Failed to send integration failure alert");
+  }
+}
 
 const CreateIntegrationConfigSchema = z.object({
   integrationType: z.string().min(1),
@@ -193,6 +268,9 @@ router.post("/integration/:type", authMiddleware, requireRole("admin", "hr_offic
       durationMs: result.durationMs,
       triggeredBy: String(req.user?.userId ?? "system"),
     });
+    if (!result.success && config.dbConfigId) {
+      await alertAdminsOnConsecutiveFailures(config.dbConfigId, agencyId);
+    }
   } catch (logErr) {
     logger.warn(logErr, "Failed to persist integration log");
   }
@@ -244,6 +322,10 @@ router.post("/integration/:type/execute", authMiddleware, requireRole("admin", "
     triggeredBy: String(req.user?.userId ?? "system"),
   });
 
+  if (!result.success) {
+    await alertAdminsOnConsecutiveFailures(configId, cfg.agencyId ?? null);
+  }
+
   res.json(result);
 });
 
@@ -265,6 +347,50 @@ router.get("/integration-config/:id/logs", authMiddleware, requireRole("admin"),
   } catch (err) {
     logger.error(err, "Failed to get integration logs");
     res.status(500).json({ error: "Failed to get integration logs" });
+  }
+});
+
+// ─── Export logs for an integration config as CSV ──────────────────────────────
+
+router.get("/integration-config/:id/logs/export", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const id = parseInt(req.params["id"] as string);
+    const [cfg] = await db.select({ agencyId: integrationConfigsTable.agencyId, name: integrationConfigsTable.name })
+      .from(integrationConfigsTable).where(eq(integrationConfigsTable.id, id));
+    if (!cfg) { res.status(404).json({ error: "Not found" }); return; }
+    if (!canAccessConfig(getTenantAgencyId(req), cfg.agencyId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const logs = await db.select().from(integrationLogsTable)
+      .where(eq(integrationLogsTable.integrationConfigId, id))
+      .orderBy(desc(integrationLogsTable.createdAt))
+      .limit(1000);
+
+    const header = ["ID", "Integration ID", "Status", "Duration (ms)", "Request Payload", "Response Body", "Error Message", "Created At"];
+    const rows = logs.map((l) => [
+      l.id,
+      l.integrationConfigId,
+      l.status,
+      l.durationMs ?? "",
+      (l.requestPayload ? JSON.stringify(l.requestPayload) : "").replace(/"/g, '""'),
+      (l.responseBody ? JSON.stringify(l.responseBody) : "").replace(/"/g, '""'),
+      (l.errorMessage ?? "").replace(/"/g, '""'),
+      l.createdAt?.toISOString() ?? "",
+    ]);
+
+    const csvLines = [header, ...rows].map((row) =>
+      row.map((cell) => `"${cell}"`).join(",")
+    );
+    const csv = csvLines.join("\r\n");
+    const safeName = (cfg.name ?? `integration-${id}`).replace(/[^a-z0-9_-]/gi, "_").toLowerCase();
+    const filename = `${safeName}-logs-${new Date().toISOString().split("T")[0]}.csv`;
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    logger.error(err, "Failed to export integration logs");
+    res.status(500).json({ error: "Failed to export integration logs" });
   }
 });
 

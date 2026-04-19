@@ -16,6 +16,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import PDFDocument from "pdfkit";
 import { sendOfferLetterEmail } from "../lib/email";
 import { logger } from "../lib/logger";
+import nisitLogoDataUrl from "../assets/nisit-logo.png";
 
 const router: IRouter = Router();
 
@@ -37,6 +38,18 @@ function fmtSalary(min?: number | null, max?: number | null, currency?: string |
 const NISIT_COLOR = "#003082";   // PNG government deep blue
 const LINE_COLOR = "#c0a030";    // gold accent
 
+let _logoBuffer: Buffer | null = null;
+function getLogoBuffer(): Buffer | null {
+  if (_logoBuffer !== null) return _logoBuffer;
+  try {
+    const b64 = nisitLogoDataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+    _logoBuffer = Buffer.from(b64, "base64");
+    return _logoBuffer;
+  } catch {
+    return null;
+  }
+}
+
 function drawLetterhead(doc: PDFKit.PDFDocument, agencyName: string) {
   const pageWidth = doc.page.width;
   const margins = 72;
@@ -44,18 +57,36 @@ function drawLetterhead(doc: PDFKit.PDFDocument, agencyName: string) {
   // Gold top bar
   doc.rect(0, 0, pageWidth, 8).fill(LINE_COLOR);
 
-  // Blue header block
-  doc.rect(0, 8, pageWidth, 70).fill(NISIT_COLOR);
+  // Blue header block — slightly taller to accommodate logo
+  doc.rect(0, 8, pageWidth, 84).fill(NISIT_COLOR);
 
-  // Organization name in white
-  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(14)
-    .text("GOVERNMENT OF PAPUA NEW GUINEA", margins, 20, { align: "center", width: pageWidth - margins * 2 });
+  // Try to embed NISIT logo on the left
+  const logo = getLogoBuffer();
+  if (logo) {
+    try {
+      doc.image(logo, margins, 14, { height: 60, fit: [80, 60] });
+    } catch {
+      // Ignore logo errors — text header still renders
+    }
+  }
 
-  doc.fontSize(11).font("Helvetica")
-    .text(agencyName.toUpperCase(), margins, 40, { align: "center", width: pageWidth - margins * 2 });
+  // Organization name in white — centred in the remaining space
+  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(13)
+    .text("GOVERNMENT OF PAPUA NEW GUINEA", margins + 90, 22, { align: "center", width: pageWidth - margins - 90 - margins });
+
+  doc.fontSize(10).font("Helvetica")
+    .text(agencyName.toUpperCase(), margins + 90, 42, { align: "center", width: pageWidth - margins - 90 - margins });
+
+  doc.fontSize(8).font("Helvetica").fillColor("#d4c87a")
+    .text("PNG NATIONAL INFORMATION & COMMUNICATIONS TECHNOLOGY INSTITUTE", margins + 90, 60, { align: "center", width: pageWidth - margins - 90 - margins });
 
   // Gold bottom bar of header
-  doc.rect(0, 78, pageWidth, 4).fill(LINE_COLOR);
+  doc.rect(0, 92, pageWidth, 4).fill(LINE_COLOR);
+
+  // Generated-on date stamp
+  const generatedOn = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
+  doc.fillColor("#555555").font("Helvetica").fontSize(8)
+    .text(`Generated on: ${generatedOn}`, margins, 102, { align: "right", width: pageWidth - margins * 2 });
 
   doc.fillColor("#000000").moveDown(0);
 }

@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Search, Plus, FileText } from "lucide-react";
 import { useGetContracts, useGetEmployees, getGetContractsQueryKey, getGetEmployeesQueryKey } from "@workspace/api-client-react";
+import type { Contract } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -23,9 +25,14 @@ const CONTRACT_TYPE_LABEL: Record<string, string> = {
   temporary: "Temporary",
 };
 
+function fmtDate(d?: string | null) {
+  return d ? new Date(d).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : null;
+}
+
 export default function ContractsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [, setLocation] = useLocation();
 
   const { data: contracts = [], isLoading } = useGetContracts(
     { status: statusFilter !== "all" ? statusFilter : undefined },
@@ -50,6 +57,62 @@ export default function ContractsPage() {
       return empName.includes(q) || String(c.id).includes(q) || (c.type ?? "").toLowerCase().includes(q);
     });
   }, [contracts, search, empMap]);
+
+  const columns: DataTableColumn<Contract>[] = useMemo(() => [
+    {
+      key: "id",
+      label: "Contract",
+      sortable: true,
+      csvValue: (c) => `Contract #${c.id}`,
+      renderCell: (c) => (
+        <Link href={`/contracts/${c.id}`}>
+          <span className="text-primary hover:underline cursor-pointer font-medium">Contract #{c.id}</span>
+        </Link>
+      ),
+    },
+    {
+      key: "employee",
+      label: "Employee",
+      sortable: true,
+      csvValue: (c) => c.employeeId ? (empMap[c.employeeId] ?? "") : "",
+      renderCell: (c) => c.employeeId ? (
+        <Link href={`/employees/${c.employeeId}`}>
+          <span className="hover:underline cursor-pointer">{empMap[c.employeeId] ?? `Employee #${c.employeeId}`}</span>
+        </Link>
+      ) : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      key: "type",
+      label: "Type",
+      sortable: true,
+      csvValue: (c) => CONTRACT_TYPE_LABEL[c.type ?? ""] ?? c.type ?? "",
+      renderCell: (c) => (
+        <span className="text-muted-foreground capitalize">{CONTRACT_TYPE_LABEL[c.type ?? ""] ?? c.type ?? "—"}</span>
+      ),
+    },
+    {
+      key: "period",
+      label: "Period",
+      sortable: true,
+      csvValue: (c) => `${fmtDate(c.startDate) ?? "—"} – ${fmtDate(c.endDate) ?? "ongoing"}`,
+      renderCell: (c) => (
+        <span className="text-muted-foreground text-xs">
+          {fmtDate(c.startDate) ?? "—"} – {fmtDate(c.endDate) ?? "ongoing"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      csvValue: (c) => c.status ?? "",
+      renderCell: (c) => (
+        <Badge variant={STATUS_COLORS[c.status ?? "active"] ?? "default"} className="capitalize">
+          {c.status}
+        </Badge>
+      ),
+    },
+  ], [empMap]);
 
   return (
     <AppLayout>
@@ -96,66 +159,26 @@ export default function ContractsPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-0 overflow-x-auto">
-            {isLoading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No contracts found</p>
-                <p className="text-xs mt-1">Try adjusting your search or filters</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm" data-testid="table-contracts">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                    <th className="text-left py-3 px-4 font-medium">Contract</th>
-                    <th className="text-left py-3 px-4 font-medium">Employee</th>
-                    <th className="text-left py-3 px-4 font-medium">Type</th>
-                    <th className="text-left py-3 px-4 font-medium">Period</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((c) => (
-                    <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors" data-testid={`row-contract-${c.id}`}>
-                      <td className="py-3 px-4">
-                        <Link href={`/contracts/${c.id}`}>
-                          <span className="text-primary hover:underline cursor-pointer font-medium">Contract #{c.id}</span>
-                        </Link>
-                      </td>
-                      <td className="py-3 px-4">
-                        {c.employeeId ? (
-                          <Link href={`/employees/${c.employeeId}`}>
-                            <span className="hover:underline cursor-pointer">
-                              {empMap[c.employeeId] ?? `Employee #${c.employeeId}`}
-                            </span>
-                          </Link>
-                        ) : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground capitalize">
-                        {CONTRACT_TYPE_LABEL[c.type ?? ""] ?? c.type ?? "—"}
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground text-xs">
-                        <span>{c.startDate ? new Date(c.startDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}</span>
-                        <span className="mx-1">–</span>
-                        <span>{c.endDate ? new Date(c.endDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "ongoing"}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant={STATUS_COLORS[c.status ?? "active"] ?? "default"} className="capitalize">
-                          {c.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No contracts found</p>
+            <p className="text-xs mt-1">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowId={(c) => c.id}
+            emptyMessage="No contracts found."
+            onRowClick={(c) => setLocation(`/contracts/${c.id}`)}
+            data-testid="table-contracts"
+          />
+        )}
       </div>
     </AppLayout>
   );

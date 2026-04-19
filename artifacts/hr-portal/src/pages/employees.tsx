@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Building2, Users, UserPlus } from "lucide-react";
+import { Search, Building2, UserPlus } from "lucide-react";
 import { useGetEmployees, useGetDepartments, getGetEmployeesQueryKey, getGetDepartmentsQueryKey } from "@workspace/api-client-react";
 import type { Employee } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useRole } from "@/contexts/auth-context";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -62,6 +63,70 @@ export default function EmployeesPage() {
       return matchSearch && matchDept;
     });
   }, [employees, search, deptFilter]);
+
+  const columns: DataTableColumn<Employee>[] = useMemo(() => [
+    {
+      key: "name",
+      label: "Employee",
+      sortable: true,
+      csvValue: (e) => e.name ?? "",
+      renderCell: (e) => (
+        <Link href={`/employees/${e.id}`}>
+          <div className="flex items-center gap-3 cursor-pointer group">
+            <Avatar className="h-8 w-8 shrink-0">
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                {initials(e.name ?? "?")}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <span className="font-medium group-hover:underline text-foreground">{e.name}</span>
+              {e.email && <p className="text-xs text-muted-foreground">{e.email}</p>}
+            </div>
+          </div>
+        </Link>
+      ),
+    },
+    {
+      key: "department",
+      label: "Department",
+      sortable: true,
+      csvValue: (e) => e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "",
+      renderCell: (e) => (
+        <span className="text-muted-foreground">
+          {e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "startDate",
+      label: "Start Date",
+      sortable: true,
+      csvValue: (e) => e.startDate ?? "",
+      renderCell: (e) => (
+        <span className="text-muted-foreground">
+          {e.startDate ? new Date(e.startDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      csvValue: (e) => STATUS_LABEL[e.status ?? "active"] ?? e.status ?? "",
+      renderCell: (e) => (
+        <Badge variant={STATUS_COLORS[e.status ?? "active"] ?? "default"}>
+          {STATUS_LABEL[e.status ?? "active"] ?? e.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      defaultHidden: true,
+      csvValue: (e) => e.phone ?? "",
+      renderCell: (e) => <span className="text-muted-foreground">{e.phone ?? "—"}</span>,
+    },
+  ], [deptMap]);
 
   return (
     <AppLayout>
@@ -121,66 +186,20 @@ export default function EmployeesPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-0 overflow-x-auto">
-            {isLoading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No employees found</p>
-                <p className="text-xs mt-1">Try adjusting your search or filters</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm" data-testid="table-employees">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                    <th className="text-left py-3 px-4 font-medium">Employee</th>
-                    <th className="text-left py-3 px-4 font-medium">Department</th>
-                    <th className="text-left py-3 px-4 font-medium">Start Date</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((emp) => (
-                    <tr key={emp.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors" data-testid={`row-employee-${emp.id}`}>
-                      <td className="py-3 px-4">
-                        <Link href={`/employees/${emp.id}`}>
-                          <div className="flex items-center gap-3 cursor-pointer group">
-                            <Avatar className="h-8 w-8 shrink-0">
-                              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                                {initials(emp.name ?? "?")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <span className="font-medium group-hover:underline text-foreground">
-                                {emp.name}
-                              </span>
-                              {emp.email && <p className="text-xs text-muted-foreground">{emp.email}</p>}
-                            </div>
-                          </div>
-                        </Link>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">
-                        {emp.departmentId ? (deptMap[emp.departmentId] ?? `Dept #${emp.departmentId}`) : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground">
-                        {emp.startDate ? new Date(emp.startDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant={STATUS_COLORS[emp.status ?? "active"] ?? "default"}>
-                          {STATUS_LABEL[emp.status ?? "active"] ?? emp.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowId={(e) => e.id}
+            emptyMessage="No employees found. Try adjusting your search or filters."
+            onRowClick={(e) => setLocation(`/employees/${e.id}`)}
+            data-testid="table-employees"
+          />
+        )}
       </div>
     </AppLayout>
   );

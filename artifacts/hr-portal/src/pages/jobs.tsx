@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase, Download, Printer, ChevronsUpDown, ChevronUp, ChevronDown as ChevronDn } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
 import type { Job } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,23 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRole } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+
+type SortKey = "title" | "dept" | "status" | null;
+type SortDir = "asc" | "desc" | null;
+
+function downloadJobsCSV(jobs: Job[], deptMap: Record<number, string>) {
+  const header = ["ID", "Title", "Department", "Status", "Closing Date"];
+  const rows = jobs.map(j => [
+    j.id,
+    j.title,
+    j.departmentId ? (deptMap[j.departmentId] ?? `Dept #${j.departmentId}`) : "",
+    j.status ?? "",
+    j.closingDate ? new Date(j.closingDate).toLocaleDateString() : "",
+  ]);
+  const csv = [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "jobs.csv"; a.click();
+}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "secondary",
@@ -223,8 +240,21 @@ export default function JobsPage() {
   const [workTypeFilter, setWorkTypeFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [salaryFilter, setSalaryFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
   const { canManageJobs } = useRole();
   const { agencyId } = useAuth();
+
+  function handleSort(key: SortKey) {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir(null); }
+  }
+  function SortIcon({ k }: { k: SortKey }) {
+    if (sortKey !== k) return <ChevronsUpDown className="h-3 w-3 ml-1 opacity-40 inline-block" />;
+    if (sortDir === "asc") return <ChevronUp className="h-3 w-3 ml-1 text-primary inline-block" />;
+    return <ChevronDn className="h-3 w-3 ml-1 text-primary inline-block" />;
+  }
 
   const { data: departments = [] } = useGetDepartments(
     { agency_id: agencyId ?? undefined },
@@ -277,6 +307,18 @@ export default function JobsPage() {
 
   const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || statusFilter !== "all" || salaryFilter !== "all";
   const clearFilters = () => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setStatusFilter("all"); setSalaryFilter("all"); };
+
+  const sortedFiltered = useMemo(() => {
+    if (!sortKey || !sortDir) return filtered;
+    return [...filtered].sort((a, b) => {
+      let av = "", bv = "";
+      if (sortKey === "title") { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+      else if (sortKey === "dept") { av = a.departmentId ? (deptMap[a.departmentId] ?? "").toLowerCase() : ""; bv = b.departmentId ? (deptMap[b.departmentId] ?? "").toLowerCase() : ""; }
+      else if (sortKey === "status") { av = a.status ?? ""; bv = b.status ?? ""; }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortKey, sortDir, deptMap]);
 
   const draftMap = useMemo(() => {
     const map: Record<number, number> = {};
@@ -397,6 +439,16 @@ export default function JobsPage() {
           </CardContent>
         </Card>
 
+        {/* Table toolbar */}
+        <div className="flex items-center justify-end gap-2 print:hidden">
+          <Button size="sm" variant="outline" onClick={() => downloadJobsCSV(sortedFiltered, deptMap)} className="gap-1 h-8 text-xs" data-testid="button-export-jobs-csv">
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1 h-8 text-xs" data-testid="button-print-jobs">
+            <Printer className="h-3.5 w-3.5" /> Print
+          </Button>
+        </div>
+
         <Card>
           <CardContent className="p-0 overflow-x-auto">
             {jobs.isLoading ? (
@@ -406,15 +458,21 @@ export default function JobsPage() {
             ) : (
               <table className="w-full text-sm" data-testid="table-jobs">
                 <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="text-left py-3 px-4 font-medium">Job Title</th>
-                    <th className="text-left py-3 px-4 font-medium">Department</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
+                  <tr className="border-b border-border text-muted-foreground" style={{ backgroundColor: "#f5f5f5" }}>
+                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("title")} data-testid="th-jobs-title">
+                      <span className="inline-flex items-center">Job Title <SortIcon k="title" /></span>
+                    </th>
+                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("dept")} data-testid="th-jobs-dept">
+                      <span className="inline-flex items-center">Department <SortIcon k="dept" /></span>
+                    </th>
+                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("status")} data-testid="th-jobs-status">
+                      <span className="inline-flex items-center">Status <SortIcon k="status" /></span>
+                    </th>
                     {canManageJobs && <th className="text-left py-3 px-4 font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {sortedFiltered.length === 0 ? (
                     <tr>
                       <td colSpan={canManageJobs ? 4 : 3} className="text-center py-12 text-muted-foreground">
                         <p>No jobs found matching your filters.</p>
@@ -426,7 +484,7 @@ export default function JobsPage() {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((job) => (
+                    sortedFiltered.map((job) => (
                       <JobRow
                         key={job.id}
                         job={job}

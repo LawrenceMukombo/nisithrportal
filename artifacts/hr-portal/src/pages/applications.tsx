@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
-import { Link, useSearch } from "wouter";
-import { Search, ChevronDown, CheckSquare } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useSearch, useLocation } from "wouter";
+import { Search } from "lucide-react";
+import { getToken } from "@/lib/api-config";
 import {
   useGetApplications,
   useGetCandidates,
@@ -17,16 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DataTable, type DataTableColumn, type BulkAction } from "@/components/ui/data-table";
 
 const STATUS_OPTIONS = ["applied", "screening", "interview", "offer", "hired", "onboarding", "rejected", "withdrawn"];
 
@@ -52,10 +46,10 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   withdrawn: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
-const BULK_ACTIONS: { label: string; status: string }[] = [
-  { label: "Move to Review", status: "screening" },
-  { label: "Shortlist", status: "interview" },
-  { label: "Reject", status: "rejected" },
+const BULK_ACTIONS: BulkAction[] = [
+  { label: "Move to Review", value: "screening" },
+  { label: "Shortlist", value: "interview" },
+  { label: "Reject", value: "rejected" },
 ];
 
 function StatusSelect({ app }: { app: Application }) {
@@ -95,16 +89,14 @@ export default function ApplicationsPage() {
   const initialStatus = urlStatus && STATUS_OPTIONS.includes(urlStatus) ? urlStatus : "all";
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [search, setSearch] = useState(urlSearch);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [, setLocation] = useLocation();
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (urlStatus && STATUS_OPTIONS.includes(urlStatus)) {
-      setStatusFilter(urlStatus);
-    }
+    if (urlStatus && STATUS_OPTIONS.includes(urlStatus)) setStatusFilter(urlStatus);
   }, [urlStatus]);
 
   useEffect(() => {
@@ -118,68 +110,43 @@ export default function ApplicationsPage() {
 
   const { data: candidates = [] } = useGetCandidates({ query: { queryKey: getGetCandidatesQueryKey() } });
   const { data: jobs = [] } = useGetJobs(undefined, { query: { queryKey: getGetJobsQueryKey() } });
-  const candidateMap = new Map(candidates.map((c) => [c.id, c]));
-  const jobMap = new Map(jobs.map((j) => [j.id, j]));
+  const candidateMap = useMemo(() => new Map(candidates.map((c) => [c.id, c])), [candidates]);
+  const jobMap = useMemo(() => new Map(jobs.map((j) => [j.id, j])), [jobs]);
 
-  const filtered = applications.data?.filter((a) => {
-    if (!search.trim()) return true;
+  const filtered = useMemo(() => {
+    const data = applications.data ?? [];
+    if (!search.trim()) return data;
     const q = search.trim().toLowerCase();
-    const candidateName = candidateMap.get(a.candidateId)?.name?.toLowerCase() ?? "";
-    const jobTitle = jobMap.get(a.jobId)?.title?.toLowerCase() ?? "";
-    return (
-      candidateName.includes(q) ||
-      jobTitle.includes(q) ||
-      String(a.id).includes(q) ||
-      String(a.jobId).includes(q) ||
-      String(a.candidateId).includes(q)
-    );
-  }) ?? [];
-
-  const filteredIds = filtered.map((a) => a.id);
-  const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
-  const someSelected = filteredIds.some((id) => selectedIds.has(id));
-
-  function toggleAll() {
-    if (allSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredIds.forEach((id) => next.delete(id));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredIds.forEach((id) => next.add(id));
-        return next;
-      });
-    }
-  }
-
-  function toggleRow(id: number) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    return data.filter((a) => {
+      const candidateName = candidateMap.get(a.candidateId)?.name?.toLowerCase() ?? "";
+      const jobTitle = jobMap.get(a.jobId)?.title?.toLowerCase() ?? "";
+      return (
+        candidateName.includes(q) ||
+        jobTitle.includes(q) ||
+        String(a.id).includes(q) ||
+        String(a.jobId).includes(q) ||
+        String(a.candidateId).includes(q)
+      );
     });
-  }
+  }, [applications.data, search, candidateMap, jobMap]);
 
-  async function handleBulkAction(status: string) {
-    const ids = Array.from(selectedIds).filter((id) => filteredIds.includes(id));
+  async function handleBulkAction(ids: (number | string)[], action: string) {
     if (ids.length === 0) return;
     setBulkLoading(true);
     try {
+      const token = getToken();
       const res = await fetch("/api/applications/bulk-status", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ ids, status }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ids, status: action }),
       });
       if (!res.ok) throw new Error("Bulk update failed");
       const { updated } = await res.json() as { updated: number };
       await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
-      setSelectedIds(new Set());
-      const actionLabel = BULK_ACTIONS.find((a) => a.status === status)?.label ?? status;
+      const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
       toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
     } catch {
       toast({ title: "Bulk update failed", variant: "destructive" });
@@ -188,7 +155,74 @@ export default function ApplicationsPage() {
     }
   }
 
-  const selectedCount = Array.from(selectedIds).filter((id) => filteredIds.includes(id)).length;
+  const columns: DataTableColumn<Application>[] = useMemo(() => [
+    {
+      key: "id",
+      label: "ID",
+      sortable: true,
+      csvValue: (a) => a.id,
+      renderCell: (a) => (
+        <Link href={`/applications/${a.id}`}>
+          <span className="text-primary hover:underline cursor-pointer font-medium">#{a.id}</span>
+        </Link>
+      ),
+    },
+    {
+      key: "job",
+      label: "Job",
+      sortable: true,
+      csvValue: (a) => jobMap.get(a.jobId)?.title ?? `Job #${a.jobId}`,
+      renderCell: (a) => (
+        <Link href={`/jobs/${a.jobId}`}>
+          <span className="hover:underline cursor-pointer text-muted-foreground">
+            {jobMap.get(a.jobId)?.title ?? `Job #${a.jobId}`}
+          </span>
+        </Link>
+      ),
+    },
+    {
+      key: "candidate",
+      label: "Candidate",
+      sortable: true,
+      csvValue: (a) => candidateMap.get(a.candidateId)?.name ?? `Candidate #${a.candidateId}`,
+      renderCell: (a) => (
+        <Link href={`/candidates/${a.candidateId}`}>
+          <span className="hover:underline cursor-pointer text-muted-foreground">
+            {candidateMap.get(a.candidateId)?.name ?? `Candidate #${a.candidateId}`}
+          </span>
+        </Link>
+      ),
+    },
+    {
+      key: "createdAt",
+      label: "Created",
+      sortable: true,
+      csvValue: (a) => a.createdAt ? new Date(a.createdAt).toLocaleDateString() : "",
+      renderCell: (a) => (
+        <span className="text-muted-foreground">
+          {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      csvValue: (a) => STATUS_LABELS[a.status ?? "applied"] ?? (a.status ?? ""),
+      renderCell: (a) => (
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className={`text-xs ${STATUS_BADGE_CLASSES[a.status ?? "applied"] ?? ""}`}
+            data-testid={`badge-status-${a.id}`}
+          >
+            {STATUS_LABELS[a.status ?? "applied"] ?? a.status}
+          </Badge>
+          <StatusSelect app={a} />
+        </div>
+      ),
+    },
+  ], [candidateMap, jobMap]);
 
   return (
     <AppLayout>
@@ -200,18 +234,18 @@ export default function ApplicationsPage() {
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex gap-3 flex-wrap items-center">
-              <div className="relative flex-1 min-w-48">
+            <div className="flex gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by candidate name, job title, or ID..."
+                  placeholder="Search by candidate, job, or ID…"
                   className="pl-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   data-testid="input-search-applications"
                 />
               </div>
-              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds(new Set()); }}>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
                 <SelectTrigger className="w-44" data-testid="select-status-filter">
                   <SelectValue placeholder="Filter status" />
                 </SelectTrigger>
@@ -226,135 +260,23 @@ export default function ApplicationsPage() {
           </CardContent>
         </Card>
 
-        {selectedCount > 0 && (
-          <div className="flex items-center gap-3 p-3 bg-muted/60 rounded-lg border border-border" data-testid="bulk-action-bar">
-            <CheckSquare className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">
-              {selectedCount} selected
-            </span>
-            <div className="flex-1" />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={bulkLoading}
-                  data-testid="button-bulk-action"
-                  className="gap-1"
-                >
-                  {bulkLoading ? "Updating…" : "Bulk Action"} <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {BULK_ACTIONS.map((action) => (
-                  <DropdownMenuItem
-                    key={action.status}
-                    onSelect={() => handleBulkAction(action.status)}
-                    data-testid={`bulk-action-${action.status}`}
-                  >
-                    {action.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedIds(new Set())}
-              className="text-muted-foreground text-xs"
-            >
-              Clear
-            </Button>
+        {applications.isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            getRowId={(a) => a.id}
+            emptyMessage="No applications found."
+            onRowClick={(a) => setLocation(`/applications/${a.id}`)}
+            bulkActions={BULK_ACTIONS}
+            onBulkAction={handleBulkAction}
+            isBulkLoading={bulkLoading}
+            data-testid="table-applications"
+          />
         )}
-
-        <Card>
-          <CardContent className="p-0 overflow-x-auto">
-            {applications.isLoading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            ) : (
-              <table className="w-full text-sm" data-testid="table-applications">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-3 px-4 w-10">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                        onCheckedChange={toggleAll}
-                        aria-label="Select all"
-                        data-testid="checkbox-select-all"
-                      />
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium">ID</th>
-                    <th className="text-left py-3 px-4 font-medium">Job</th>
-                    <th className="text-left py-3 px-4 font-medium">Candidate</th>
-                    <th className="text-left py-3 px-4 font-medium">Created</th>
-                    <th className="text-left py-3 px-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center py-12 text-muted-foreground">No applications found</td>
-                    </tr>
-                  ) : (
-                    filtered.map((app) => (
-                      <tr
-                        key={app.id}
-                        className={`border-b border-border last:border-0 transition-colors ${selectedIds.has(app.id) ? "bg-primary/5" : "hover:bg-muted/30"}`}
-                        data-testid={`row-application-${app.id}`}
-                      >
-                        <td className="py-3 px-4">
-                          <Checkbox
-                            checked={selectedIds.has(app.id)}
-                            onCheckedChange={() => toggleRow(app.id)}
-                            aria-label={`Select application #${app.id}`}
-                            data-testid={`checkbox-app-${app.id}`}
-                          />
-                        </td>
-                        <td className="py-3 px-4">
-                          <Link href={`/applications/${app.id}`}>
-                            <span className="text-primary hover:underline cursor-pointer font-medium">#{app.id}</span>
-                          </Link>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          <Link href={`/jobs/${app.jobId}`}>
-                            <span className="hover:underline cursor-pointer">
-                              {jobMap.get(app.jobId)?.title ?? `Job #${app.jobId}`}
-                            </span>
-                          </Link>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          <Link href={`/candidates/${app.candidateId}`}>
-                            <span className="hover:underline cursor-pointer">
-                              {candidateMap.get(app.candidateId)?.name ?? `Candidate #${app.candidateId}`}
-                            </span>
-                          </Link>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : "—"}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${STATUS_BADGE_CLASSES[app.status ?? "applied"] ?? ""}`}
-                              data-testid={`badge-status-${app.id}`}
-                            >
-                              {STATUS_LABELS[app.status ?? "applied"] ?? app.status}
-                            </Badge>
-                            <StatusSelect app={app} />
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </AppLayout>
   );

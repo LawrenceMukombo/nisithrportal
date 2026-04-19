@@ -15,7 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle, ChevronRight, Users2, Briefcase } from "lucide-react";
+import { CheckCircle, XCircle, ChevronRight, Users2, Briefcase, ArrowRight } from "lucide-react";
+
+const NEXT_STAGE: Record<string, { status: string; label: string; icon: React.ElementType }> = {
+  screening: { status: "interview", label: "Move to Interview", icon: ArrowRight },
+  interview: { status: "offer",     label: "Advance to Offer",  icon: CheckCircle },
+};
 
 const REVIEW_STATUSES = ["screening", "interview"] as const;
 
@@ -186,13 +191,19 @@ export default function ShortlistedPage() {
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <ActionButton
-                      app={app}
-                      targetStatus="offer"
-                      label="Approve to Offer"
-                      icon={CheckCircle}
-                      variant="default"
-                    />
+                    {(() => {
+                      const next = NEXT_STAGE[app.status];
+                      if (!next) return null;
+                      return (
+                        <ActionButton
+                          app={app}
+                          targetStatus={next.status}
+                          label={next.label}
+                          icon={next.icon}
+                          variant="default"
+                        />
+                      );
+                    })()}
                     <ActionButton
                       app={app}
                       targetStatus="rejected"

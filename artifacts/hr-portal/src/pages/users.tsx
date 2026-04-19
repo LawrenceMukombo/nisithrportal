@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -640,55 +640,73 @@ export default function UsersPage() {
             {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
         ) : (
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Agency</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Joined</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No users found</TableCell>
-                  </TableRow>
-                ) : (
-                  filtered.map((user) => (
-                    <TableRow
-                      key={user.id}
-                      data-testid="row-user"
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => setSelectedUserId(user.id)}
-                    >
-                      <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{user.email}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate" title={user.agencyName ?? "—"}>
-                        {user.agencyName ?? "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {user.roleName ? (ROLE_LABELS[user.roleName] ?? user.roleName) : "No role"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={user.status === "active" ? "default" : "destructive"} className="text-xs">
-                          {user.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <DataTable
+            columns={[
+              {
+                key: "name",
+                label: "Name",
+                sortable: true,
+                csvValue: (u) => u.name ?? "",
+                renderCell: (u) => <span className="font-medium">{u.name}</span>,
+              },
+              {
+                key: "email",
+                label: "Email",
+                sortable: true,
+                csvValue: (u) => u.email ?? "",
+                renderCell: (u) => <span className="text-muted-foreground text-sm">{u.email}</span>,
+              },
+              {
+                key: "agency",
+                label: "Agency",
+                sortable: true,
+                csvValue: (u) => (u as UserRow).agencyName ?? "",
+                renderCell: (u) => (
+                  <span className="text-sm text-muted-foreground" title={(u as UserRow).agencyName ?? "—"}>
+                    {(u as UserRow).agencyName ?? "—"}
+                  </span>
+                ),
+              },
+              {
+                key: "role",
+                label: "Role",
+                sortable: true,
+                csvValue: (u) => u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role",
+                renderCell: (u) => (
+                  <Badge variant="outline" className="text-xs">
+                    {u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role"}
+                  </Badge>
+                ),
+              },
+              {
+                key: "status",
+                label: "Status",
+                sortable: true,
+                csvValue: (u) => u.status ?? "",
+                renderCell: (u) => (
+                  <Badge variant={u.status === "active" ? "default" : "destructive"} className="text-xs">
+                    {u.status}
+                  </Badge>
+                ),
+              },
+              {
+                key: "joined",
+                label: "Joined",
+                sortable: true,
+                csvValue: (u) => u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "",
+                renderCell: (u) => (
+                  <span className="text-sm text-muted-foreground">
+                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                  </span>
+                ),
+              },
+            ] as DataTableColumn<UserRow>[]}
+            data={filtered}
+            getRowId={(u) => u.id}
+            emptyMessage="No users found."
+            onRowClick={(u) => setSelectedUserId(u.id)}
+            data-testid="table-users"
+          />
         )}
       </div>
 

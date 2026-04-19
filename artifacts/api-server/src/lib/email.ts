@@ -23,6 +23,16 @@ function createTransport() {
   return null;
 }
 
+export async function verifySMTPConnection(): Promise<void> {
+  const transport = createTransport();
+  if (!transport) {
+    logger.warn("verifySMTPConnection: SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) not configured — password-reset emails will not be sent. Set these environment secrets to enable email delivery.");
+    return;
+  }
+  await transport.verify();
+  logger.info({ host: process.env.SMTP_HOST }, "verifySMTPConnection: SMTP connection verified — password-reset emails are enabled");
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const subject = "PNG NISIT HR Portal — Reset Your Password";
   const text = `You requested a password reset for your applicant account.\n\nClick the link below to set a new password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, you can safely ignore this email.`;

@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX, AlarmClock } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX, AlarmClock, Share2, Check } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 
@@ -72,6 +72,33 @@ function scanLocalDrafts(): LocalDraft[] {
     if (!b.savedAt) return -1;
     return new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime();
   });
+}
+
+function ShareJobButton({ jobId, testIdPrefix }: { jobId: number; testIdPrefix: string }) {
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
+  const handleShare = () => {
+    const url = `${window.location.origin}/jobs/${jobId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      toast({ title: "Link copied!" });
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      toast({ title: "Could not copy link", variant: "destructive" });
+    });
+  };
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-7 w-7 text-muted-foreground hover:text-primary"
+      onClick={handleShare}
+      title="Copy link"
+      data-testid={`${testIdPrefix}-${jobId}`}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Share2 className="h-3.5 w-3.5" />}
+    </Button>
+  );
 }
 
 export default function MyApplicationsPage() {
@@ -343,6 +370,7 @@ export default function MyApplicationsPage() {
 
                     <div className="mt-3 pt-3 border-t flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
+                        <ShareJobButton jobId={app.jobId} testIdPrefix="btn-share-application-job" />
                         {!isTerminal && (
                           <Button
                             variant="outline"
@@ -460,6 +488,7 @@ export default function MyApplicationsPage() {
                             <ArrowRight className="h-3 w-3" /> Apply
                           </Button>
                         </Link>
+                        <ShareJobButton jobId={row.job.id} testIdPrefix="btn-share-saved-job" />
                         <Button
                           size="icon"
                           variant="ghost"
@@ -469,7 +498,7 @@ export default function MyApplicationsPage() {
                           disabled={unsaveJob.isPending}
                           onClick={() => unsaveJob.mutate(row.job.id, {
                             onSuccess: () => toast({ title: "Job removed from saved" }),
-                            onError: () => toast({ title: "Failed to remove saved job", variant: "destructive" }),
+                            onError: () => toast({ title: "Failed to unsave job", variant: "destructive" }),
                           })}
                         >
                           <BookmarkX className="h-3.5 w-3.5" />

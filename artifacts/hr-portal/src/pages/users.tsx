@@ -632,6 +632,10 @@ function AuditLogPanel() {
   const [loading, setLoading] = useState(true);
   const [actionTypeFilter, setActionTypeFilter] = useState("all");
   const [outcomeFilter, setOutcomeFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [emailQuery, setEmailQuery] = useState("");
+  const [emailFilter, setEmailFilter] = useState("");
   const { toast } = useToast();
 
   const fetchEntries = useCallback(async () => {
@@ -640,6 +644,9 @@ function AuditLogPanel() {
       const params = new URLSearchParams({ limit: "200" });
       if (actionTypeFilter !== "all") params.set("actionType", actionTypeFilter);
       if (outcomeFilter !== "all") params.set("outcome", outcomeFilter);
+      if (fromDate) params.set("fromDate", fromDate);
+      if (toDate) params.set("toDate", toDate);
+      if (emailFilter.trim()) params.set("email", emailFilter.trim());
       const data: AuditLogEntry[] = await apiFetch(`/audit-log?${params.toString()}`);
       setEntries(data);
     } catch {
@@ -647,7 +654,12 @@ function AuditLogPanel() {
     } finally {
       setLoading(false);
     }
-  }, [actionTypeFilter, outcomeFilter, toast]);
+  }, [actionTypeFilter, outcomeFilter, fromDate, toDate, emailFilter, toast]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setEmailFilter(emailQuery), 300);
+    return () => clearTimeout(handle);
+  }, [emailQuery]);
 
   useEffect(() => {
     fetchEntries();
@@ -679,8 +691,52 @@ function AuditLogPanel() {
           </SelectContent>
         </Select>
 
-        {(actionTypeFilter !== "all" || outcomeFilter !== "all") && (
-          <Button size="sm" variant="ghost" className="h-9 text-sm" onClick={() => { setActionTypeFilter("all"); setOutcomeFilter("all"); }}>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">From</label>
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="h-9 w-[150px] text-sm"
+            max={toDate || undefined}
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">To</label>
+          <Input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="h-9 w-[150px] text-sm"
+            min={fromDate || undefined}
+          />
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search by email"
+            value={emailQuery}
+            onChange={(e) => setEmailQuery(e.target.value)}
+            className="h-9 w-56 pl-7 text-sm"
+          />
+        </div>
+
+        {(actionTypeFilter !== "all" || outcomeFilter !== "all" || fromDate || toDate || emailQuery) && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-9 text-sm"
+            onClick={() => {
+              setActionTypeFilter("all");
+              setOutcomeFilter("all");
+              setFromDate("");
+              setToDate("");
+              setEmailQuery("");
+              setEmailFilter("");
+            }}
+          >
             Clear filters
           </Button>
         )}

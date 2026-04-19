@@ -156,7 +156,7 @@ function Router() {
         {() => <ProtectedRoute component={MyApplicationsPage} roles={["applicant"]} />}
       </Route>
       <Route path="/account">
-        {() => <ProtectedRoute component={AccountPage} roles={["applicant"]} />}
+        {() => <ProtectedRoute component={AccountPage} roles={["applicant", "admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/track-application" component={TrackApplicationPage} />
       <Route path="/workflow">

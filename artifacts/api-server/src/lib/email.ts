@@ -155,11 +155,18 @@ export async function sendStaleApplicationEmail(
   status: string,
   daysInStatus: number,
   thresholdDays: number,
+  unsubscribeUrl?: string,
 ): Promise<void> {
   const subject = `PNG NISIT HR Portal — Stalled application #${applicationId} needs review`;
   const appUrl = `${process.env.APP_BASE_URL ?? ""}/applications/${applicationId}`;
   const dayWord = daysInStatus === 1 ? "day" : "days";
-  const text = `Hello ${recipientName},\n\nApplication #${applicationId} for "${jobTitle}" has been in the "${status}" stage for ${daysInStatus} ${dayWord} (threshold: ${thresholdDays} days).\n\nPlease review and move it forward.\n\nView application: ${appUrl}\n\nRegards,\nPNG NISIT HR Portal`;
+  const unsubLineText = unsubscribeUrl
+    ? `\n\nDon't want these emails? Unsubscribe (in-app alerts will still appear): ${unsubscribeUrl}`
+    : "";
+  const text = `Hello ${recipientName},\n\nApplication #${applicationId} for "${jobTitle}" has been in the "${status}" stage for ${daysInStatus} ${dayWord} (threshold: ${thresholdDays} days).\n\nPlease review and move it forward.\n\nView application: ${appUrl}${unsubLineText}\n\nRegards,\nPNG NISIT HR Portal`;
+  const unsubHtml = unsubscribeUrl
+    ? `<p style="color:#666;font-size:12px;margin-top:16px">Don't want these emails? <a href="${unsubscribeUrl}" style="color:#003082">Unsubscribe with one click</a>. You'll still see in-app alerts in the portal.</p>`
+    : "";
   const html = `
     <div style="font-family:sans-serif;max-width:540px;margin:auto">
       <div style="background:#003082;padding:18px 24px">
@@ -176,6 +183,7 @@ export async function sendStaleApplicationEmail(
           </a>
         </p>
         <p style="color:#666;font-size:13px">You're receiving this because you are listed as the hiring manager or HR officer for this application.</p>
+        ${unsubHtml}
       </div>
     </div>
   `;

@@ -36,6 +36,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getHrOfficerIds, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
 import { sendStaleApplicationEmail } from "../lib/email";
+import { buildStaleAppUnsubscribeUrl } from "../lib/unsubscribeToken";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency, setObjectAclPolicy } from "../lib/objectAcl";
 import { writeAuditLog } from "../lib/audit";
@@ -1636,12 +1637,17 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
   ]));
   const userRows = allRecipientIds.length > 0
     ? await db
-        .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name })
+        .select({
+          id: usersTable.id,
+          email: usersTable.email,
+          name: usersTable.name,
+          emailStaleApplications: usersTable.emailStaleApplications,
+        })
         .from(usersTable)
         .where(inArray(usersTable.id, allRecipientIds))
     : [];
-  const userById = new Map<number, { email: string; name: string }>(
-    userRows.map((u) => [u.id, { email: u.email, name: u.name }]),
+  const userById = new Map<number, { email: string; name: string; emailOptIn: boolean }>(
+    userRows.map((u) => [u.id, { email: u.email, name: u.name, emailOptIn: u.emailStaleApplications }]),
   );
 
   let notifiedCount = 0;
@@ -1660,7 +1666,8 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
       Array.from(recipients).map(async (userId) => {
         await createNotification({ userId, type: "application_stalled", message });
         const user = userById.get(userId);
-        if (user?.email) {
+        if (user?.email && user.emailOptIn) {
+          const unsubscribeUrl = buildStaleAppUnsubscribeUrl(userId);
           await sendStaleApplicationEmail(
             user.email,
             user.name,
@@ -1669,6 +1676,7 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
             status,
             days,
             threshold,
+            unsubscribeUrl,
           );
         }
       }),

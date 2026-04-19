@@ -6,7 +6,7 @@ if (!SECRET) {
 }
 const effectiveSecret: string = SECRET;
 
-export type UnsubscribePurpose = "saved-job-closing";
+export type UnsubscribePurpose = "saved-job-closing" | "stale_applications";
 
 interface UnsubscribePayload {
   userId: number;
@@ -28,4 +28,18 @@ export function verifyUnsubscribeToken(token: string, purpose: UnsubscribePurpos
   } catch {
     return null;
   }
+}
+
+function getBaseUrl(): string {
+  const explicit = process.env.APP_BASE_URL;
+  if (explicit) return explicit.replace(/\/$/, "");
+  const replit = process.env.REPLIT_DEV_DOMAIN;
+  if (replit) return `https://${replit}`;
+  return "";
+}
+
+export function buildStaleAppUnsubscribeUrl(userId: number): string {
+  const token = signUnsubscribeToken(userId, "stale_applications");
+  const base = getBaseUrl();
+  return `${base}/api/auth/unsubscribe/stale-applications?token=${encodeURIComponent(token)}`;
 }

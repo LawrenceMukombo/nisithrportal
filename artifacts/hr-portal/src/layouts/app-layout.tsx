@@ -29,6 +29,8 @@ function useNavItems() {
   if (isApplicant) {
     items.push({ label: "My Applications", href: "/my-applications", icon: FileText });
     items.push({ label: "My Account", href: "/account", icon: UserCog });
+  } else if (isAdmin || isHrOfficer || isHiringManager) {
+    items.push({ label: "My Account", href: "/account", icon: UserCog });
   }
 
   if (canManageJobs) {

@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/auth-context";
 import { isStaffDomain } from "@/lib/emailDomain";
 import { getToken } from "@/lib/api-config";
 
@@ -26,17 +26,24 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+type PrefKey = "emailSavedJobClosing" | "emailStaleApplications";
+
 export default function AccountPage() {
-  const { user, updateEmail, role } = useAuth();
+  const { user, updateEmail } = useAuth();
+  const { isApplicant, isAdmin, isHrOfficer, isHiringManager } = useRole();
+  const showStaleAppPref = isAdmin || isHrOfficer || isHiringManager;
+  const showSavedJobPref = isApplicant;
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
-  const [emailSavedJobClosing, setEmailSavedJobClosing] = useState<boolean>(true);
+  const [prefs, setPrefs] = useState<{ emailSavedJobClosing: boolean; emailStaleApplications: boolean }>({
+    emailSavedJobClosing: true,
+    emailStaleApplications: true,
+  });
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [closingSoonDays, setClosingSoonDays] = useState<ClosingSoonDays | null>(null);
   const [closingPrefsLoading, setClosingPrefsLoading] = useState(false);
   const [closingPrefsSaving, setClosingPrefsSaving] = useState(false);
-  const isApplicant = role === "applicant";
 
   useEffect(() => {
     let cancelled = false;
@@ -49,10 +56,13 @@ export default function AccountPage() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (!cancelled) setEmailSavedJobClosing(Boolean(data.emailSavedJobClosing));
+          if (!cancelled) setPrefs({
+            emailSavedJobClosing: Boolean(data.emailSavedJobClosing),
+            emailStaleApplications: Boolean(data.emailStaleApplications),
+          });
         }
       } catch {
-        // ignore — leave default
+        // ignore — leave defaults
       } finally {
         if (!cancelled) setPrefsLoaded(true);
       }
@@ -87,9 +97,9 @@ export default function AccountPage() {
     };
   }, [isApplicant]);
 
-  const updateClosingEmailPref = async (next: boolean) => {
-    const previous = emailSavedJobClosing;
-    setEmailSavedJobClosing(next);
+  const updatePref = async (key: PrefKey, next: boolean, labels: { onTitle: string; offTitle: string; onDesc: string; offDesc: string }) => {
+    const previous = prefs[key];
+    setPrefs((p) => ({ ...p, [key]: next }));
     setPrefsSaving(true);
     try {
       const token = getToken();
@@ -99,11 +109,11 @@ export default function AccountPage() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ emailSavedJobClosing: next }),
+        body: JSON.stringify({ [key]: next }),
         credentials: "include",
       });
       if (!res.ok) {
-        setEmailSavedJobClosing(previous);
+        setPrefs((p) => ({ ...p, [key]: previous }));
         const data = await res.json().catch(() => ({}));
         toast({
           title: "Could not save preference",
@@ -113,13 +123,11 @@ export default function AccountPage() {
         return;
       }
       toast({
-        title: next ? "Email alerts on" : "Email alerts off",
-        description: next
-          ? "You'll get an email when a saved job is closing soon."
-          : "You'll only see closing-soon alerts in the portal.",
+        title: next ? labels.onTitle : labels.offTitle,
+        description: next ? labels.onDesc : labels.offDesc,
       });
     } catch {
-      setEmailSavedJobClosing(previous);
+      setPrefs((p) => ({ ...p, [key]: previous }));
       toast({
         title: "Could not save preference",
         description: "Unable to reach the server. Please try again.",
@@ -146,8 +154,8 @@ export default function AccountPage() {
         body: JSON.stringify({ closingSoonDays: next }),
         credentials: "include",
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const data = await res.json().catch(() => null);
         setClosingSoonDays(previous);
         toast({
           title: "Couldn't save preference",
@@ -220,36 +228,69 @@ export default function AccountPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage your account details.</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Bell className="h-4 w-4" />
-              Email Notifications
-            </CardTitle>
-            <CardDescription>
-              Choose which alerts you want to receive by email. In-app notifications stay on either way.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="pref-saved-job-closing" className="text-sm font-medium">
-                  Email me when a saved job is closing soon
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  We'll still show closing-soon alerts in your notifications panel.
-                </p>
-              </div>
-              <Switch
-                id="pref-saved-job-closing"
-                checked={emailSavedJobClosing}
-                onCheckedChange={updateClosingEmailPref}
-                disabled={!prefsLoaded || prefsSaving}
-                data-testid="switch-email-saved-job-closing"
-              />
-            </div>
-          </CardContent>
-        </Card>
+        {(showSavedJobPref || showStaleAppPref) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell className="h-4 w-4" />
+                Email Notifications
+              </CardTitle>
+              <CardDescription>
+                Choose which alerts you want to receive by email. In-app notifications stay on either way.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {showSavedJobPref && (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="pref-saved-job-closing" className="text-sm font-medium">
+                      Email me when a saved job is closing soon
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      We'll still show closing-soon alerts in your notifications panel.
+                    </p>
+                  </div>
+                  <Switch
+                    id="pref-saved-job-closing"
+                    checked={prefs.emailSavedJobClosing}
+                    onCheckedChange={(next) => updatePref("emailSavedJobClosing", next, {
+                      onTitle: "Email alerts on",
+                      offTitle: "Email alerts off",
+                      onDesc: "You'll get an email when a saved job is closing soon.",
+                      offDesc: "You'll only see closing-soon alerts in the portal.",
+                    })}
+                    disabled={!prefsLoaded || prefsSaving}
+                    data-testid="switch-email-saved-job-closing"
+                  />
+                </div>
+              )}
+              {showStaleAppPref && (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="pref-stale-applications" className="text-sm font-medium">
+                      Email me when an application has stalled
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      We'll still show stalled-application alerts in your notifications panel.
+                    </p>
+                  </div>
+                  <Switch
+                    id="pref-stale-applications"
+                    checked={prefs.emailStaleApplications}
+                    onCheckedChange={(next) => updatePref("emailStaleApplications", next, {
+                      onTitle: "Stalled-application emails on",
+                      offTitle: "Stalled-application emails off",
+                      onDesc: "You'll get an email when an application has been stuck in a stage too long.",
+                      offDesc: "You'll only see stalled-application alerts in the portal.",
+                    })}
+                    disabled={!prefsLoaded || prefsSaving}
+                    data-testid="switch-email-stale-applications"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

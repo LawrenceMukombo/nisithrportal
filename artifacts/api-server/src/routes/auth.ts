@@ -206,21 +206,28 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
   });
 });
 
-router.get("/auth/me/preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.get("/auth/me/preferences", authMiddleware, async (req, res): Promise<void> => {
   const [user] = await db
-    .select({ emailSavedJobClosing: usersTable.emailSavedJobClosing })
+    .select({
+      emailSavedJobClosing: usersTable.emailSavedJobClosing,
+      emailStaleApplications: usersTable.emailStaleApplications,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, req.user!.userId));
   if (!user) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  res.json({ emailSavedJobClosing: user.emailSavedJobClosing });
+  res.json({
+    emailSavedJobClosing: user.emailSavedJobClosing,
+    emailStaleApplications: user.emailStaleApplications,
+  });
 });
 
-router.patch("/auth/me/preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.patch("/auth/me/preferences", authMiddleware, async (req, res): Promise<void> => {
   const schema = z.object({
     emailSavedJobClosing: z.boolean().optional(),
+    emailStaleApplications: z.boolean().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
@@ -231,6 +238,9 @@ router.patch("/auth/me/preferences", authMiddleware, requireRole("applicant"), a
   if (parsed.data.emailSavedJobClosing !== undefined) {
     updates.emailSavedJobClosing = parsed.data.emailSavedJobClosing;
   }
+  if (parsed.data.emailStaleApplications !== undefined) {
+    updates.emailStaleApplications = parsed.data.emailStaleApplications;
+  }
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "No preferences provided" });
     return;
@@ -239,13 +249,64 @@ router.patch("/auth/me/preferences", authMiddleware, requireRole("applicant"), a
     .update(usersTable)
     .set(updates)
     .where(eq(usersTable.id, req.user!.userId))
-    .returning({ emailSavedJobClosing: usersTable.emailSavedJobClosing });
+    .returning({
+      emailSavedJobClosing: usersTable.emailSavedJobClosing,
+      emailStaleApplications: usersTable.emailStaleApplications,
+    });
   if (!updated) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  logger.info({ userId: req.user!.userId, updates }, "auth/me/preferences: applicant preferences updated");
-  res.json({ emailSavedJobClosing: updated.emailSavedJobClosing });
+  logger.info({ userId: req.user!.userId, updates }, "auth/me/preferences: user preferences updated");
+  res.json({
+    emailSavedJobClosing: updated.emailSavedJobClosing,
+    emailStaleApplications: updated.emailStaleApplications,
+  });
+});
+
+// One-click unsubscribe link from stalled-application emails. Public (no auth)
+// because email clients won't pass through Bearer tokens — link is signed with
+// an HMAC token tied to the user id so it cannot be forged.
+router.get("/auth/unsubscribe/stale-applications", async (req, res): Promise<void> => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  const userId = token ? verifyUnsubscribeToken(token, "stale_applications") : null;
+  const renderPage = (title: string, message: string, ok: boolean) => {
+    res
+      .status(ok ? 200 : 400)
+      .type("html")
+      .send(`<!doctype html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:48px 16px;color:#222}
+.card{max-width:480px;margin:auto;background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);overflow:hidden}
+.hdr{background:#003082;color:#fff;padding:18px 24px}.hdr h1{margin:0;font-size:18px}
+.body{padding:24px}.body p{line-height:1.5}
+.muted{color:#666;font-size:13px;margin-top:16px}
+a{color:#003082}</style></head>
+<body><div class="card"><div class="hdr"><h1>PNG NISIT HR Portal</h1></div>
+<div class="body"><h2 style="margin-top:0">${title}</h2><p>${message}</p>
+<p class="muted">You can re-enable these emails any time from <a href="${(process.env.APP_BASE_URL ?? "").replace(/\/$/, "")}/account">My Account &rarr; Email Notifications</a>.</p>
+</div></div></body></html>`);
+  };
+  if (userId == null) {
+    renderPage("Invalid unsubscribe link", "This unsubscribe link is invalid or has been tampered with. If you keep getting unwanted emails, please update your preferences from the portal.", false);
+    return;
+  }
+  const [updated] = await db
+    .update(usersTable)
+    .set({ emailStaleApplications: false })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, email: usersTable.email });
+  if (!updated) {
+    renderPage("Account not found", "We couldn't find an account for this unsubscribe link.", false);
+    return;
+  }
+  logger.info({ userId }, "auth/unsubscribe/stale-applications: user unsubscribed via email link");
+  renderPage(
+    "You're unsubscribed",
+    `We've turned off stalled-application emails for <strong>${updated.email}</strong>. You'll still see these alerts in the portal's notifications panel.`,
+    true,
+  );
 });
 
 router.get("/auth/me/notification-preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {

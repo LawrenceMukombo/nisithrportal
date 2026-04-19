@@ -69,6 +69,27 @@ router.post("/ai-scores", authMiddleware, requireRole(...ROLES), async (req, res
   res.status(201).json(created);
 });
 
+router.delete("/ai-scores", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
+  const jobIdSchema = z.coerce.number().int().positive();
+  const parsed = jobIdSchema.safeParse(req.query.job_id);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Missing or invalid job_id query parameter" });
+    return;
+  }
+  const jobId = parsed.data;
+
+  const agencyId = getTenantAgencyId(req);
+  const job = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId)).then((r) => r[0]);
+  if (!job) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
+  if (agencyId != null && !assertTenantAccess(res, job.agencyId ?? null, agencyId)) return;
+
+  await db.delete(aiScoresTable).where(eq(aiScoresTable.jobId, jobId));
+  res.status(204).send();
+});
+
 router.get("/ai-scores/:id", authMiddleware, requireRole(...ROLES), async (req, res): Promise<void> => {
   const id = parseIntParam(req.params.id);
   const idSchema = z.number().int().positive();

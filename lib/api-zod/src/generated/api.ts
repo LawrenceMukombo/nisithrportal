@@ -1583,6 +1583,13 @@ export const CreateAiScoreBody = zod.object({
 });
 
 /**
+ * @summary Bulk delete AI scores for a job
+ */
+export const DeleteAiScoresByJobQueryParams = zod.object({
+  job_id: zod.coerce.number(),
+});
+
+/**
  * @summary Get AI score by ID
  */
 export const GetAiScoreParams = zod.object({

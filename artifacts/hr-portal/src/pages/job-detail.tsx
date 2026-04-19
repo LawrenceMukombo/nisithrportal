@@ -2,8 +2,18 @@ import { useRoute, useLocation, useSearch, Link } from "wouter";
 import {
   ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, ChevronDown, Sparkles, Loader2,
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
-  Monitor, CheckCircle2, Medal, Trophy, Bookmark, BookmarkCheck, Share2, Check,
+  Monitor, CheckCircle2, Medal, Trophy, Bookmark, BookmarkCheck, Share2, Check, Trash2,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -14,7 +24,7 @@ import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
   useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey,
-  useGetAiScores, getGetAiScoresQueryKey,
+  useGetAiScores, getGetAiScoresQueryKey, useDeleteAiScoresByJob,
   useGetCandidates, getGetCandidatesQueryKey,
   useUpdateApplicationStatus, getGetApplicationsQueryKey,
   useGetMyApplications, getGetMyApplicationsQueryKey,
@@ -284,6 +294,8 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
   const [rankings, setRankings] = useState<RankedCandidate[]>([]);
   const [lastRankedAt, setLastRankedAt] = useState<string | null>(null);
   const rankMutation = useAiRankCandidates();
+  const clearMutation = useDeleteAiScoresByJob();
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   const aiScoresParams = { job_id: jobId };
   const { data: savedScores = [] } = useGetAiScores(aiScoresParams, {
@@ -362,6 +374,20 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
       toast({ title: "Candidates ranked by AI" });
     } catch {
       toast({ title: "Failed to rank candidates", variant: "destructive" });
+    }
+  };
+
+  const handleClearRankings = async () => {
+    try {
+      await clearMutation.mutateAsync({ params: { job_id: jobId } });
+      setRankings([]);
+      setLastRankedAt(null);
+      await qc.invalidateQueries({ queryKey: getGetAiScoresQueryKey(aiScoresParams) });
+      toast({ title: "AI rankings cleared" });
+    } catch {
+      toast({ title: "Failed to clear rankings", variant: "destructive" });
+    } finally {
+      setClearDialogOpen(false);
     }
   };
 
@@ -479,7 +505,25 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
                   </p>
                 )}
               </div>
-              <span className="text-xs text-muted-foreground">{rankings.length} candidate{rankings.length !== 1 ? "s" : ""} ranked</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">{rankings.length} candidate{rankings.length !== 1 ? "s" : ""} ranked</span>
+                {canManageJobs && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setClearDialogOpen(true)}
+                    disabled={clearMutation.isPending}
+                    data-testid="button-clear-rankings"
+                    className="gap-1.5 h-7 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    {clearMutation.isPending ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Clearing…</>
+                    ) : (
+                      <><Trash2 className="h-3.5 w-3.5" /> Clear rankings</>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="space-y-1" data-testid="table-rankings">
               {/* Header row */}
@@ -559,6 +603,26 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
           </div>
         </>
       )}
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent data-testid="dialog-clear-rankings">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear AI rankings?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all saved AI scores for this job. The shortlist will disappear and you can re-rank candidates at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-clear-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClearRankings}
+              data-testid="button-clear-confirm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear rankings
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

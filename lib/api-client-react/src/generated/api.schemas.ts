@@ -1066,6 +1066,10 @@ export type GetAiScoresParams = {
   candidate_id?: number;
 };
 
+export type DeleteAiScoresByJobParams = {
+  job_id: number;
+};
+
 export type GetDashboardSummaryParams = {
   agency_id?: number;
 };

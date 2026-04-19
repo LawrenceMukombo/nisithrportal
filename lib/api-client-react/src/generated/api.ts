@@ -47,6 +47,7 @@ import type {
   CreateScreeningQuestionRequest,
   CreateUserRequest,
   DashboardSummary,
+  DeleteAiScoresByJobParams,
   DeleteApplicationDraftParams,
   DeleteJobScreeningQuestion200,
   Department,
@@ -5100,6 +5101,104 @@ export const useCreateAiScore = <
   TContext
 > => {
   return useMutation(getCreateAiScoreMutationOptions(options));
+};
+
+/**
+ * @summary Bulk delete AI scores for a job
+ */
+export const getDeleteAiScoresByJobUrl = (
+  params: DeleteAiScoresByJobParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/ai-scores?${stringifiedParams}`
+    : `/api/ai-scores`;
+};
+
+export const deleteAiScoresByJob = async (
+  params: DeleteAiScoresByJobParams,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAiScoresByJobUrl(params), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAiScoresByJobMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiScoresByJob>>,
+    TError,
+    { params: DeleteAiScoresByJobParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAiScoresByJob>>,
+  TError,
+  { params: DeleteAiScoresByJobParams },
+  TContext
+> => {
+  const mutationKey = ["deleteAiScoresByJob"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAiScoresByJob>>,
+    { params: DeleteAiScoresByJobParams }
+  > = (props) => {
+    const { params } = props ?? {};
+
+    return deleteAiScoresByJob(params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAiScoresByJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAiScoresByJob>>
+>;
+
+export type DeleteAiScoresByJobMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Bulk delete AI scores for a job
+ */
+export const useDeleteAiScoresByJob = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAiScoresByJob>>,
+    TError,
+    { params: DeleteAiScoresByJobParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAiScoresByJob>>,
+  TError,
+  { params: DeleteAiScoresByJobParams },
+  TContext
+> => {
+  return useMutation(getDeleteAiScoresByJobMutationOptions(options));
 };
 
 /**

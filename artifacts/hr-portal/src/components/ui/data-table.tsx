@@ -51,6 +51,12 @@ type DataTableProps<T> = {
     action: string,
     meta: { allSelected: boolean; totalRows: number },
   ) => void | Promise<void>;
+  /**
+   * Live progress for an in-flight bulk action. When provided alongside `bulkLoading`,
+   * the action bar renders a progress bar and "Updated X / N" text so recruiters get
+   * feedback instead of an opaque pause when applying bulk actions to large id sets.
+   */
+  bulkProgress?: { done: number; total: number } | null;
   exportFilename?: string;
   /**
    * Total count of rows matching the active server-side filters. When provided and the user
@@ -112,6 +118,7 @@ export function DataTable<T>({
   emptyState,
   bulkActions = [],
   onBulkAction,
+  bulkProgress = null,
   exportFilename = "export",
   totalMatchingResults,
   filterToken,
@@ -354,6 +361,25 @@ export function DataTable<T>({
               >
                 Select all {totalMatchingResults} matching results
               </Button>
+            )}
+            {bulkLoading && bulkProgress && bulkProgress.total > 0 && (
+              <div className="flex items-center gap-2" data-testid="bulk-progress">
+                <div className="h-1.5 w-32 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-150"
+                    style={{
+                      width: `${Math.min(100, Math.round((bulkProgress.done / bulkProgress.total) * 100))}%`,
+                    }}
+                    data-testid="bulk-progress-bar"
+                  />
+                </div>
+                <span
+                  className="text-xs text-muted-foreground tabular-nums"
+                  data-testid="bulk-progress-text"
+                >
+                  Updated {bulkProgress.done} / {bulkProgress.total}
+                </span>
+              </div>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { getToken } from "@/lib/api-config";
 import { DataTable } from "@/components/ui/data-table";
 import type { DataTableColumn, DataTableBulkAction } from "@/components/ui/data-table";
 
@@ -154,21 +155,32 @@ export default function ApplicationsPage() {
     });
   }, [applications.data, search, candidateMap, jobMap]);
 
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+
   const handleBulkAction = useCallback(async (
     ids: number[],
     action: string,
     meta: { allSelected: boolean; totalRows: number },
   ) => {
+    const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
+
     // When the recruiter has selected every row in the current filter view (including
     // the explicit select-all-results mode), switch to the filter-based endpoint so the
     // server resolves the target set itself — no ID list crosses the wire and the
     // update runs as one atomic query. This keeps bulk actions correct even once the
-    // applications list becomes paginated server-side.
+    // applications list becomes paginated server-side. Progress jumps from 0/total to
+    // total/total since the server-side update is atomic.
     const useFilterMode = meta.allSelected && meta.totalRows > 0;
-    const res = useFilterMode
-      ? await fetch("/api/applications/bulk-status-by-filter", {
+    if (useFilterMode) {
+      setBulkProgress({ done: 0, total: meta.totalRows });
+      try {
+        const token = getToken();
+        const res = await fetch("/api/applications/bulk-status-by-filter", {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           credentials: "include",
           body: JSON.stringify({
             filters: {
@@ -177,26 +189,66 @@ export default function ApplicationsPage() {
             },
             status: action,
           }),
-        })
-      : await fetch("/api/applications/bulk-status", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ ids, status: action }),
         });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => null) as { error?: string } | null;
-      toast({
-        title: "Bulk update failed",
-        description: errBody?.error ?? undefined,
-        variant: "destructive",
-      });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null) as { error?: string } | null;
+          toast({
+            title: "Bulk update failed",
+            description: errBody?.error ?? undefined,
+            variant: "destructive",
+          });
+          return;
+        }
+        const { updated } = await res.json() as { updated: number };
+        setBulkProgress({ done: meta.totalRows, total: meta.totalRows });
+        await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+        toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
+      } finally {
+        setBulkProgress(null);
+      }
       return;
     }
-    const { updated } = await res.json() as { updated: number };
-    await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
-    const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
-    toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
+
+    // Per-id mode: process the selected id set in chunks so the user sees real-time
+    // progress ("Updated X / N") rather than a long, opaque "Updating…" pause when
+    // bulk actions are applied to hundreds or thousands of applications.
+    const BATCH_SIZE = 25;
+    const total = ids.length;
+    setBulkProgress({ done: 0, total });
+    let updatedTotal = 0;
+    try {
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const chunk = ids.slice(i, i + BATCH_SIZE);
+        const token = getToken();
+        const res = await fetch("/api/applications/bulk-status", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: "include",
+          body: JSON.stringify({ ids: chunk, status: action }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null) as { error?: string } | null;
+          toast({
+            title: "Bulk update failed",
+            description: errBody?.error ?? `Updated ${updatedTotal} of ${total} before failing`,
+            variant: "destructive",
+          });
+          return;
+        }
+        const { updated } = (await res.json()) as { updated: number };
+        updatedTotal += updated;
+        setBulkProgress({ done: Math.min(i + chunk.length, total), total });
+      }
+      await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+      toast({
+        title: `${updatedTotal} application${updatedTotal !== 1 ? "s" : ""} updated to "${actionLabel}"`,
+      });
+    } finally {
+      setBulkProgress(null);
+    }
   }, [queryClient, toast, statusFilter, search]);
 
   const columns: DataTableColumn<Application>[] = [
@@ -320,6 +372,7 @@ export default function ApplicationsPage() {
           isLoading={applications.isLoading}
           bulkActions={BULK_ACTIONS}
           onBulkAction={handleBulkAction}
+          bulkProgress={bulkProgress}
           exportFilename="applications"
           totalMatchingResults={totalMatchingResults}
           filterToken={countParams}

@@ -801,116 +801,6 @@ router.get("/applications/track", async (req, res): Promise<void> => {
   });
 });
 
-router.patch("/applications/:id", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
-  const id = parseIntParam(req.params.id);
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid application id" });
-    return;
-  }
-
-  const { status } = req.body as { status?: string };
-  if (status !== "withdrawn") {
-    res.status(400).json({ error: "Only withdrawal is permitted via this endpoint" });
-    return;
-  }
-
-  const userEmail = req.user?.email;
-  if (!userEmail) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-
-  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id));
-  if (!existing) {
-    res.status(404).json({ error: "Application not found" });
-    return;
-  }
-
-  const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, existing.candidateId));
-  if (!candidate || candidate.email.toLowerCase() !== userEmail.toLowerCase()) {
-    res.status(403).json({ error: "You can only withdraw your own applications" });
-    return;
-  }
-
-  const terminalStatuses = ["rejected", "withdrawn", "hired"];
-  if (terminalStatuses.includes(existing.status)) {
-    res.status(422).json({ error: "This application cannot be withdrawn" });
-    return;
-  }
-
-  const [application] = await db
-    .update(applicationsTable)
-    .set({ status: "withdrawn" })
-    .where(eq(applicationsTable.id, id))
-    .returning();
-
-  await db.insert(applicationStatusHistoryTable).values({
-    applicationId: application.id,
-    status: "withdrawn",
-    note: null,
-  });
-
-  const statusHistory = await db
-    .select()
-    .from(applicationStatusHistoryTable)
-    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
-    .orderBy(asc(applicationStatusHistoryTable.changedAt));
-
-  res.json({ ...application, statusHistory });
-
-  // Notify the responsible HR officer (job poster) about the withdrawal.
-  // If the job has no assigned poster, fall back to all HR officers in the agency.
-  // Also notify the applicant to confirm the withdrawal.
-  try {
-    const [job] = await db
-      .select({ agencyId: jobsTable.agencyId, title: jobsTable.title, createdBy: jobsTable.createdBy })
-      .from(jobsTable)
-      .where(eq(jobsTable.id, existing.jobId));
-    if (job?.agencyId != null) {
-      const candidateName = candidate.name ?? candidate.email;
-      const message = `${candidateName} has withdrawn their application for "${job.title}".`;
-      if (job.createdBy != null) {
-        await createNotification({ userId: job.createdBy, type: "application_withdrawn", message });
-      } else {
-        await notifyHrOfficers(job.agencyId, "application_withdrawn", message);
-      }
-    }
-    // Confirm withdrawal to the applicant.
-    const applicantUserId = await getUserIdByEmail(candidate.email);
-    if (applicantUserId && job) {
-      await createNotification({
-        userId: applicantUserId,
-        type: "application_withdrawn",
-        message: `Your application for "${job.title}" has been successfully withdrawn.`,
-      });
-    }
-  } catch (err) {
-    console.error("[applications] Withdrawal HR notification failed:", err);
-  }
-});
-
-router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
-  const params = GetApplicationParams.safeParse({ id: parseIntParam(req.params.id) });
-  if (!params.success) {
-    res.status(400).json({ error: "Invalid application id" });
-    return;
-  }
-  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
-  if (!application) {
-    res.status(404).json({ error: "Application not found" });
-    return;
-  }
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null) {
-    const jobAgencyId = await getJobAgencyId(application.jobId);
-    if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
-  }
-  const statusHistory = await db.select().from(applicationStatusHistoryTable)
-    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
-    .orderBy(asc(applicationStatusHistoryTable.changedAt));
-  res.json({ ...application, statusHistory });
-});
-
 // Pipeline order used to derive default bulk-status transitions when an agency
 // has not configured an explicit allow-list. Forward moves of more than one
 // step are considered "skips" and rejected to prevent accidentally bypassing
@@ -1127,6 +1017,116 @@ router.patch("/applications/bulk-status-by-filter", authMiddleware, requireRole(
     return;
   }
   res.json({ updated: result.updated, matched: matchedIds.length });
+});
+
+router.patch("/applications/:id", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const id = parseIntParam(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid application id" });
+    return;
+  }
+
+  const { status } = req.body as { status?: string };
+  if (status !== "withdrawn") {
+    res.status(400).json({ error: "Only withdrawal is permitted via this endpoint" });
+    return;
+  }
+
+  const userEmail = req.user?.email;
+  if (!userEmail) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+
+  const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, existing.candidateId));
+  if (!candidate || candidate.email.toLowerCase() !== userEmail.toLowerCase()) {
+    res.status(403).json({ error: "You can only withdraw your own applications" });
+    return;
+  }
+
+  const terminalStatuses = ["rejected", "withdrawn", "hired"];
+  if (terminalStatuses.includes(existing.status)) {
+    res.status(422).json({ error: "This application cannot be withdrawn" });
+    return;
+  }
+
+  const [application] = await db
+    .update(applicationsTable)
+    .set({ status: "withdrawn" })
+    .where(eq(applicationsTable.id, id))
+    .returning();
+
+  await db.insert(applicationStatusHistoryTable).values({
+    applicationId: application.id,
+    status: "withdrawn",
+    note: null,
+  });
+
+  const statusHistory = await db
+    .select()
+    .from(applicationStatusHistoryTable)
+    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+
+  res.json({ ...application, statusHistory });
+
+  // Notify the responsible HR officer (job poster) about the withdrawal.
+  // If the job has no assigned poster, fall back to all HR officers in the agency.
+  // Also notify the applicant to confirm the withdrawal.
+  try {
+    const [job] = await db
+      .select({ agencyId: jobsTable.agencyId, title: jobsTable.title, createdBy: jobsTable.createdBy })
+      .from(jobsTable)
+      .where(eq(jobsTable.id, existing.jobId));
+    if (job?.agencyId != null) {
+      const candidateName = candidate.name ?? candidate.email;
+      const message = `${candidateName} has withdrawn their application for "${job.title}".`;
+      if (job.createdBy != null) {
+        await createNotification({ userId: job.createdBy, type: "application_withdrawn", message });
+      } else {
+        await notifyHrOfficers(job.agencyId, "application_withdrawn", message);
+      }
+    }
+    // Confirm withdrawal to the applicant.
+    const applicantUserId = await getUserIdByEmail(candidate.email);
+    if (applicantUserId && job) {
+      await createNotification({
+        userId: applicantUserId,
+        type: "application_withdrawn",
+        message: `Your application for "${job.title}" has been successfully withdrawn.`,
+      });
+    }
+  } catch (err) {
+    console.error("[applications] Withdrawal HR notification failed:", err);
+  }
+});
+
+router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const params = GetApplicationParams.safeParse({ id: parseIntParam(req.params.id) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid application id" });
+    return;
+  }
+  const [application] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, params.data.id));
+  if (!application) {
+    res.status(404).json({ error: "Application not found" });
+    return;
+  }
+  const agencyId = getTenantAgencyId(req);
+  if (agencyId != null) {
+    const jobAgencyId = await getJobAgencyId(application.jobId);
+    if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
+  }
+  const statusHistory = await db.select().from(applicationStatusHistoryTable)
+    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  res.json({ ...application, statusHistory });
 });
 
 router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {

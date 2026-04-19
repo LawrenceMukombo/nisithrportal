@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ArrowLeft, RefreshCw, FileDown, Loader2 } from "lucide-react";
-import { useGetContract, useUpdateContract, getGetContractQueryKey } from "@workspace/api-client-react";
+import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -159,6 +159,11 @@ export default function ContractDetailPage() {
     query: { enabled: !!contractId && !isNaN(contractId), queryKey: getGetContractQueryKey(contractId) },
   });
 
+  const empId = contract?.employeeId ?? 0;
+  const { data: employee } = useGetEmployee(empId, {
+    query: { enabled: !!empId, queryKey: getGetEmployeeQueryKey(empId) },
+  });
+
   if (isLoading) {
     return <AppLayout><div className="p-6"><Skeleton className="h-64 w-full" /></div></AppLayout>;
   }
@@ -216,9 +221,13 @@ export default function ContractDetailPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Employee</span>
-              <Link href={`/employees/${contract.employeeId}`}>
-                <span className="text-primary hover:underline cursor-pointer">Employee #{contract.employeeId}</span>
-              </Link>
+              {contract.employeeId ? (
+                <Link href={`/employees/${contract.employeeId}`}>
+                  <span className="text-primary hover:underline cursor-pointer">
+                    {employee?.name ?? `Employee #${contract.employeeId}`}
+                  </span>
+                </Link>
+              ) : "—"}
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Type</span>

@@ -13,6 +13,7 @@ import { sendPasswordResetEmail } from "../lib/email";
 import { verifyUnsubscribeToken } from "../lib/unsubscribeToken";
 import { writeAuditLog } from "../lib/audit";
 import { createNotification } from "../lib/notificationService";
+import { CLOSING_SOON_DAY_OPTIONS } from "./saved-jobs";
 
 const router: IRouter = Router();
 
@@ -200,6 +201,7 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
     roleId: user.roleId,
     agencyId: user.agencyId,
     status: user.status,
+    closingSoonDays: user.closingSoonDays,
     createdAt: user.createdAt.toISOString(),
   });
 });
@@ -244,6 +246,42 @@ router.patch("/auth/me/preferences", authMiddleware, requireRole("applicant"), a
   }
   logger.info({ userId: req.user!.userId, updates }, "auth/me/preferences: applicant preferences updated");
   res.json({ emailSavedJobClosing: updated.emailSavedJobClosing });
+});
+
+router.get("/auth/me/notification-preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const [user] = await db
+    .select({ closingSoonDays: usersTable.closingSoonDays })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.user!.userId));
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({
+    closingSoonDays: user.closingSoonDays,
+    options: [...CLOSING_SOON_DAY_OPTIONS],
+  });
+});
+
+router.patch("/auth/me/notification-preferences", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const schema = z.object({
+    closingSoonDays: z.number().int().refine(
+      (n) => (CLOSING_SOON_DAY_OPTIONS as readonly number[]).includes(n),
+      { message: `closingSoonDays must be one of ${CLOSING_SOON_DAY_OPTIONS.join(", ")}` },
+    ),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    return;
+  }
+  const { closingSoonDays } = parsed.data;
+  await db
+    .update(usersTable)
+    .set({ closingSoonDays })
+    .where(eq(usersTable.id, req.user!.userId));
+  logger.info({ userId: req.user!.userId, closingSoonDays }, "auth/me/notification-preferences: updated");
+  res.json({ closingSoonDays, options: [...CLOSING_SOON_DAY_OPTIONS] });
 });
 
 router.patch("/auth/me/email", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {

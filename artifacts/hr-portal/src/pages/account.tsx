@@ -9,11 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { isStaffDomain } from "@/lib/emailDomain";
 import { getToken } from "@/lib/api-config";
+
+const CLOSING_SOON_DAY_OPTIONS = [3, 7, 14] as const;
+type ClosingSoonDays = (typeof CLOSING_SOON_DAY_OPTIONS)[number];
 
 const schema = z.object({
   newEmail: z.string().email("Enter a valid email address"),
@@ -23,12 +27,16 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function AccountPage() {
-  const { user, updateEmail } = useAuth();
+  const { user, updateEmail, role } = useAuth();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
   const [emailSavedJobClosing, setEmailSavedJobClosing] = useState<boolean>(true);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
+  const [closingSoonDays, setClosingSoonDays] = useState<ClosingSoonDays | null>(null);
+  const [closingPrefsLoading, setClosingPrefsLoading] = useState(false);
+  const [closingPrefsSaving, setClosingPrefsSaving] = useState(false);
+  const isApplicant = role === "applicant";
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +59,33 @@ export default function AccountPage() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!isApplicant) return;
+    let cancelled = false;
+    setClosingPrefsLoading(true);
+    (async () => {
+      try {
+        const token = getToken();
+        const res = await fetch("/api/auth/me/notification-preferences", {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const value = (CLOSING_SOON_DAY_OPTIONS as readonly number[]).includes(data.closingSoonDays)
+          ? (data.closingSoonDays as ClosingSoonDays)
+          : 7;
+        setClosingSoonDays(value);
+      } finally {
+        if (!cancelled) setClosingPrefsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isApplicant]);
 
   const updateClosingEmailPref = async (next: boolean) => {
     const previous = emailSavedJobClosing;
@@ -92,6 +127,48 @@ export default function AccountPage() {
       });
     } finally {
       setPrefsSaving(false);
+    }
+  };
+
+  const updateClosingSoonDays = async (next: ClosingSoonDays) => {
+    if (next === closingSoonDays) return;
+    const previous = closingSoonDays;
+    setClosingSoonDays(next);
+    setClosingPrefsSaving(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/auth/me/notification-preferences", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ closingSoonDays: next }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setClosingSoonDays(previous);
+        toast({
+          title: "Couldn't save preference",
+          description: data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Preference saved",
+        description: `You'll be alerted ${next} days before a saved job closes.`,
+      });
+    } catch {
+      setClosingSoonDays(previous);
+      toast({
+        title: "Couldn't save preference",
+        description: "Unable to reach the server. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setClosingPrefsSaving(false);
     }
   };
 
@@ -248,6 +325,50 @@ export default function AccountPage() {
             </Form>
           </CardContent>
         </Card>
+
+        {isApplicant && (
+          <Card data-testid="card-notification-preferences">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell className="h-4 w-4" />
+                Saved Job Closing Alerts
+              </CardTitle>
+              <CardDescription>
+                Choose how many days before a saved job's closing date you want to be notified.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {closingPrefsLoading || closingSoonDays == null ? (
+                <p className="text-sm text-muted-foreground">Loading preference…</p>
+              ) : (
+                <RadioGroup
+                  value={String(closingSoonDays)}
+                  onValueChange={(v) => updateClosingSoonDays(Number(v) as ClosingSoonDays)}
+                  disabled={closingPrefsSaving}
+                  className="space-y-2"
+                  data-testid="radio-closing-soon-days"
+                >
+                  {CLOSING_SOON_DAY_OPTIONS.map((opt) => (
+                    <div key={opt} className="flex items-center gap-2">
+                      <RadioGroupItem
+                        value={String(opt)}
+                        id={`closing-soon-${opt}`}
+                        data-testid={`radio-closing-soon-${opt}`}
+                      />
+                      <Label htmlFor={`closing-soon-${opt}`} className="cursor-pointer text-sm font-normal">
+                        {opt} days before closing
+                        {opt === 7 ? " (default)" : ""}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              )}
+              {closingPrefsSaving && (
+                <p className="mt-3 text-xs text-muted-foreground">Saving…</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );

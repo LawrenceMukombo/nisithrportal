@@ -13,6 +13,7 @@ export const usersTable = pgTable("users", {
   agencyId: integer("agency_id").references(() => agenciesTable.id),
   status: text("status").notNull().default("active"),
   emailSavedJobClosing: boolean("email_saved_job_closing").notNull().default(true),
+  closingSoonDays: integer("closing_soon_days").notNull().default(7),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

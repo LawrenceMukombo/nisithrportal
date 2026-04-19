@@ -11,8 +11,16 @@ const router: IRouter = Router();
 
 const PUBLIC_STATUSES = ["open", "published"] as const;
 const PUBLIC_TARGETS = ["public", "both"] as const;
-const CLOSING_SOON_DAYS = 7;
+export const CLOSING_SOON_DAY_OPTIONS = [3, 7, 14] as const;
+export const DEFAULT_CLOSING_SOON_DAYS = 7;
+const MAX_CLOSING_SOON_DAYS = Math.max(...CLOSING_SOON_DAY_OPTIONS);
 export const SAVED_JOB_CLOSING_NOTIF_TYPE = "saved_job_closing";
+
+function normaliseClosingSoonDays(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_CLOSING_SOON_DAYS;
+  return (CLOSING_SOON_DAY_OPTIONS as readonly number[]).includes(n) ? n : DEFAULT_CLOSING_SOON_DAYS;
+}
 
 function isPubliclyVisible(job: { status: string; publishTarget: string | null }): boolean {
   const statusOk = (PUBLIC_STATUSES as readonly string[]).includes(job.status);
@@ -48,10 +56,11 @@ async function notifyApplicantOfClosingJob(params: {
   jobId: number;
   jobTitle: string;
   closingDate: string;
+  closingSoonDays: number;
 }): Promise<boolean> {
-  const { userId, candidateName, candidateEmail, emailOptIn, jobId, jobTitle, closingDate } = params;
+  const { userId, candidateName, candidateEmail, emailOptIn, jobId, jobTitle, closingDate, closingSoonDays } = params;
   const daysLeft = daysUntil(closingDate);
-  if (daysLeft < 0 || daysLeft > CLOSING_SOON_DAYS) return false;
+  if (daysLeft < 0 || daysLeft > closingSoonDays) return false;
 
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [existing] = await db
@@ -94,7 +103,7 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
   try {
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
-    const horizon = new Date(now.getTime() + CLOSING_SOON_DAYS * 24 * 60 * 60 * 1000);
+    const horizon = new Date(now.getTime() + MAX_CLOSING_SOON_DAYS * 24 * 60 * 60 * 1000);
     const horizonStr = horizon.toISOString().slice(0, 10);
 
     const rows = await db
@@ -106,10 +115,11 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
         candidateName: candidatesTable.name,
         candidateEmail: candidatesTable.email,
         emailOptIn: usersTable.emailSavedJobClosing,
+        closingSoonDays: usersTable.closingSoonDays,
       })
       .from(savedJobsTable)
       .innerJoin(candidatesTable, eq(savedJobsTable.applicantId, candidatesTable.id))
-      .leftJoin(usersTable, eq(candidatesTable.userId, usersTable.id))
+      .innerJoin(usersTable, eq(candidatesTable.userId, usersTable.id))
       .innerJoin(
         jobsTable,
         and(
@@ -132,6 +142,7 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
         jobId: row.jobId,
         jobTitle: row.jobTitle,
         closingDate: row.closingDate,
+        closingSoonDays: normaliseClosingSoonDays(row.closingSoonDays),
       });
       if (did) sent += 1;
     }
@@ -243,7 +254,11 @@ router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), asyn
           .from(candidatesTable)
           .where(eq(candidatesTable.id, candidateId));
         const [u] = await db
-          .select({ id: usersTable.id, emailOptIn: usersTable.emailSavedJobClosing })
+          .select({
+            id: usersTable.id,
+            emailOptIn: usersTable.emailSavedJobClosing,
+            closingSoonDays: usersTable.closingSoonDays,
+          })
           .from(usersTable)
           .where(eq(usersTable.id, userId));
         if (cand && u) {
@@ -255,6 +270,7 @@ router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), asyn
             jobId: job.id,
             jobTitle: job.title,
             closingDate: job.closingDate!,
+            closingSoonDays: normaliseClosingSoonDays(u.closingSoonDays),
           });
         }
       } catch (err) {

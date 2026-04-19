@@ -8,12 +8,12 @@ import {
   UpdateDepartmentBody,
   GetDepartmentsQueryParams,
 } from "@workspace/api-zod";
-import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
+import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
-router.get("/departments", authMiddleware, async (req, res): Promise<void> => {
+router.get("/departments", optionalAuth, async (req, res): Promise<void> => {
   const query = GetDepartmentsQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });

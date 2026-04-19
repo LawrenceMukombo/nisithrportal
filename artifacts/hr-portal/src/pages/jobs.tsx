@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { Plus, Search, Pencil, Trash2, CheckCircle, XCircle, MapPin, Briefcase } from "lucide-react";
 import { useGetJobs, useDeleteJob, usePublishJob, useCloseJob, useGetDepartments, getGetJobsQueryKey } from "@workspace/api-client-react";
@@ -17,11 +17,12 @@ import { useAuth } from "@/contexts/auth-context";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "secondary",
+  open: "secondary",
   published: "default",
   closed: "outline",
 };
 
-function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
+function JobRow({ job, canManage, deptName }: { job: Job; canManage: boolean; deptName?: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -93,7 +94,7 @@ function JobRow({ job, canManage }: { job: Job; canManage: boolean }) {
           </span>
         </div>
       </td>
-      <td className="py-3 px-4 text-sm text-muted-foreground">{job.departmentId ? `Dept #${job.departmentId}` : "—"}</td>
+      <td className="py-3 px-4 text-sm text-muted-foreground">{deptName ?? (job.departmentId ? `Dept #${job.departmentId}` : "—")}</td>
       <td className="py-3 px-4">
         <Badge variant={STATUS_COLORS[job.status ?? "draft"] as "default" | "secondary" | "outline" | "destructive"}>
           {job.status}
@@ -192,6 +193,12 @@ export default function JobsPage() {
     { agency_id: agencyId ?? undefined },
     {}
   );
+
+  const deptMap = useMemo(() => {
+    const m: Record<number, string> = {};
+    departments.forEach(d => { m[d.id] = d.name; });
+    return m;
+  }, [departments]);
 
   const jobs = useGetJobs(
     {
@@ -318,6 +325,7 @@ export default function JobsPage() {
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="open">Open</SelectItem>
                   <SelectItem value="published">Published</SelectItem>
                   <SelectItem value="closed">Closed</SelectItem>
                 </SelectContent>
@@ -361,7 +369,7 @@ export default function JobsPage() {
                     </tr>
                   ) : (
                     filtered.map((job) => (
-                      <JobRow key={job.id} job={job} canManage={canManageJobs} />
+                      <JobRow key={job.id} job={job} canManage={canManageJobs} deptName={job.departmentId ? deptMap[job.departmentId] : undefined} />
                     ))
                   )}
                 </tbody>

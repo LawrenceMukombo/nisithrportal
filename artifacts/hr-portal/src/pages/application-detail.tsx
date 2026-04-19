@@ -511,7 +511,7 @@ export default function ApplicationDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={sendOfferLetterEmail}
+                  onClick={() => setConfirmSendOffer(true)}
                   disabled={sendOfferLoading}
                   data-testid="button-send-offer-letter"
                   className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"

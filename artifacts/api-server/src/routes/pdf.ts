@@ -14,6 +14,8 @@ import {
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import PDFDocument from "pdfkit";
+import { sendOfferLetterEmail } from "../lib/email";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -236,6 +238,104 @@ router.get(
       .text(`${agencyName} · Official Document · ${refNo}`, 0, footerY, { align: "center", width: doc.page.width });
 
     doc.end();
+  }
+);
+
+// ─── POST /api/pdf/send-offer-letter/:applicationId ─────────────────────────
+// Generates the offer-letter PDF and emails it to the candidate
+
+router.post(
+  "/pdf/send-offer-letter/:applicationId",
+  authMiddleware,
+  requireRole("admin", "hr_officer", "hiring_manager"),
+  async (req: Request, res: Response) => {
+    const applicationId = parseIntParam(req.params.applicationId);
+
+    const [appRow] = await db
+      .select()
+      .from(applicationsTable)
+      .where(eq(applicationsTable.id, applicationId));
+
+    if (!appRow) { res.status(404).json({ error: "Application not found" }); return; }
+    if (appRow.status !== "hired") { res.status(400).json({ error: "Offer letters can only be sent for hired applications" }); return; }
+
+    const [jobForTenant] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, appRow.jobId));
+    if (!assertTenantAccess(res, jobForTenant?.agencyId ?? null, getTenantAgencyId(req))) return;
+
+    const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, appRow.candidateId!));
+    const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, appRow.jobId));
+
+    const candidateEmail = candidate?.email ?? appRow.candidateEmail;
+    if (!candidateEmail) { res.status(400).json({ error: "Candidate has no email address on file" }); return; }
+
+    const agencyId = job?.agencyId ?? req.user?.agencyId;
+    const [agency] = agencyId ? await db.select().from(agenciesTable).where(eq(agenciesTable.id, agencyId)) : [];
+    const [department] = job?.departmentId ? await db.select().from(departmentsTable).where(eq(departmentsTable.id, job.departmentId)) : [];
+
+    const agencyName = agency?.name ?? "PNG National Information & Communications Technology Institute (NISIT)";
+    const candidateName = candidate?.name ?? "Candidate";
+    const position = job?.title ?? "Position";
+    const refNo = `NISIT/HR/OL/${new Date().getFullYear()}/${String(applicationId).padStart(4, "0")}`;
+
+    // Generate PDF to buffer
+    const doc = new PDFDocument({ size: "A4", margins: { top: 100, bottom: 60, left: 72, right: 72 }, compress: true });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    await new Promise<void>((resolve, reject) => {
+      doc.on("end", resolve);
+      doc.on("error", reject);
+
+      drawLetterhead(doc, agencyName);
+      doc.moveDown(1.2);
+      const mx = doc.page.margins.left;
+      doc.fontSize(9).font("Helvetica").fillColor("#555555").text(`Ref: ${refNo}`, mx);
+      doc.text(`Date: ${fmtDate(new Date())}`, mx);
+      doc.moveDown(1);
+      sectionLabel(doc, "Recipient");
+      doc.fontSize(10).font("Helvetica-Bold").fillColor("#000000").text(candidateName, mx);
+      if (candidate?.physicalAddress) doc.font("Helvetica").fontSize(10).text(candidate.physicalAddress, mx);
+      if (candidate?.city) doc.fontSize(10).text(`${candidate.city}${candidate?.province ? ", " + candidate.province : ""}`, mx);
+      doc.moveDown(1);
+      divider(doc);
+      doc.fontSize(11).font("Helvetica-Bold").fillColor(NISIT_COLOR).text(`SUBJECT: LETTER OF OFFER — ${position.toUpperCase()}`, mx);
+      doc.moveDown(0.8);
+      divider(doc);
+      bodyText(doc, `Dear ${candidateName},`);
+      bodyText(doc, `On behalf of ${agencyName}, I am pleased to inform you that following a rigorous recruitment and selection process, the Selection Committee has recommended your appointment to the position of ${position}. This letter formally offers you employment subject to the terms and conditions set out below.`);
+      sectionLabel(doc, "1. Position Details");
+      fieldRow(doc, "Position Title", position);
+      fieldRow(doc, "Department / Division", department?.name ?? "As notified");
+      fieldRow(doc, "Grade / Band", job?.gradeBand ?? "As per government salary schedule");
+      fieldRow(doc, "Employment Type", job?.employmentType ? job.employmentType.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "As specified in contract");
+      doc.moveDown(0.5);
+      sectionLabel(doc, "2. Remuneration");
+      fieldRow(doc, "Annual Salary Range", fmtSalary(job?.salaryMin, job?.salaryMax, job?.salaryCurrency));
+      fieldRow(doc, "Agreed / Expected Salary", appRow.expectedSalary ? `${job?.salaryCurrency ?? "PGK"} ${appRow.expectedSalary} per annum` : "As per grade schedule");
+      doc.moveDown(0.5);
+      sectionLabel(doc, "3. Conditions of Employment");
+      bodyText(doc, `Your appointment is subject to satisfactory completion of background checks, reference verification, and medical fitness clearance. The appointment will be governed by the Public Services (Management) Act 2014 and the relevant Enterprise Agreement currently in force.`);
+      sectionLabel(doc, "4. Acceptance");
+      bodyText(doc, `Please indicate your acceptance of this offer by signing and returning a copy of this letter within seven (7) working days of the date above. Failure to do so may result in this offer being withdrawn.`);
+      bodyText(doc, `We look forward to welcoming you to the ${agencyName} team. Should you have any queries, please do not hesitate to contact the Human Resources Division.`);
+      divider(doc);
+      signatureBlock(doc);
+      const footerY = doc.page.height - 40;
+      doc.fontSize(7).fillColor("#888888").font("Helvetica").text(`${agencyName} · Official Document · ${refNo}`, 0, footerY, { align: "center", width: doc.page.width });
+
+      doc.end();
+    });
+
+    const pdfBuffer = Buffer.concat(chunks);
+
+    try {
+      await sendOfferLetterEmail(candidateEmail, candidateName, position, pdfBuffer, applicationId);
+      logger.info({ applicationId, to: candidateEmail }, "Offer letter emailed to candidate");
+      res.json({ success: true, sentTo: candidateEmail });
+    } catch (err) {
+      logger.error({ err, applicationId }, "Failed to send offer letter email");
+      res.status(500).json({ error: "Failed to send offer letter email. Check SMTP configuration." });
+    }
   }
 );
 

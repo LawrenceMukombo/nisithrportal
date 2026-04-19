@@ -22,7 +22,26 @@ const STATUS_COLORS: Record<string, string> = {
   closed: "outline",
 };
 
-function JobRow({ job, canManage, deptName }: { job: Job; canManage: boolean; deptName?: string }) {
+function draftAgeLabel(savedAt: number): string {
+  const mins = Math.floor((Date.now() - savedAt) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function JobRow({
+  job, canManage, deptName, draftSavedAt,
+  onWorkTypeClick, onLocationClick,
+}: {
+  job: Job;
+  canManage: boolean;
+  deptName?: string;
+  draftSavedAt?: number;
+  onWorkTypeClick?: (v: string) => void;
+  onLocationClick?: (v: string) => void;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -69,7 +88,13 @@ function JobRow({ job, canManage, deptName }: { job: Job; canManage: boolean; de
             const label = WORK_TYPE_LABELS[empType] ?? empType;
             const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
             return (
-              <Badge variant="outline" className={`text-xs py-0 gap-1 ${cls}`} data-testid={`badge-work-type-${job.id}`}>
+              <Badge
+                variant="outline"
+                className={`text-xs py-0 gap-1 ${cls} ${onWorkTypeClick ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
+                data-testid={`badge-work-type-${job.id}`}
+                onClick={onWorkTypeClick ? (e) => { e.preventDefault(); e.stopPropagation(); onWorkTypeClick(empType); } : undefined}
+                title={onWorkTypeClick ? `Filter by ${label}` : undefined}
+              >
                 <Briefcase className="h-3 w-3" />{label}
               </Badge>
             );
@@ -79,7 +104,13 @@ function JobRow({ job, canManage, deptName }: { job: Job; canManage: boolean; de
               || (job as Job & { location?: string }).location;
             if (!province) return null;
             return (
-              <Badge variant="outline" className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200" data-testid={`badge-province-${job.id}`}>
+              <Badge
+                variant="outline"
+                className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 ${onLocationClick ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
+                data-testid={`badge-province-${job.id}`}
+                onClick={onLocationClick ? (e) => { e.preventDefault(); e.stopPropagation(); onLocationClick(province); } : undefined}
+                title={onLocationClick ? `Filter by ${province}` : undefined}
+              >
                 <MapPin className="h-3 w-3" />{province}
               </Badge>
             );
@@ -92,6 +123,11 @@ function JobRow({ job, canManage, deptName }: { job: Job; canManage: boolean; de
           <span className="text-xs text-muted-foreground">
             Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
           </span>
+          {draftSavedAt && (
+            <Badge variant="outline" className="text-xs py-0 gap-1 bg-amber-50 text-amber-700 border-amber-200 font-normal" data-testid={`badge-draft-age-${job.id}`}>
+              Draft · {draftAgeLabel(draftSavedAt)}
+            </Badge>
+          )}
         </div>
       </td>
       <td className="py-3 px-4 text-sm text-muted-foreground">{deptName ?? (job.departmentId ? `Dept #${job.departmentId}` : "—")}</td>
@@ -241,6 +277,24 @@ export default function JobsPage() {
   const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || statusFilter !== "all" || salaryFilter !== "all";
   const clearFilters = () => { setSearch(""); setDeptFilter("all"); setWorkTypeFilter("all"); setLocationFilter("all"); setStatusFilter("all"); setSalaryFilter("all"); };
 
+  const draftMap = useMemo(() => {
+    const map: Record<number, number> = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i) ?? "";
+        const m = key.match(/^job-draft-(\d+)$/);
+        if (m) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            if (typeof parsed._savedAt === "number") map[parseInt(m[1])] = parsed._savedAt;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    return map;
+  }, [jobs.data]);
+
   return (
     <AppLayout>
       <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -369,7 +423,15 @@ export default function JobsPage() {
                     </tr>
                   ) : (
                     filtered.map((job) => (
-                      <JobRow key={job.id} job={job} canManage={canManageJobs} deptName={job.departmentId ? deptMap[job.departmentId] : undefined} />
+                      <JobRow
+                        key={job.id}
+                        job={job}
+                        canManage={canManageJobs}
+                        deptName={job.departmentId ? deptMap[job.departmentId] : undefined}
+                        draftSavedAt={draftMap[job.id]}
+                        onWorkTypeClick={setWorkTypeFilter}
+                        onLocationClick={setLocationFilter}
+                      />
                     ))
                   )}
                 </tbody>

@@ -33,6 +33,58 @@ export async function verifySMTPConnection(): Promise<void> {
   logger.info({ host: process.env.SMTP_HOST }, "verifySMTPConnection: SMTP connection verified — password-reset emails are enabled");
 }
 
+export async function sendOfferLetterEmail(to: string, candidateName: string, positionTitle: string, pdfBuffer: Buffer, applicationId: number): Promise<void> {
+  const subject = `PNG NISIT HR Portal — Letter of Offer: ${positionTitle}`;
+  const text = `Dear ${candidateName},\n\nPlease find attached your Letter of Offer for the position of ${positionTitle}.\n\nPlease review the attached document and return a signed copy within 7 working days.\n\nFor queries, contact the Human Resources Division.\n\nRegards,\nPNG NISIT HR Division`;
+  const html = `
+    <div style="font-family:sans-serif;max-width:540px;margin:auto">
+      <div style="background:#003082;padding:18px 24px">
+        <h2 style="color:#fff;margin:0;font-size:18px">Government of Papua New Guinea</h2>
+        <p style="color:#f0c040;margin:4px 0 0;font-size:13px">PNG National Information & Communications Technology Institute (NISIT)</p>
+      </div>
+      <div style="padding:24px">
+        <p>Dear <strong>${candidateName}</strong>,</p>
+        <p>We are pleased to enclose your <strong>Letter of Offer</strong> for the position of <strong>${positionTitle}</strong>.</p>
+        <p>Please review the attached PDF document carefully and return a signed copy within <strong>7 working days</strong>.</p>
+        <p>Should you have any queries, please contact the Human Resources Division directly.</p>
+        <p style="margin-top:32px">Warm regards,<br/><strong>HR Division</strong><br/>PNG NISIT</p>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee"/>
+      <p style="color:#999;font-size:11px;padding:12px 24px">Application reference #${applicationId}</p>
+    </div>
+  `;
+
+  const transport = createTransport();
+
+  if (transport) {
+    try {
+      await transport.sendMail({
+        from: process.env.SMTP_FROM ?? `"PNG NISIT HR Portal" <no-reply@nisit.gov.pg>`,
+        to,
+        subject,
+        text,
+        html,
+        attachments: [
+          {
+            filename: `offer-letter-${applicationId}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      logger.info({ to, applicationId }, "sendOfferLetterEmail: offer letter sent successfully");
+    } catch (err) {
+      logger.error({ err, to, applicationId }, "sendOfferLetterEmail: failed to send offer letter email");
+      throw err;
+    }
+  } else {
+    logger.warn({ to, applicationId }, "sendOfferLetterEmail: SMTP not configured — offer letter email not sent");
+    if (!IS_PRODUCTION) {
+      logger.info(`[dev] Would send offer letter for application #${applicationId} to ${to}`);
+    }
+  }
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const subject = "PNG NISIT HR Portal — Reset Your Password";
   const text = `You requested a password reset for your applicant account.\n\nClick the link below to set a new password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, you can safely ignore this email.`;

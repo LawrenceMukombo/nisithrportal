@@ -23,12 +23,16 @@ import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
-  applied: "bg-blue-100 text-blue-800",
-  shortlisted: "bg-yellow-100 text-yellow-800",
-  interview: "bg-purple-100 text-purple-800",
-  offered: "bg-orange-100 text-orange-800",
-  hired: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-800",
+  applied:    "bg-blue-100 text-blue-700",
+  screening:  "bg-yellow-100 text-yellow-700",
+  interview:  "bg-purple-100 text-purple-700",
+  offer:      "bg-green-100 text-green-700",
+  hired:      "bg-teal-100 text-teal-700",
+  onboarding: "bg-emerald-100 text-emerald-700",
+  rejected:   "bg-red-100 text-red-700",
+  withdrawn:  "bg-gray-100 text-gray-600",
+  shortlisted: "bg-yellow-100 text-yellow-700",
+  offered:    "bg-green-100 text-green-700",
 };
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {

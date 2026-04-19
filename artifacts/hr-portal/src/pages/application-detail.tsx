@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload } from "lucide-react";
 import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
@@ -236,7 +236,7 @@ type AppDocument = { id: number; documentType: string; url: string; fileName: st
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   cv: "CV / Résumé", academic_cert: "Academic Certificate", professional_cert: "Professional Certificate",
-  reference_letter: "Reference Letter", other: "Other",
+  reference_letter: "Reference Letter", signed_contract: "Signed Contract", other: "Other",
 };
 
 export default function ApplicationDetailPage() {
@@ -294,6 +294,9 @@ export default function ApplicationDetailPage() {
   const canEvaluate = isAdmin || isHR || isHiringManager;
 
   const [offerLetterLoading, setOfferLetterLoading] = useState(false);
+  const [sendOfferLoading, setSendOfferLoading] = useState(false);
+  const [contractUploading, setContractUploading] = useState(false);
+  const contractFileRef = useRef<HTMLInputElement>(null);
 
   async function downloadOfferLetter() {
     if (!appId) return;
@@ -319,6 +322,63 @@ export default function ApplicationDetailPage() {
       toast({ title: "Failed to generate offer letter", variant: "destructive" });
     } finally {
       setOfferLetterLoading(false);
+    }
+  }
+
+  async function sendOfferLetterEmail() {
+    if (!appId) return;
+    setSendOfferLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/pdf/send-offer-letter/${appId}`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!res.ok) {
+        toast({ title: body.error ?? "Failed to send offer letter", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Offer letter sent to candidate", description: body.message });
+    } catch {
+      toast({ title: "Failed to send offer letter", variant: "destructive" });
+    } finally {
+      setSendOfferLoading(false);
+    }
+  }
+
+  async function handleContractUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !appId) return;
+    setContractUploading(true);
+    try {
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("documentType", "signed_contract");
+      const res = await fetch(`/api/applications/${appId}/documents`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to upload contract", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Signed contract uploaded successfully" });
+      const [, docs] = await Promise.all([
+        Promise.resolve(),
+        fetch(`/api/applications/${appId}/documents`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }).then(r => r.ok ? r.json() as Promise<AppDocument[]> : []),
+      ]);
+      setAppDocuments(docs);
+      if (contractFileRef.current) contractFileRef.current.value = "";
+    } catch {
+      toast({ title: "Failed to upload contract", variant: "destructive" });
+    } finally {
+      setContractUploading(false);
     }
   }
 
@@ -361,6 +421,19 @@ export default function ApplicationDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={sendOfferLetterEmail}
+                disabled={sendOfferLoading}
+                data-testid="button-send-offer-letter"
+                className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-950"
+              >
+                {sendOfferLoading
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Sending...</>
+                  : <><Mail className="h-3.5 w-3.5 mr-1.5" />Send to Candidate</>
+                }
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 data-testid="button-create-employee"
                 className="border-teal-600 text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:border-teal-500 dark:hover:bg-teal-950"
                 onClick={() => {
@@ -382,23 +455,18 @@ export default function ApplicationDetailPage() {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold" data-testid="heading-application">Application #{app.id}</h1>
-            <div className="flex gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
+            <h1 className="text-2xl font-bold" data-testid="heading-application">
+              {candidate?.name ?? `Candidate #${app.candidateId}`}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Applying for{" "}
               <Link href={`/jobs/${app.jobId}`}>
-                <span className="hover:underline cursor-pointer flex items-center gap-1">
-                  <Briefcase className="h-3 w-3" />
+                <span className="font-medium text-foreground hover:underline cursor-pointer">
                   {jobDetail?.title ?? `Job #${app.jobId}`}
                 </span>
               </Link>
-              {app.candidateId && (
-                <Link href={`/candidates/${app.candidateId}`}>
-                  <span className="hover:underline cursor-pointer flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    {candidate?.name ?? `Candidate #${app.candidateId}`}
-                  </span>
-                </Link>
-              )}
-            </div>
+              {" "}· Application #{app.id}
+            </p>
           </div>
           {canUpdateStatus ? (
             <div className="flex items-center gap-3 shrink-0">
@@ -432,6 +500,62 @@ export default function ApplicationDetailPage() {
             <ApplicationTimeline status={app.status} statusHistory={app.statusHistory} />
           </CardContent>
         </Card>
+
+        {canUpdateStatus && app.statusHistory && app.statusHistory.length > 1 && (() => {
+          type SHItem = { id: number; applicationId: number; status: string; changedAt: string; note?: string | null };
+          const STATUS_LABEL: Record<string, string> = {
+            applied: "Application Received", screening: "CV Screening",
+            interview: "Interview", offer: "Offer Extended",
+            hired: "Hired", onboarding: "Onboarding",
+            rejected: "Rejected", withdrawn: "Withdrawn",
+          };
+          const BADGE_CLASS: Record<string, string> = {
+            applied: "bg-blue-100 text-blue-700 border-blue-200",
+            screening: "bg-yellow-100 text-yellow-700 border-yellow-200",
+            interview: "bg-purple-100 text-purple-700 border-purple-200",
+            offer: "bg-green-100 text-green-700 border-green-200",
+            hired: "bg-teal-100 text-teal-700 border-teal-200",
+            onboarding: "bg-emerald-100 text-emerald-700 border-emerald-200",
+            rejected: "bg-red-100 text-red-700 border-red-200",
+            withdrawn: "bg-gray-100 text-gray-600 border-gray-200",
+          };
+          const sorted = [...(app.statusHistory as SHItem[])].sort(
+            (a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime()
+          );
+          const breakdown = sorted.map((h, i) => {
+            const exitMs = i + 1 < sorted.length
+              ? new Date(sorted[i + 1].changedAt).getTime()
+              : Date.now();
+            const days = Math.max(0, Math.floor((exitMs - new Date(h.changedAt).getTime()) / 86400000));
+            return { status: h.status, changedAt: h.changedAt, days, isCurrent: i === sorted.length - 1 };
+          });
+          return (
+            <Card data-testid="card-stage-breakdown">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" /> Time in Stage Breakdown
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {breakdown.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${BADGE_CLASS[item.status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                        {STATUS_LABEL[item.status] ?? item.status}
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {new Date(item.changedAt).toLocaleDateString("en-PG", { day: "numeric", month: "short" })}
+                      </span>
+                      <span className={`text-xs font-semibold tabular-nums ${item.isCurrent ? "text-primary" : "text-muted-foreground"}`}>
+                        {item.isCurrent ? `${item.days}d (current)` : `${item.days}d`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {score && !canEvaluate && (
           <Card>
@@ -601,6 +725,51 @@ export default function ApplicationDetailPage() {
                   </a>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {app.status === "hired" && canUpdateStatus && (
+          <Card data-testid="card-signed-contract">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Upload className="h-4 w-4 text-primary" /> Upload Signed Contract
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Upload the physically signed offer letter or contract to complete the document lifecycle.
+              </p>
+              {appDocuments.filter(d => d.documentType === "signed_contract").length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span>{appDocuments.filter(d => d.documentType === "signed_contract").length} signed contract(s) already on file</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={contractFileRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={handleContractUpload}
+                  className="hidden"
+                  id="contract-upload-input"
+                  data-testid="input-contract-upload"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={contractUploading}
+                  onClick={() => contractFileRef.current?.click()}
+                  data-testid="button-upload-contract"
+                >
+                  {contractUploading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Uploading...</>
+                    : <><Upload className="h-3.5 w-3.5 mr-1.5" />Choose File</>
+                  }
+                </Button>
+                <span className="text-xs text-muted-foreground">PDF, DOC, DOCX, JPG, PNG accepted</span>
+              </div>
             </CardContent>
           </Card>
         )}

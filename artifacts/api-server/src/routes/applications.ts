@@ -1,4 +1,5 @@
 import express, { Router, type IRouter } from "express";
+import multer from "multer";
 import { eq, and, inArray, asc, gt, desc } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
@@ -30,7 +31,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
-import { canAccessObjectForAgency } from "../lib/objectAcl";
+import { canAccessObjectForAgency, setObjectAclPolicy } from "../lib/objectAcl";
 const router: IRouter = Router();
 
 // Convert empty strings to null (for optional DB fields where empty string ≠ null)
@@ -857,6 +858,111 @@ router.get("/applications/:id/documents", authMiddleware, requireRole("admin", "
     .where(eq(applicationDocumentsTable.applicationId, appId))
     .orderBy(asc(applicationDocumentsTable.createdAt));
   res.json(docs);
+});
+
+// POST /applications/bulk-status — update status of multiple applications at once (#67)
+router.post("/applications/bulk-status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const body = z.object({
+    ids: z.array(z.number().int().positive()).min(1).max(100),
+    status: z.string().min(1),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "ids (array) and status (string) required" }); return; }
+
+  const { ids, status } = body.data;
+  const ALLOWED_STATUSES = ["applied", "screening", "interview", "offer", "hired", "rejected", "onboarding"];
+  if (!ALLOWED_STATUSES.includes(status)) { res.status(400).json({ error: `Invalid status. Allowed: ${ALLOWED_STATUSES.join(", ")}` }); return; }
+
+  const userAgencyId = getTenantAgencyId(req);
+  const apps = await db
+    .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId, status: applicationsTable.status })
+    .from(applicationsTable)
+    .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(inArray(applicationsTable.id, ids));
+
+  const allowedIds = apps
+    .filter(a => userAgencyId === null || a.agencyId === userAgencyId)
+    .filter(a => !["rejected", "withdrawn"].includes(a.status ?? ""))
+    .map(a => a.id);
+
+  if (allowedIds.length === 0) { res.json({ updated: 0 }); return; }
+
+  await db
+    .update(applicationsTable)
+    .set({ status, updatedAt: new Date() })
+    .where(inArray(applicationsTable.id, allowedIds));
+
+  await db.insert(applicationStatusHistoryTable).values(
+    allowedIds.map(id => ({ applicationId: id, status, changedBy: req.user?.id ?? null }))
+  );
+
+  res.json({ updated: allowedIds.length });
+});
+
+// POST /applications/:id/documents — upload a document (e.g. signed contract) for an application (#58)
+const contractUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ALLOWED = new Set([
+      "application/pdf", "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/jpeg", "image/png",
+    ]);
+    if (ALLOWED.has(file.mimetype)) cb(null, true);
+    else cb(new Error("Unsupported file type. Allowed: PDF, DOC, DOCX, JPG, PNG"));
+  },
+});
+
+router.post("/applications/:id/documents", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), (req, res): void => {
+  contractUpload.single("file")(req, res, async (err) => {
+    if (err) {
+      res.status(400).json({ error: err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE" ? "File too large (max 15 MB)" : (err as Error).message });
+      return;
+    }
+    if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+    const appId = parseIntParam(req.params.id);
+    if (!appId) { res.status(400).json({ error: "Invalid application id" }); return; }
+
+    const documentType = typeof req.body?.documentType === "string" ? req.body.documentType : "signed_contract";
+
+    const [appRow] = await db
+      .select({ id: applicationsTable.id, agencyId: jobsTable.agencyId })
+      .from(applicationsTable)
+      .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+      .where(eq(applicationsTable.id, appId));
+    if (!appRow) { res.status(404).json({ error: "Application not found" }); return; }
+    if (!assertTenantAccess(res, appRow.agencyId, getTenantAgencyId(req))) return;
+
+    const svc = new ObjectStorageService();
+    let fileUrl: string;
+    try {
+      const uploadURL = await svc.getObjectEntityUploadURL();
+      const objectPath = svc.normalizeObjectEntityPath(uploadURL);
+      const uploadRes = await fetch(uploadURL, {
+        method: "PUT",
+        headers: { "Content-Type": req.file.mimetype },
+        body: new Uint8Array(req.file.buffer),
+      });
+      if (!uploadRes.ok) { res.status(500).json({ error: "Failed to store file" }); return; }
+      const objectFile = await svc.getObjectEntityFile(objectPath);
+      await setObjectAclPolicy(objectFile, { owner: String(appRow.agencyId), visibility: "private" });
+      fileUrl = `/api/storage${objectPath}`;
+    } catch (uploadErr) {
+      req.log.error({ err: uploadErr }, "Document upload to storage failed");
+      res.status(500).json({ error: "Failed to upload file to storage" });
+      return;
+    }
+
+    const [doc] = await db.insert(applicationDocumentsTable).values({
+      applicationId: appId,
+      documentType,
+      url: fileUrl,
+      fileName: req.file.originalname,
+    }).returning();
+
+    res.status(201).json(doc);
+  });
 });
 
 // GET /jobs/:id/di-report — aggregate D&I statistics for a job (no individual data exposed)

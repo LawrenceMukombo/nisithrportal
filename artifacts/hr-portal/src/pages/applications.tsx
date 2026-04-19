@@ -111,14 +111,6 @@ export default function ApplicationsPage() {
     setSearch(urlSearch);
   }, [urlSearch]);
 
-  const bulkMutation = useUpdateApplicationStatus({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
-      },
-    },
-  });
-
   const applications = useGetApplications(
     { status: statusFilter !== "all" ? statusFilter : undefined },
     { query: { queryKey: getGetApplicationsQueryKey({ status: statusFilter !== "all" ? statusFilter : undefined }) } }
@@ -177,12 +169,20 @@ export default function ApplicationsPage() {
     if (ids.length === 0) return;
     setBulkLoading(true);
     try {
-      await Promise.all(ids.map((id) => bulkMutation.mutateAsync({ id, data: { status } })));
+      const res = await fetch("/api/applications/bulk-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ids, status }),
+      });
+      if (!res.ok) throw new Error("Bulk update failed");
+      const { updated } = await res.json() as { updated: number };
+      await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
       setSelectedIds(new Set());
       const actionLabel = BULK_ACTIONS.find((a) => a.status === status)?.label ?? status;
-      toast({ title: `${ids.length} application${ids.length !== 1 ? "s" : ""} updated to "${actionLabel}"` });
+      toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
     } catch {
-      toast({ title: "Some updates failed", variant: "destructive" });
+      toast({ title: "Bulk update failed", variant: "destructive" });
     } finally {
       setBulkLoading(false);
     }

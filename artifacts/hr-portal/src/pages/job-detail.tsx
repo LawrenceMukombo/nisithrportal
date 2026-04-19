@@ -5,8 +5,14 @@ import {
   Monitor, CheckCircle2, Medal, Trophy,
 } from "lucide-react";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP } from "@/lib/workflowStages";
-import { useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey } from "@workspace/api-client-react";
+import {
+  useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey,
+  useGetAiScores, getGetAiScoresQueryKey,
+  useGetCandidates, getGetCandidatesQueryKey,
+  useUpdateApplicationStatus, getGetApplicationsQueryKey,
+} from "@workspace/api-client-react";
 import type { Application } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,16 +61,73 @@ function useScreeningQuestions(jobId: number, enabled: boolean) {
 
 type RankedCandidate = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
 
+function QuickMoveButton({ applicationId, candidateName }: { applicationId: number; candidateName: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const update = useUpdateApplicationStatus();
+  const handleMove = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await update.mutateAsync({ id: applicationId, data: { status: "screening" } });
+      await qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+      toast({ title: `${candidateName} moved to CV Screening` });
+    } catch {
+      toast({ title: "Failed to move candidate", variant: "destructive" });
+    }
+  };
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="h-6 text-xs px-2 gap-1 shrink-0"
+      onClick={handleMove}
+      disabled={update.isPending}
+      data-testid={`btn-move-review-${applicationId}`}
+      title="Move to CV Screening"
+    >
+      → Review
+    </Button>
+  );
+}
+
 function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canManageJobs: boolean }) {
   const { data: applications = [], isLoading } = useGetApplications({ job_id: jobId });
   const { toast } = useToast();
   const [rankings, setRankings] = useState<RankedCandidate[]>([]);
   const rankMutation = useAiRankCandidates();
 
+  const { data: savedScores = [] } = useGetAiScores(undefined, {
+    query: { queryKey: getGetAiScoresQueryKey() },
+  });
+  const { data: candidates = [] } = useGetCandidates({ query: { queryKey: getGetCandidatesQueryKey() } });
+  const candidateNameMap = new Map(candidates.map((c) => [c.id, c.name ?? `Candidate #${c.id}`]));
+
+  useEffect(() => {
+    const jobScores = savedScores.filter((s) => s.jobId === jobId);
+    if (jobScores.length === 0) return;
+    setRankings((prev) => {
+      if (prev.length > 0) return prev;
+      const mapped: RankedCandidate[] = jobScores
+        .map((s) => {
+          const app = applications.find((a) => a.candidateId === s.candidateId);
+          if (!app) return null;
+          return {
+            applicationId: app.id,
+            candidateId: s.candidateId,
+            candidateName: candidateNameMap.get(s.candidateId) ?? `Candidate #${s.candidateId}`,
+            score: parseFloat(s.score ?? "0"),
+            recommendation: s.recommendation ?? "",
+          };
+        })
+        .filter(Boolean) as RankedCandidate[];
+      return mapped.length > 0 ? mapped.sort((a, b) => b.score - a.score) : prev;
+    });
+  }, [savedScores, applications, jobId]);
+
   const handleRank = async () => {
     try {
       const result = await rankMutation.mutateAsync({ data: { jobId } });
-      // Sort descending by score to guarantee table order regardless of API response order
       const sorted = [...(result as RankedCandidate[])].sort((a, b) => b.score - a.score);
       setRankings(sorted);
       toast({ title: "Candidates ranked by AI" });
@@ -210,9 +273,9 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
                   : <span className="text-xs text-muted-foreground font-mono">{i + 1}</span>;
 
                 return (
-                  <div key={r.applicationId ?? r.candidateId} className="group rounded-lg hover:bg-muted/50 transition-colors" data-testid={`ranking-row-${r.candidateId}`}>
-                    <Link href={`/applications/${r.applicationId}`}>
-                      <div className="grid grid-cols-[2rem_1fr_9rem_4.5rem] gap-2 items-center px-2.5 py-2.5 cursor-pointer">
+                  <div key={r.applicationId ?? r.candidateId} className="group rounded-lg hover:bg-muted/50 transition-colors flex items-center gap-1.5" data-testid={`ranking-row-${r.candidateId}`}>
+                    <Link href={`/applications/${r.applicationId}`} className="flex-1 min-w-0">
+                      <div className="grid grid-cols-[2rem_1fr_9rem_4rem] gap-2 items-center px-2.5 py-2.5 cursor-pointer">
                         <div className="flex items-center justify-center">
                           {medalEl}
                         </div>
@@ -236,6 +299,11 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
                         </div>
                       </div>
                     </Link>
+                    {canManageJobs && r.applicationId && (
+                      <div className="pr-2 shrink-0">
+                        <QuickMoveButton applicationId={r.applicationId} candidateName={r.candidateName} />
+                      </div>
+                    )}
                   </div>
                 );
               })}

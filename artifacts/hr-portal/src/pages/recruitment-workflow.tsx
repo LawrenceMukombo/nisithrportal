@@ -426,6 +426,15 @@ function StageCard({
               const position = job?.title ?? `Job #${app.jobId}`;
               const days = daysInStage(app, stage.status);
               const isStale = days >= stage.staleDaysThreshold;
+              const entryItem = lastEntryForStatus(app.statusHistory, stage.status);
+              const entryDate = entryItem
+                ? new Date(entryItem.changedAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
+                : app.createdAt
+                  ? new Date(app.createdAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
+                  : null;
+              const stageTooltip = isStale
+                ? `Stalled — ${days} days (threshold: ${stage.staleDaysThreshold}d)${entryDate ? ` · entered ${entryDate}` : ""}`
+                : `${days} day${days !== 1 ? "s" : ""} in this stage${entryDate ? ` · entered ${entryDate}` : ""}`;
               return (
                 <div
                   key={app.id}
@@ -460,7 +469,8 @@ function StageCard({
                     )}
                     <span
                       className={`text-xs font-semibold tabular-nums ${isStale ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
-                      title={isStale ? `Stalled — ${days} days (threshold: ${stage.staleDaysThreshold}d)` : "Days in this stage"}
+                      title={stageTooltip}
+                      data-testid={`days-badge-${app.id}`}
                     >
                       {days}d
                     </span>
@@ -668,6 +678,49 @@ export default function RecruitmentWorkflowPage() {
               <span className="text-xs text-muted-foreground font-normal">— {WORKFLOW_STAGES.length} stages</span>
             </h2>
             <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
+                data-testid="btn-export-pipeline-csv"
+                onClick={() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const esc = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+                  const header = "Application ID,Candidate Name,Job Title,Current Stage,Days in Stage,Stage Entry Date,Stalled,Expected Salary";
+                  const rows = applications.map((app) => {
+                    const cand = app.candidateId != null ? candidateMap.get(app.candidateId) : undefined;
+                    const job = jobMap.get(app.jobId);
+                    const status = app.status ?? "";
+                    const stage = WORKFLOW_STAGES.find((s) => s.status === status);
+                    const days = stage ? daysInStage(app, status) : daysSince(app.createdAt);
+                    const isStale = stage ? days >= stage.staleDaysThreshold : false;
+                    const entryItem = stage ? lastEntryForStatus(app.statusHistory, status) : undefined;
+                    const entryDate = entryItem ? new Date(entryItem.changedAt).toISOString().slice(0, 10)
+                      : app.createdAt ? new Date(app.createdAt).toISOString().slice(0, 10) : "";
+                    return [
+                      app.id,
+                      esc(cand?.name ?? `Candidate #${app.candidateId}`),
+                      esc(job?.title ?? `Job #${app.jobId}`),
+                      esc(stage?.label ?? status),
+                      days,
+                      entryDate,
+                      isStale ? "Yes" : "No",
+                      app.expectedSalary ?? "",
+                    ].join(",");
+                  });
+                  const csv = [header, ...rows].join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `pipeline-applications-${today}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Applications
+              </Button>
               <Button
                 size="sm"
                 variant="outline"

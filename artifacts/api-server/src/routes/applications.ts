@@ -35,6 +35,7 @@ import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../mid
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { createNotification, getHrOfficerIds, getUserIdByEmail, notifyHrOfficers } from "../lib/notificationService";
 import { autoParseCvBackground } from "../lib/cvParser";
+import { sendStaleApplicationEmail } from "../lib/email";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency, setObjectAclPolicy } from "../lib/objectAcl";
 import { writeAuditLog } from "../lib/audit";
@@ -1609,6 +1610,30 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
   // hiring manager that also happens to hold the HR officer role.
   const hrOfficerIds = await getHrOfficerIds(agencyId);
 
+  // Look up job titles for stalled jobs so emails can reference the role by name.
+  const jobTitleRows = stalledJobIds.length > 0
+    ? await db
+        .select({ id: jobsTable.id, title: jobsTable.title })
+        .from(jobsTable)
+        .where(inArray(jobsTable.id, stalledJobIds))
+    : [];
+  const jobTitleById = new Map<number, string>(jobTitleRows.map((j) => [j.id, j.title]));
+
+  // Resolve email + display name for every notification recipient (HR officers + hiring managers).
+  const allRecipientIds = Array.from(new Set<number>([
+    ...hrOfficerIds,
+    ...Array.from(jobOwnerById.values()).filter((id): id is number => id != null),
+  ]));
+  const userRows = allRecipientIds.length > 0
+    ? await db
+        .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name })
+        .from(usersTable)
+        .where(inArray(usersTable.id, allRecipientIds))
+    : [];
+  const userById = new Map<number, { email: string; name: string }>(
+    userRows.map((u) => [u.id, { email: u.email, name: u.name }]),
+  );
+
   let notifiedCount = 0;
   for (const app of toNotify) {
     const threshold = staleThresholds[app.status ?? ""] ?? 7;
@@ -1619,10 +1644,24 @@ router.post("/applications/check-stalled", authMiddleware, requireRole("admin", 
     const recipients = new Set<number>(hrOfficerIds);
     const hiringManagerId = app.jobId != null ? jobOwnerById.get(app.jobId) ?? null : null;
     if (hiringManagerId != null) recipients.add(hiringManagerId);
+    const jobTitle = (app.jobId != null ? jobTitleById.get(app.jobId) : null) ?? `Job #${app.jobId ?? "?"}`;
+    const status = app.status ?? "unknown";
     await Promise.all(
-      Array.from(recipients).map((userId) =>
-        createNotification({ userId, type: "application_stalled", message }),
-      ),
+      Array.from(recipients).map(async (userId) => {
+        await createNotification({ userId, type: "application_stalled", message });
+        const user = userById.get(userId);
+        if (user?.email) {
+          await sendStaleApplicationEmail(
+            user.email,
+            user.name,
+            app.id,
+            jobTitle,
+            status,
+            days,
+            threshold,
+          );
+        }
+      }),
     );
     notifiedCount++;
   }

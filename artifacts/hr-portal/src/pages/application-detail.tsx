@@ -427,8 +427,6 @@ export default function ApplicationDetailPage() {
     }
   }
 
-  const [deleteReason, setDeleteReason] = useState("");
-
   async function handleDeleteDocument(reason: string) {
     if (!docToDelete || !appId) return;
     setDeletingDoc(true);

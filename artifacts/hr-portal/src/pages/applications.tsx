@@ -287,6 +287,7 @@ export default function ApplicationsPage() {
                 ? { ...prev, count: totalMatchingResults ?? meta.totalRows, countError: true }
                 : prev,
             );
+          });
       });
       setFilterBulkConfirm(null);
       if (!confirmed) return;

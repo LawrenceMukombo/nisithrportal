@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { db, candidatesTable, jobsTable, applicationsTable, aiScoresTable, employeesTable, contractsTable, departmentsTable } from "@workspace/db";
 import { AiParseCvBody, AiRankCandidatesBody, AiGenerateInterviewQuestionsBody } from "@workspace/api-zod";
 import { authMiddleware, requireRole } from "../middlewares/auth";
@@ -10,6 +11,14 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { extractTextFromUrl } from "../lib/cvParser";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { canAccessObjectForAgency } from "../lib/objectAcl";
+
+const aiRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many AI requests — please wait a minute before trying again." },
+});
 
 // ---------------------------------------------------------------------------
 // Zod schemas for validating AI JSON responses
@@ -72,7 +81,7 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
   return content;
 }
 
-router.post("/ai/parse-cv", authMiddleware, aiRoles, async (req, res): Promise<void> => {
+router.post("/ai/parse-cv", aiRateLimit, authMiddleware, aiRoles, async (req, res): Promise<void> => {
   const parsed = AiParseCvBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -168,7 +177,7 @@ const CvPrefillBody = z.object({
   cvText: z.string().max(50_000).optional(),
 }).refine(d => d.cvUrl || d.cvText, { message: "One of cvUrl or cvText is required" });
 
-router.post("/ai/cv-prefill", authMiddleware, async (req, res): Promise<void> => {
+router.post("/ai/cv-prefill", aiRateLimit, authMiddleware, async (req, res): Promise<void> => {
   const parsed = CvPrefillBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -205,7 +214,7 @@ router.post("/ai/cv-prefill", authMiddleware, async (req, res): Promise<void> =>
   }
 });
 
-router.post("/ai/rank-candidates", authMiddleware, aiRoles, async (req, res): Promise<void> => {
+router.post("/ai/rank-candidates", aiRateLimit, authMiddleware, aiRoles, async (req, res): Promise<void> => {
   const parsed = AiRankCandidatesBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -277,7 +286,7 @@ router.post("/ai/rank-candidates", authMiddleware, aiRoles, async (req, res): Pr
   }
 });
 
-router.post("/ai/interview-questions", authMiddleware, aiRoles, async (req, res): Promise<void> => {
+router.post("/ai/interview-questions", aiRateLimit, authMiddleware, aiRoles, async (req, res): Promise<void> => {
   const parsed = AiGenerateInterviewQuestionsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

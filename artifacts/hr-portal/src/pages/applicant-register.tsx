@@ -33,6 +33,14 @@ export default function ApplicantRegisterPage() {
   const showGovWarning = isStaffDomain(emailValue ?? "");
 
   const onSubmit = async (values: FormValues) => {
+    if (isStaffDomain(values.email)) {
+      toast({
+        title: "Government email not allowed",
+        description: "Applicant accounts cannot use @gov.pg email addresses. If you are NISIT staff, please sign in via the staff login page.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsPending(true);
     try {
       const res = await fetch("/api/auth/applicant-register", {
@@ -136,7 +144,7 @@ export default function ApplicantRegisterPage() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={isPending}
+                  disabled={isPending || showGovWarning}
                   data-testid="button-submit"
                 >
                   {isPending ? "Creating account..." : "Create Account"}

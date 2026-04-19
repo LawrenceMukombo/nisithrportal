@@ -177,21 +177,34 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
 });
 
 router.get("/applications/my", authMiddleware, async (req, res): Promise<void> => {
+  const userId = req.user?.userId;
   const userEmail = req.user?.email;
-  if (!userEmail) {
+  if (!userId && !userEmail) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const candidates = await db.select({ id: candidatesTable.id })
-    .from(candidatesTable)
-    .where(eq(candidatesTable.email, userEmail));
 
-  if (candidates.length === 0) {
+  // #76 Primary: look up candidates linked to this user account (fast indexed lookup)
+  let candidateIdRows: { id: number }[] = [];
+  if (userId != null) {
+    candidateIdRows = await db.select({ id: candidatesTable.id })
+      .from(candidatesTable)
+      .where(eq(candidatesTable.userId, userId));
+  }
+
+  // Fallback: legacy email-based match for candidates submitted before account linking
+  if (candidateIdRows.length === 0 && userEmail) {
+    candidateIdRows = await db.select({ id: candidatesTable.id })
+      .from(candidatesTable)
+      .where(eq(candidatesTable.email, userEmail));
+  }
+
+  if (candidateIdRows.length === 0) {
     res.json([]);
     return;
   }
 
-  const candidateIds = candidates.map((c) => c.id);
+  const candidateIds = candidateIdRows.map((c) => c.id);
   const apps = await db.select()
     .from(applicationsTable)
     .where(inArray(applicationsTable.candidateId, candidateIds))

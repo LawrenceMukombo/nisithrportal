@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
-import { eq, and, gt, or, lt } from "drizzle-orm";
+import rateLimit from "express-rate-limit";
+import { eq, and, gt, or, lt, isNull } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable, candidatesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken, requireRole } from "../middlewares/auth";
@@ -11,6 +12,14 @@ import { logger } from "../lib/logger";
 import { sendPasswordResetEmail } from "../lib/email";
 
 const router: IRouter = Router();
+
+const resetRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many password-reset requests — please try again in 15 minutes." },
+});
 
 router.post("/auth/register", (_req, res): void => {
   res.status(404).json({ error: "Not found" });
@@ -118,6 +127,18 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     if (roles.length > 0) roleName = roles[0].name;
   }
 
+  // #77 Link any candidate records submitted before account creation
+  if (roleName === "applicant") {
+    const linked = await db
+      .update(candidatesTable)
+      .set({ userId: user.id })
+      .where(and(eq(candidatesTable.email, user.email), isNull(candidatesTable.userId)))
+      .returning({ id: candidatesTable.id });
+    if (linked.length > 0) {
+      logger.info({ userId: user.id, candidateIds: linked.map((c) => c.id) }, "Linked candidate records to user account at login");
+    }
+  }
+
   const token = generateToken({
     userId: user.id,
     email: user.email,
@@ -209,7 +230,7 @@ router.patch("/auth/me/email", authMiddleware, requireRole("applicant"), async (
   res.json({ message: "Email address updated successfully.", email: normalised });
 });
 
-router.post("/auth/reset-request", async (req, res): Promise<void> => {
+router.post("/auth/reset-request", resetRateLimit, async (req, res): Promise<void> => {
   const { email } = req.body ?? {};
   if (typeof email !== "string" || !email.includes("@")) {
     res.status(400).json({ error: "A valid email address is required." });
@@ -237,11 +258,15 @@ router.post("/auth/reset-request", async (req, res): Promise<void> => {
         expiresAt,
       });
 
+      const inferredHost =
+        (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() ??
+        req.headers["host"];
       const baseUrl =
         process.env.APP_BASE_URL ??
-        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ??
+        (inferredHost ? `https://${inferredHost}` : null);
       if (!baseUrl) {
-        console.error("[ResetRequest] APP_BASE_URL is not set; cannot construct reset link. Set APP_BASE_URL to the frontend origin.");
+        logger.error("[ResetRequest] Cannot determine frontend base URL — set APP_BASE_URL in environment secrets.");
         res.json({ message: "If that email belongs to an applicant account, a reset link has been sent." });
         return;
       }

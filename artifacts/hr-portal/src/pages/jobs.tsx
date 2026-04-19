@@ -102,6 +102,23 @@ function JobActionsCell({ job }: { job: ExtJob }) {
         queryClient.invalidateQueries({ queryKey: getGetJobsQueryKey() });
         toast({ title: "Job published" });
       },
+      onError: (err: unknown) => {
+        const e = err as { data?: { error?: string; missingFields?: string[] } | null };
+        const data = e?.data ?? null;
+        const missing = Array.isArray(data?.missingFields) ? data!.missingFields : undefined;
+        const fieldLabels: Record<string, string> = {
+          employmentType: "Employment Type",
+          province: "Province",
+        };
+        const description = missing && missing.length > 0
+          ? `Please fill in the following before publishing: ${missing.map((f) => fieldLabels[f] ?? f).join(", ")}.`
+          : (data?.error ?? "Could not publish job.");
+        toast({
+          title: "Cannot publish job",
+          description,
+          variant: "destructive",
+        });
+      },
     },
   });
 

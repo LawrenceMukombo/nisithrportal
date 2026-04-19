@@ -215,6 +215,16 @@ router.patch("/jobs/:id/publish", authMiddleware, requireRole("admin", "hr_offic
     return;
   }
   if (!assertTenantAccess(res, existing.agencyId, getTenantAgencyId(req))) return;
+  const missingFields: string[] = [];
+  if (!existing.employmentType) missingFields.push("employmentType");
+  if (!existing.province) missingFields.push("province");
+  if (missingFields.length > 0) {
+    res.status(400).json({
+      error: `Cannot publish job: missing required field(s): ${missingFields.join(", ")}`,
+      missingFields,
+    });
+    return;
+  }
   const [job] = await db.update(jobsTable).set({ status: "published" }).where(eq(jobsTable.id, params.data.id)).returning();
   res.json(job);
 });

@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,6 +17,8 @@ import type { UserWithRole, Role } from "@workspace/api-client-react";
 import { isStaffDomain, STAFF_ROLES } from "@/lib/emailDomain";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getToken } from "@/lib/api-config";
+import { DataTable } from "@/components/ui/data-table";
+import type { DataTableColumn, DataTableBulkAction } from "@/components/ui/data-table";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "System Admin",
@@ -316,7 +317,6 @@ function UserDetailSheet({
                 <TabsTrigger value="permissions"><Shield className="h-3.5 w-3.5 mr-1.5" />Permissions</TabsTrigger>
               </TabsList>
 
-              {/* ── PROFILE TAB ─────────────────────────────────── */}
               <TabsContent value="profile" className="space-y-4 pb-6">
                 {isSelf && (
                   <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
@@ -324,17 +324,14 @@ function UserDetailSheet({
                     You are editing your own account. Role changes are disabled.
                   </div>
                 )}
-
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Full Name</label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Email Address</label>
                   <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="email@example.com" />
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Agency</label>
                   <SearchableSelect
@@ -346,7 +343,6 @@ function UserDetailSheet({
                     triggerClassName="w-full"
                   />
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Role</label>
                   <Select value={roleId} onValueChange={setRoleId} disabled={isSelf}>
@@ -367,7 +363,6 @@ function UserDetailSheet({
                     </p>
                   )}
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Account Status</label>
                   <Select value={status} onValueChange={(v) => setStatus(v as "active" | "inactive")} disabled={isSelf}>
@@ -381,16 +376,13 @@ function UserDetailSheet({
                   </Select>
                   {isSelf && <p className="text-xs text-muted-foreground">You cannot deactivate your own account.</p>}
                 </div>
-
                 <Separator />
-
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>ID: #{user.id}</span>
                   <span>·</span>
                   <span>Joined: {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}</span>
                   {user.updatedAt && <><span>·</span><span>Last updated: {new Date(user.updatedAt).toLocaleDateString()}</span></>}
                 </div>
-
                 <div className="flex gap-2 pt-2">
                   <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
                   <Button
@@ -403,7 +395,6 @@ function UserDetailSheet({
                 </div>
               </TabsContent>
 
-              {/* ── SECURITY TAB ────────────────────────────────── */}
               <TabsContent value="security" className="space-y-4 pb-6">
                 <div>
                   <h3 className="text-sm font-semibold mb-1">Reset Password</h3>
@@ -436,7 +427,6 @@ function UserDetailSheet({
                 </div>
               </TabsContent>
 
-              {/* ── PERMISSIONS TAB ─────────────────────────────── */}
               <TabsContent value="permissions" className="pb-6">
                 <PermissionsMatrix
                   permissions={livePermissions as PermMap | null}
@@ -567,6 +557,8 @@ export default function UsersPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
+  const { toast } = useToast();
+  const { user: me } = useAuth();
   const { data: rawUsers = [], isLoading: loadingUsers, refetch } = useGetUsers();
   const users = rawUsers as UserRow[];
   const { data: roles = [], isLoading: loadingRoles } = useGetRoles();
@@ -585,10 +577,141 @@ export default function UsersPage() {
     });
   }, [users, search, roleFilter]);
 
+  const handleBulkAction = useCallback(async (ids: number[], action: string) => {
+    const safeIds = (action === "deactivate" || action.startsWith("role_"))
+      ? ids.filter((id) => id !== me?.userId)
+      : ids;
+    if (safeIds.length === 0) {
+      toast({ title: "Cannot apply this action to your own account", variant: "destructive" });
+      return;
+    }
+    if (action === "deactivate") {
+      let succeeded = 0;
+      for (const id of safeIds) {
+        try {
+          await apiFetch(`/users/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "inactive" }),
+          });
+          succeeded++;
+        } catch { /* skip */ }
+      }
+      await refetch();
+      toast({ title: `${succeeded} user${succeeded !== 1 ? "s" : ""} deactivated` });
+    } else if (action === "activate") {
+      let succeeded = 0;
+      for (const id of safeIds) {
+        try {
+          await apiFetch(`/users/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "active" }),
+          });
+          succeeded++;
+        } catch { /* skip */ }
+      }
+      await refetch();
+      toast({ title: `${succeeded} user${succeeded !== 1 ? "s" : ""} activated` });
+    } else if (action.startsWith("role_")) {
+      const roleId = parseInt(action.replace("role_", ""));
+      if (isNaN(roleId)) return;
+      const roleName = roles.find((r) => r.id === roleId);
+      let succeeded = 0;
+      for (const id of safeIds) {
+        try {
+          await apiFetch(`/users/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ roleId }),
+          });
+          succeeded++;
+        } catch { /* skip */ }
+      }
+      await refetch();
+      const label = roleName ? (ROLE_LABELS[roleName.name] ?? roleName.name) : `role #${roleId}`;
+      toast({ title: `${succeeded} user${succeeded !== 1 ? "s" : ""} changed to ${label}` });
+    }
+  }, [me?.userId, refetch, toast, roles]);
+
+  const BULK_ACTIONS: DataTableBulkAction[] = [
+    { label: "Activate Selected", value: "activate" },
+    { label: "Deactivate Selected", value: "deactivate", variant: "destructive" },
+    ...(roles
+      .filter((r) => r.name !== "admin" && r.name !== "applicant")
+      .map((r) => ({
+        label: `Change Role: ${ROLE_LABELS[r.name] ?? r.name}`,
+        value: `role_${r.id}`,
+      }))),
+  ];
+
+  const columns: DataTableColumn<UserRow>[] = [
+    {
+      key: "name",
+      label: "Name",
+      sortable: true,
+      sortValue: (u) => u.name ?? "",
+      exportValue: (u) => u.name ?? "",
+      render: (u) => <span className="font-medium">{u.name}</span>,
+    },
+    {
+      key: "email",
+      label: "Email",
+      sortable: true,
+      sortValue: (u) => u.email ?? "",
+      exportValue: (u) => u.email ?? "",
+      render: (u) => <span className="text-muted-foreground text-sm">{u.email}</span>,
+    },
+    {
+      key: "agency",
+      label: "Agency",
+      sortable: true,
+      sortValue: (u) => u.agencyName ?? "",
+      exportValue: (u) => u.agencyName ?? "—",
+      render: (u) => (
+        <span className="text-sm text-muted-foreground max-w-[160px] truncate block" title={u.agencyName ?? "—"}>
+          {u.agencyName ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "role",
+      label: "Role",
+      sortable: true,
+      sortValue: (u) => u.roleName ?? "",
+      exportValue: (u) => u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role",
+      render: (u) => (
+        <Badge variant="outline" className="text-xs">
+          {u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role"}
+        </Badge>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      sortValue: (u) => u.status ?? "",
+      exportValue: (u) => u.status ?? "—",
+      render: (u) => (
+        <Badge variant={u.status === "active" ? "default" : "destructive"} className="text-xs">
+          {u.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "joined",
+      label: "Joined",
+      sortable: true,
+      sortValue: (u) => u.createdAt ?? "",
+      exportValue: (u) => u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—",
+      render: (u) => (
+        <span className="text-sm text-muted-foreground">
+          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <AppLayout>
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
@@ -604,7 +727,6 @@ export default function UsersPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -634,78 +756,25 @@ export default function UsersPage() {
           )}
         </div>
 
-        {/* Table */}
         {loadingUsers || loadingRoles ? (
           <div className="space-y-2">
             {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
           </div>
         ) : (
           <DataTable
-            columns={[
-              {
-                key: "name",
-                label: "Name",
-                sortable: true,
-                csvValue: (u) => u.name ?? "",
-                renderCell: (u) => <span className="font-medium">{u.name}</span>,
-              },
-              {
-                key: "email",
-                label: "Email",
-                sortable: true,
-                csvValue: (u) => u.email ?? "",
-                renderCell: (u) => <span className="text-muted-foreground text-sm">{u.email}</span>,
-              },
-              {
-                key: "agency",
-                label: "Agency",
-                sortable: true,
-                csvValue: (u) => (u as UserRow).agencyName ?? "",
-                renderCell: (u) => (
-                  <span className="text-sm text-muted-foreground" title={(u as UserRow).agencyName ?? "—"}>
-                    {(u as UserRow).agencyName ?? "—"}
-                  </span>
-                ),
-              },
-              {
-                key: "role",
-                label: "Role",
-                sortable: true,
-                csvValue: (u) => u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role",
-                renderCell: (u) => (
-                  <Badge variant="outline" className="text-xs">
-                    {u.roleName ? (ROLE_LABELS[u.roleName] ?? u.roleName) : "No role"}
-                  </Badge>
-                ),
-              },
-              {
-                key: "status",
-                label: "Status",
-                sortable: true,
-                csvValue: (u) => u.status ?? "",
-                renderCell: (u) => (
-                  <Badge variant={u.status === "active" ? "default" : "destructive"} className="text-xs">
-                    {u.status}
-                  </Badge>
-                ),
-              },
-              {
-                key: "joined",
-                label: "Joined",
-                sortable: true,
-                csvValue: (u) => u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "",
-                renderCell: (u) => (
-                  <span className="text-sm text-muted-foreground">
-                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
-                  </span>
-                ),
-              },
-            ] as DataTableColumn<UserRow>[]}
-            data={filtered}
+            columns={columns}
+            rows={filtered}
             getRowId={(u) => u.id}
-            emptyMessage="No users found."
-            onRowClick={(u) => setSelectedUserId(u.id)}
+            bulkActions={BULK_ACTIONS}
+            onBulkAction={handleBulkAction}
+            exportFilename="users"
             data-testid="table-users"
+            emptyState="No users found"
+            rowProps={(u) => ({
+              className: "cursor-pointer",
+              onClick: () => setSelectedUserId(u.id),
+              "data-testid": "row-user",
+            } as React.HTMLAttributes<HTMLTableRowElement>)}
           />
         )}
       </div>

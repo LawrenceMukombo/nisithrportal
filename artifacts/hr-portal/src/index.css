@@ -236,6 +236,69 @@
   }
 }
 
+@media print {
+  /* Hide sidebar and header navigation */
+  aside {
+    display: none !important;
+  }
+
+  header {
+    display: none !important;
+  }
+
+  /* Make root layout containers flat and full-width */
+  body,
+  #root,
+  #root > div,
+  #root > div > div {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  /* The main scroll container */
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    flex: none !important;
+  }
+
+  /* Clean table formatting */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10.5pt !important;
+    page-break-inside: auto;
+  }
+
+  th, td {
+    border: 1px solid #ccc !important;
+    padding: 4px 8px !important;
+    text-align: left !important;
+  }
+
+  thead tr {
+    background: #f0f0f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* Remove card chrome around the table */
+  .rounded-md.border {
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+}
+
 @layer utilities {
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;

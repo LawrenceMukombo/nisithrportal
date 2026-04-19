@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Building2, UserPlus } from "lucide-react";
+import { Search, Building2, UserPlus, Users } from "lucide-react";
 import { useGetEmployees, useGetDepartments, getGetEmployeesQueryKey, getGetDepartmentsQueryKey } from "@workspace/api-client-react";
 import type { Employee } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useRole } from "@/contexts/auth-context";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { DataTable } from "@/components/ui/data-table";
+import type { DataTableColumn } from "@/components/ui/data-table";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -64,13 +64,14 @@ export default function EmployeesPage() {
     });
   }, [employees, search, deptFilter]);
 
-  const columns: DataTableColumn<Employee>[] = useMemo(() => [
+  const columns: DataTableColumn<Employee>[] = [
     {
       key: "name",
       label: "Employee",
       sortable: true,
-      csvValue: (e) => e.name ?? "",
-      renderCell: (e) => (
+      sortValue: (e) => e.name ?? "",
+      exportValue: (e) => e.name ?? "",
+      render: (e) => (
         <Link href={`/employees/${e.id}`}>
           <div className="flex items-center gap-3 cursor-pointer group">
             <Avatar className="h-8 w-8 shrink-0">
@@ -87,11 +88,19 @@ export default function EmployeesPage() {
       ),
     },
     {
+      key: "email",
+      label: "Email",
+      defaultHidden: true,
+      exportValue: (e) => e.email ?? "",
+      render: (e) => <span className="text-muted-foreground text-xs">{e.email ?? "—"}</span>,
+    },
+    {
       key: "department",
       label: "Department",
       sortable: true,
-      csvValue: (e) => e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "",
-      renderCell: (e) => (
+      sortValue: (e) => e.departmentId ? (deptMap[e.departmentId] ?? "") : "",
+      exportValue: (e) => e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "—",
+      render: (e) => (
         <span className="text-muted-foreground">
           {e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "—"}
         </span>
@@ -101,8 +110,9 @@ export default function EmployeesPage() {
       key: "startDate",
       label: "Start Date",
       sortable: true,
-      csvValue: (e) => e.startDate ?? "",
-      renderCell: (e) => (
+      sortValue: (e) => e.startDate ?? "",
+      exportValue: (e) => e.startDate ? new Date(e.startDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—",
+      render: (e) => (
         <span className="text-muted-foreground">
           {e.startDate ? new Date(e.startDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
         </span>
@@ -112,21 +122,15 @@ export default function EmployeesPage() {
       key: "status",
       label: "Status",
       sortable: true,
-      csvValue: (e) => STATUS_LABEL[e.status ?? "active"] ?? e.status ?? "",
-      renderCell: (e) => (
+      sortValue: (e) => e.status ?? "",
+      exportValue: (e) => STATUS_LABEL[e.status ?? "active"] ?? e.status ?? "",
+      render: (e) => (
         <Badge variant={STATUS_COLORS[e.status ?? "active"] ?? "default"}>
           {STATUS_LABEL[e.status ?? "active"] ?? e.status}
         </Badge>
       ),
     },
-    {
-      key: "phone",
-      label: "Phone",
-      defaultHidden: true,
-      csvValue: (e) => e.phone ?? "",
-      renderCell: (e) => <span className="text-muted-foreground">{e.phone ?? "—"}</span>,
-    },
-  ], [deptMap]);
+  ];
 
   return (
     <AppLayout>
@@ -186,20 +190,21 @@ export default function EmployeesPage() {
           </CardContent>
         </Card>
 
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={filtered}
-            getRowId={(e) => e.id}
-            emptyMessage="No employees found. Try adjusting your search or filters."
-            onRowClick={(e) => setLocation(`/employees/${e.id}`)}
-            data-testid="table-employees"
-          />
-        )}
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          getRowId={(e) => e.id}
+          isLoading={isLoading}
+          exportFilename="employees"
+          data-testid="table-employees"
+          emptyState={
+            <div className="py-4">
+              <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No employees found</p>
+              <p className="text-xs mt-1">Try adjusting your search or filters</p>
+            </div>
+          }
+        />
       </div>
     </AppLayout>
   );

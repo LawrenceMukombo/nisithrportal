@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRole } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { DataTable } from "@/components/ui/data-table";
+import type { DataTableColumn } from "@/components/ui/data-table";
 
 type SortKey = "title" | "dept" | "status" | null;
 type SortDir = "asc" | "desc" | null;
@@ -40,6 +41,36 @@ const STATUS_COLORS: Record<string, string> = {
   closed: "outline",
 };
 
+const WORK_TYPE_LABELS: Record<string, string> = {
+  full_time: "Full-time",
+  part_time: "Part-time",
+  contract: "Contract",
+  casual: "Casual",
+};
+
+const WORK_TYPE_BADGE_CLASSES: Record<string, string> = {
+  full_time: "bg-blue-50 text-blue-700 border-blue-200",
+  part_time: "bg-violet-50 text-violet-700 border-violet-200",
+  contract: "bg-amber-50 text-amber-700 border-amber-200",
+  casual: "bg-orange-50 text-orange-700 border-orange-200",
+};
+
+const PNG_PROVINCES_JOBS = [
+  "National Capital District", "Central", "Gulf", "Western", "Oro (Northern)",
+  "Milne Bay", "Morobe", "Madang", "Eastern Highlands", "Western Highlands",
+  "Jiwaka", "Chimbu (Simbu)", "Southern Highlands", "Hela", "Enga",
+  "Sandaun (West Sepik)", "East Sepik", "Manus", "New Ireland",
+  "East New Britain", "West New Britain", "Bougainville (AROB)",
+];
+
+const SALARY_BANDS_JOBS = [
+  { value: "lt_20k", label: "< K20,000", max: 20000 },
+  { value: "20k_40k", label: "K20,000 – K40,000", min: 20000, max: 40000 },
+  { value: "40k_70k", label: "K40,000 – K70,000", min: 40000, max: 70000 },
+  { value: "70k_100k", label: "K70,000 – K100,000", min: 70000, max: 100000 },
+  { value: "gt_100k", label: "K100,000+", min: 100000 },
+];
+
 function draftAgeLabel(savedAt: number): string {
   const mins = Math.floor((Date.now() - savedAt) / 60000);
   if (mins < 1) return "just now";
@@ -49,17 +80,17 @@ function draftAgeLabel(savedAt: number): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function JobRow({
-  job, canManage, deptName, draftSavedAt,
-  onWorkTypeClick, onLocationClick,
-}: {
-  job: Job;
-  canManage: boolean;
-  deptName?: string;
-  draftSavedAt?: number;
-  onWorkTypeClick?: (v: string) => void;
-  onLocationClick?: (v: string) => void;
-}) {
+type ExtJob = Job & {
+  employmentType?: string;
+  workType?: string;
+  province?: string;
+  location?: string;
+  workArrangement?: string;
+  salaryMin?: number;
+  salaryMax?: number;
+};
+
+function JobActionsCell({ job }: { job: ExtJob }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -91,147 +122,49 @@ function JobRow({
   });
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors" data-testid={`row-job-${job.id}`}>
-      <td className="py-3 px-4">
-        <Link href={`/jobs/${job.id}`}>
-          <span className="font-medium text-primary hover:underline cursor-pointer" data-testid={`link-job-${job.id}`}>
-            {job.title}
-          </span>
-        </Link>
-        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-          {(() => {
-            const empType = (job as Job & { employmentType?: string; workType?: string }).employmentType
-              ?? (job as Job & { workType?: string }).workType;
-            if (!empType) return null;
-            const label = WORK_TYPE_LABELS[empType] ?? empType;
-            const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
-            return (
-              <Badge
-                variant="outline"
-                className={`text-xs py-0 gap-1 ${cls} ${onWorkTypeClick ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
-                data-testid={`badge-work-type-${job.id}`}
-                onClick={onWorkTypeClick ? (e) => { e.preventDefault(); e.stopPropagation(); onWorkTypeClick(empType); } : undefined}
-                title={onWorkTypeClick ? `Filter by ${label}` : undefined}
-              >
-                <Briefcase className="h-3 w-3" />{label}
-              </Badge>
-            );
-          })()}
-          {(() => {
-            const province = (job as Job & { province?: string; location?: string }).province
-              || (job as Job & { location?: string }).location;
-            if (!province) return null;
-            return (
-              <Badge
-                variant="outline"
-                className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 ${onLocationClick ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
-                data-testid={`badge-province-${job.id}`}
-                onClick={onLocationClick ? (e) => { e.preventDefault(); e.stopPropagation(); onLocationClick(province); } : undefined}
-                title={onLocationClick ? `Filter by ${province}` : undefined}
-              >
-                <MapPin className="h-3 w-3" />{province}
-              </Badge>
-            );
-          })()}
-          {(job as Job & { workArrangement?: string }).workArrangement && (
-            <Badge variant="outline" className="text-xs py-0 bg-slate-50 text-slate-600 border-slate-200">
-              {({ remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" } as Record<string, string>)[(job as Job & { workArrangement?: string }).workArrangement ?? ""] ?? (job as Job & { workArrangement?: string }).workArrangement}
-            </Badge>
-          )}
-          <span className="text-xs text-muted-foreground">
-            Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
-          </span>
-          {draftSavedAt && (
-            <Badge variant="outline" className="text-xs py-0 gap-1 bg-amber-50 text-amber-700 border-amber-200 font-normal" data-testid={`badge-draft-age-${job.id}`}>
-              Draft · {draftAgeLabel(draftSavedAt)}
-            </Badge>
-          )}
-        </div>
-      </td>
-      <td className="py-3 px-4 text-sm text-muted-foreground">{deptName ?? (job.departmentId ? `Dept #${job.departmentId}` : "—")}</td>
-      <td className="py-3 px-4">
-        <Badge variant={STATUS_COLORS[job.status ?? "draft"] as "default" | "secondary" | "outline" | "destructive"}>
-          {job.status}
-        </Badge>
-      </td>
-      {canManage && (
-        <td className="py-3 px-4">
-          <div className="flex items-center gap-1">
-            <Link href={`/jobs/${job.id}/edit`}>
-              <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-edit-job-${job.id}`}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            </Link>
-            {job.status === "draft" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-green-600"
-                onClick={() => publishMutation.mutate({ id: job.id })}
-                disabled={publishMutation.isPending}
-                data-testid={`button-publish-job-${job.id}`}
-              >
-                <CheckCircle className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {job.status === "published" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-orange-600"
-                onClick={() => closeMutation.mutate({ id: job.id })}
-                disabled={closeMutation.isPending}
-                data-testid={`button-close-job-${job.id}`}
-              >
-                <XCircle className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive"
-              onClick={() => { if (confirm("Delete this job?")) deleteMutation.mutate({ id: job.id }); }}
-              disabled={deleteMutation.isPending}
-              data-testid={`button-delete-job-${job.id}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </td>
+    <div className="flex items-center gap-1">
+      <Link href={`/jobs/${job.id}/edit`}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-edit-job-${job.id}`}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </Link>
+      {job.status === "draft" && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-green-600"
+          onClick={() => publishMutation.mutate({ id: job.id })}
+          disabled={publishMutation.isPending}
+          data-testid={`button-publish-job-${job.id}`}
+        >
+          <CheckCircle className="h-3.5 w-3.5" />
+        </Button>
       )}
-    </tr>
+      {job.status === "published" && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-orange-600"
+          onClick={() => closeMutation.mutate({ id: job.id })}
+          disabled={closeMutation.isPending}
+          data-testid={`button-close-job-${job.id}`}
+        >
+          <XCircle className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-destructive"
+        onClick={() => { if (confirm("Delete this job?")) deleteMutation.mutate({ id: job.id }); }}
+        disabled={deleteMutation.isPending}
+        data-testid={`button-delete-job-${job.id}`}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
   );
 }
-
-const WORK_TYPE_LABELS: Record<string, string> = {
-  full_time: "Full-time",
-  part_time: "Part-time",
-  contract: "Contract",
-  casual: "Casual",
-};
-
-const WORK_TYPE_BADGE_CLASSES: Record<string, string> = {
-  full_time: "bg-blue-50 text-blue-700 border-blue-200",
-  part_time: "bg-violet-50 text-violet-700 border-violet-200",
-  contract: "bg-amber-50 text-amber-700 border-amber-200",
-  casual: "bg-orange-50 text-orange-700 border-orange-200",
-};
-
-const PNG_PROVINCES_JOBS = [
-  "National Capital District", "Central", "Gulf", "Western", "Oro (Northern)",
-  "Milne Bay", "Morobe", "Madang", "Eastern Highlands", "Western Highlands",
-  "Jiwaka", "Chimbu (Simbu)", "Southern Highlands", "Hela", "Enga",
-  "Sandaun (West Sepik)", "East Sepik", "Manus", "New Ireland",
-  "East New Britain", "West New Britain", "Bougainville (AROB)",
-];
-
-const SALARY_BANDS_JOBS = [
-  { value: "lt_20k", label: "< K20,000", max: 20000 },
-  { value: "20k_40k", label: "K20,000 – K40,000", min: 20000, max: 40000 },
-  { value: "40k_70k", label: "K40,000 – K70,000", min: 40000, max: 70000 },
-  { value: "70k_100k", label: "K70,000 – K100,000", min: 70000, max: 100000 },
-  { value: "gt_100k", label: "K100,000+", min: 100000 },
-];
 
 export default function JobsPage() {
   const [search, setSearch] = useState("");
@@ -284,20 +217,18 @@ export default function JobsPage() {
     }
   );
 
-  const filtered = jobs.data?.filter((j) => {
+  const filtered = (jobs.data as ExtJob[] | undefined)?.filter((j) => {
     const matchSearch = j.title.toLowerCase().includes(search.toLowerCase());
-    const jobWorkType = (j as Job & { employmentType?: string; workType?: string }).employmentType ?? (j as Job & { workType?: string }).workType ?? "";
+    const jobWorkType = j.employmentType ?? j.workType ?? "";
     const matchWorkType = workTypeFilter === "all" || jobWorkType === workTypeFilter;
-    const jobLocation = (j as Job & { location?: string }).location ?? "";
+    const jobLocation = j.province || j.location || "";
     const matchLocation = locationFilter === "all" ||
       jobLocation.toLowerCase().includes(locationFilter.toLowerCase());
     let matchSalary = true;
     if (salaryFilter !== "all") {
       const band = SALARY_BANDS_JOBS.find(b => b.value === salaryFilter);
-      const jobSalaryMin = (j as Job & { salaryMin?: number }).salaryMin;
-      const jobSalaryMax = (j as Job & { salaryMax?: number }).salaryMax;
-      if (band && (jobSalaryMin !== undefined || jobSalaryMax !== undefined)) {
-        const mid = jobSalaryMin ?? jobSalaryMax ?? 0;
+      if (band && (j.salaryMin !== undefined || j.salaryMax !== undefined)) {
+        const mid = j.salaryMin ?? j.salaryMax ?? 0;
         matchSalary = (band.min === undefined || mid >= band.min) &&
                       (band.max === undefined || mid <= band.max);
       }
@@ -337,6 +268,100 @@ export default function JobsPage() {
     } catch { /* ignore */ }
     return map;
   }, [jobs.data]);
+
+  const columns: DataTableColumn<ExtJob>[] = [
+    {
+      key: "title",
+      label: "Job Title",
+      sortable: true,
+      sortValue: (j) => j.title,
+      exportValue: (j) => j.title,
+      render: (job) => {
+        const empType = job.employmentType ?? job.workType;
+        const province = job.province || job.location;
+        const draftSavedAt = draftMap[job.id];
+        return (
+          <div>
+            <Link href={`/jobs/${job.id}`}>
+              <span className="font-medium text-primary hover:underline cursor-pointer" data-testid={`link-job-${job.id}`}>
+                {job.title}
+              </span>
+            </Link>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {empType && (() => {
+                const label = WORK_TYPE_LABELS[empType] ?? empType;
+                const cls = WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200";
+                return (
+                  <Badge
+                    variant="outline"
+                    className={`text-xs py-0 gap-1 ${cls} cursor-pointer hover:opacity-70 transition-opacity`}
+                    data-testid={`badge-work-type-${job.id}`}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWorkTypeFilter(empType); }}
+                    title={`Filter by ${label}`}
+                  >
+                    <Briefcase className="h-3 w-3" />{label}
+                  </Badge>
+                );
+              })()}
+              {province && (
+                <Badge
+                  variant="outline"
+                  className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 cursor-pointer hover:opacity-70 transition-opacity"
+                  data-testid={`badge-province-${job.id}`}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocationFilter(province); }}
+                  title={`Filter by ${province}`}
+                >
+                  <MapPin className="h-3 w-3" />{province}
+                </Badge>
+              )}
+              {job.workArrangement && (
+                <Badge variant="outline" className="text-xs py-0 bg-slate-50 text-slate-600 border-slate-200">
+                  {({ remote: "Remote", hybrid: "Hybrid", on_site: "On-Site", flexible: "Flexible" } as Record<string, string>)[job.workArrangement] ?? job.workArrangement}
+                </Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                Closes: {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "—"}
+              </span>
+              {draftSavedAt && (
+                <Badge variant="outline" className="text-xs py-0 gap-1 bg-amber-50 text-amber-700 border-amber-200 font-normal" data-testid={`badge-draft-age-${job.id}`}>
+                  Draft · {draftAgeLabel(draftSavedAt)}
+                </Badge>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "department",
+      label: "Department",
+      sortable: true,
+      sortValue: (j) => j.departmentId ? (deptMap[j.departmentId] ?? "") : "",
+      exportValue: (j) => j.departmentId ? (deptMap[j.departmentId] ?? `Dept #${j.departmentId}`) : "—",
+      render: (j) => (
+        <span className="text-sm text-muted-foreground">
+          {j.departmentId ? (deptMap[j.departmentId] ?? `Dept #${j.departmentId}`) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      sortValue: (j) => j.status ?? "",
+      exportValue: (j) => j.status ?? "—",
+      render: (j) => (
+        <Badge variant={STATUS_COLORS[j.status ?? "draft"] as "default" | "secondary" | "outline" | "destructive"}>
+          {j.status}
+        </Badge>
+      ),
+    },
+    ...(canManageJobs ? [{
+      key: "actions",
+      label: "Actions",
+      render: (job: ExtJob) => <JobActionsCell job={job} />,
+    } satisfies DataTableColumn<ExtJob>] : []),
+  ];
 
   return (
     <AppLayout>
@@ -439,68 +464,24 @@ export default function JobsPage() {
           </CardContent>
         </Card>
 
-        {/* Table toolbar */}
-        <div className="flex items-center justify-end gap-2 print:hidden">
-          <Button size="sm" variant="outline" onClick={() => downloadJobsCSV(sortedFiltered, deptMap)} className="gap-1 h-8 text-xs" data-testid="button-export-jobs-csv">
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1 h-8 text-xs" data-testid="button-print-jobs">
-            <Printer className="h-3.5 w-3.5" /> Print
-          </Button>
-        </div>
-
-        <Card>
-          <CardContent className="p-0 overflow-x-auto">
-            {jobs.isLoading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          getRowId={(j) => j.id}
+          isLoading={jobs.isLoading}
+          exportFilename="jobs"
+          data-testid="table-jobs"
+          emptyState={
+            hasFilters ? (
+              <div>
+                <p>No jobs found matching your filters.</p>
+                <button className="text-sm text-primary underline mt-2 cursor-pointer" onClick={clearFilters}>
+                  Clear filters
+                </button>
               </div>
-            ) : (
-              <table className="w-full text-sm" data-testid="table-jobs">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground" style={{ backgroundColor: "#f5f5f5" }}>
-                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("title")} data-testid="th-jobs-title">
-                      <span className="inline-flex items-center">Job Title <SortIcon k="title" /></span>
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("dept")} data-testid="th-jobs-dept">
-                      <span className="inline-flex items-center">Department <SortIcon k="dept" /></span>
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium cursor-pointer select-none hover:text-foreground" onClick={() => handleSort("status")} data-testid="th-jobs-status">
-                      <span className="inline-flex items-center">Status <SortIcon k="status" /></span>
-                    </th>
-                    {canManageJobs && <th className="text-left py-3 px-4 font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedFiltered.length === 0 ? (
-                    <tr>
-                      <td colSpan={canManageJobs ? 4 : 3} className="text-center py-12 text-muted-foreground">
-                        <p>No jobs found matching your filters.</p>
-                        {hasFilters && (
-                          <button className="text-sm text-primary underline mt-2 cursor-pointer" onClick={clearFilters}>
-                            Clear filters
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedFiltered.map((job) => (
-                      <JobRow
-                        key={job.id}
-                        job={job}
-                        canManage={canManageJobs}
-                        deptName={job.departmentId ? deptMap[job.departmentId] : undefined}
-                        draftSavedAt={draftMap[job.id]}
-                        onWorkTypeClick={setWorkTypeFilter}
-                        onLocationClick={setLocationFilter}
-                      />
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+            ) : "No jobs found"
+          }
+        />
       </div>
     </AppLayout>
   );

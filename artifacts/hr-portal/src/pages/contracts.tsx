@@ -7,10 +7,10 @@ import { AppLayout } from "@/layouts/app-layout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { DataTable } from "@/components/ui/data-table";
+import type { DataTableColumn } from "@/components/ui/data-table";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -25,9 +25,7 @@ const CONTRACT_TYPE_LABEL: Record<string, string> = {
   temporary: "Temporary",
 };
 
-function fmtDate(d?: string | null) {
-  return d ? new Date(d).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : null;
-}
+type ContractRow = Contract & Record<string, unknown>;
 
 export default function ContractsPage() {
   const [search, setSearch] = useState("");
@@ -51,20 +49,21 @@ export default function ContractsPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    if (!q) return contracts;
-    return contracts.filter((c) => {
-      const empName = c.employeeId ? (empMap[c.employeeId] ?? "").toLowerCase() : "";
-      return empName.includes(q) || String(c.id).includes(q) || (c.type ?? "").toLowerCase().includes(q);
+    if (!q) return contracts as ContractRow[];
+    return (contracts as ContractRow[]).filter((c) => {
+      const empName = c.employeeId ? (empMap[c.employeeId as number] ?? "").toLowerCase() : "";
+      return empName.includes(q) || String(c.id).includes(q) || (c.type as string ?? "").toLowerCase().includes(q);
     });
   }, [contracts, search, empMap]);
 
-  const columns: DataTableColumn<Contract>[] = useMemo(() => [
+  const columns: DataTableColumn<ContractRow>[] = [
     {
       key: "id",
       label: "Contract",
       sortable: true,
-      csvValue: (c) => `Contract #${c.id}`,
-      renderCell: (c) => (
+      sortValue: (c) => c.id,
+      exportValue: (c) => `Contract #${c.id}`,
+      render: (c) => (
         <Link href={`/contracts/${c.id}`}>
           <span className="text-primary hover:underline cursor-pointer font-medium">Contract #{c.id}</span>
         </Link>
@@ -74,45 +73,79 @@ export default function ContractsPage() {
       key: "employee",
       label: "Employee",
       sortable: true,
-      csvValue: (c) => c.employeeId ? (empMap[c.employeeId] ?? "") : "",
-      renderCell: (c) => c.employeeId ? (
-        <Link href={`/employees/${c.employeeId}`}>
-          <span className="hover:underline cursor-pointer">{empMap[c.employeeId] ?? `Employee #${c.employeeId}`}</span>
-        </Link>
-      ) : <span className="text-muted-foreground">—</span>,
+      sortValue: (c) => c.employeeId ? (empMap[c.employeeId as number] ?? "") : "",
+      exportValue: (c) => c.employeeId ? (empMap[c.employeeId as number] ?? `Employee #${c.employeeId}`) : "—",
+      render: (c) => (
+        c.employeeId ? (
+          <Link href={`/employees/${c.employeeId}`}>
+            <span className="hover:underline cursor-pointer">
+              {empMap[c.employeeId as number] ?? `Employee #${c.employeeId}`}
+            </span>
+          </Link>
+        ) : <span>—</span>
+      ),
     },
     {
       key: "type",
       label: "Type",
       sortable: true,
-      csvValue: (c) => CONTRACT_TYPE_LABEL[c.type ?? ""] ?? c.type ?? "",
-      renderCell: (c) => (
-        <span className="text-muted-foreground capitalize">{CONTRACT_TYPE_LABEL[c.type ?? ""] ?? c.type ?? "—"}</span>
+      sortValue: (c) => c.type as string ?? "",
+      exportValue: (c) => CONTRACT_TYPE_LABEL[c.type as string ?? ""] ?? c.type as string ?? "—",
+      render: (c) => (
+        <span className="text-muted-foreground capitalize">
+          {CONTRACT_TYPE_LABEL[c.type as string ?? ""] ?? c.type as string ?? "—"}
+        </span>
       ),
     },
     {
       key: "period",
       label: "Period",
       sortable: true,
-      csvValue: (c) => `${fmtDate(c.startDate) ?? "—"} – ${fmtDate(c.endDate) ?? "ongoing"}`,
-      renderCell: (c) => (
+      sortValue: (c) => c.startDate as string ?? "",
+      exportValue: (c) => {
+        const start = c.startDate ? new Date(c.startDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—";
+        const end = c.endDate ? new Date(c.endDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "ongoing";
+        return `${start} – ${end}`;
+      },
+      render: (c) => (
         <span className="text-muted-foreground text-xs">
-          {fmtDate(c.startDate) ?? "—"} – {fmtDate(c.endDate) ?? "ongoing"}
+          {c.startDate ? new Date(c.startDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+          <span className="mx-1">–</span>
+          {c.endDate ? new Date(c.endDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "ongoing"}
         </span>
       ),
+    },
+    {
+      key: "startDate",
+      label: "Start Date",
+      defaultHidden: true,
+      sortable: true,
+      sortValue: (c) => c.startDate as string ?? "",
+      exportValue: (c) => c.startDate ? new Date(c.startDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—",
+      render: (c) => <span className="text-muted-foreground text-xs">{c.startDate ? new Date(c.startDate as string).toLocaleDateString() : "—"}</span>,
+    },
+    {
+      key: "endDate",
+      label: "End Date",
+      defaultHidden: true,
+      sortable: true,
+      sortValue: (c) => c.endDate as string ?? "",
+      exportValue: (c) => c.endDate ? new Date(c.endDate as string).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "ongoing",
+      render: (c) => <span className="text-muted-foreground text-xs">{c.endDate ? new Date(c.endDate as string).toLocaleDateString() : "ongoing"}</span>,
     },
     {
       key: "status",
       label: "Status",
       sortable: true,
-      csvValue: (c) => c.status ?? "",
-      renderCell: (c) => (
-        <Badge variant={STATUS_COLORS[c.status ?? "active"] ?? "default"} className="capitalize">
-          {c.status}
+      sortValue: (c) => c.status as string ?? "",
+      exportValue: (c) => c.status as string ?? "—",
+      render: (c) => (
+        <Badge variant={STATUS_COLORS[c.status as string ?? "active"] ?? "default"} className="capitalize">
+          {c.status as string}
         </Badge>
       ),
     },
-  ], [empMap]);
+  ];
 
   return (
     <AppLayout>
@@ -159,26 +192,21 @@ export default function ContractsPage() {
           </CardContent>
         </Card>
 
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No contracts found</p>
-            <p className="text-xs mt-1">Try adjusting your search or filters</p>
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={filtered}
-            getRowId={(c) => c.id}
-            emptyMessage="No contracts found."
-            onRowClick={(c) => setLocation(`/contracts/${c.id}`)}
-            data-testid="table-contracts"
-          />
-        )}
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          getRowId={(c) => c.id}
+          isLoading={isLoading}
+          exportFilename="contracts"
+          data-testid="table-contracts"
+          emptyState={
+            <div className="py-4">
+              <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No contracts found</p>
+              <p className="text-xs mt-1">Try adjusting your search or filters</p>
+            </div>
+          }
+        />
       </div>
     </AppLayout>
   );

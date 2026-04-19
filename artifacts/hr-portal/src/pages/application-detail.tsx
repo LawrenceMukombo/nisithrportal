@@ -288,6 +288,20 @@ export default function ApplicationDetailPage() {
     query: { enabled: !!app?.jobId, queryKey: getGetJobQueryKey(app?.jobId ?? 0) },
   });
 
+  useEffect(() => {
+    if (!appId) return;
+    const candidateName = candidate?.name;
+    const jobTitle = jobDetail?.title;
+    if (candidateName && jobTitle) {
+      document.title = `${candidateName} — ${jobTitle} | Applications`;
+    } else {
+      document.title = `Application #${appId} | Applications`;
+    }
+    return () => {
+      document.title = "PNG NISIT HR Portal";
+    };
+  }, [appId, candidate?.name, jobDetail?.title]);
+
   const { data: aiScores } = useGetAiScores(undefined, { query: { queryKey: getGetAiScoresQueryKey() } });
   const score = aiScores?.find(
     (s) => app?.candidateId && s.candidateId === app.candidateId && s.jobId === app.jobId

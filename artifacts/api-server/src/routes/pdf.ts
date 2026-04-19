@@ -121,22 +121,45 @@ function fieldRow(doc: PDFKit.PDFDocument, label: string, value: string) {
   doc.moveDown(0.3);
 }
 
+const drawingFooterFor = new WeakSet<PDFKit.PDFDocument>();
+
 function drawFooter(doc: PDFKit.PDFDocument, agencyName: string, refNo: string, label: string) {
-  const footerY = doc.page.height - 40;
-  const generatedOn = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
+  if (drawingFooterFor.has(doc)) return;
+  drawingFooterFor.add(doc);
   const prevX = doc.x;
   const prevY = doc.y;
-  doc.save();
-  doc.fontSize(7).fillColor("#888888").font("Helvetica")
-    .text(`${agencyName} · ${label} · ${refNo} · Generated on: ${generatedOn}`, 0, footerY, { align: "center", width: doc.page.width, lineBreak: false });
-  doc.restore();
-  doc.x = prevX;
-  doc.y = prevY;
+  const prevBottomMargin = doc.page.margins.bottom;
+  try {
+    const footerY = doc.page.height - 40;
+    const generatedOn = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
+    // Temporarily clear the bottom margin so pdfkit does not auto-add a new
+    // page when we draw text below the normal text area. Combined with
+    // lineBreak:false and height:0 this guarantees the footer text never
+    // triggers a `pageAdded` event, which previously caused infinite recursion.
+    doc.page.margins.bottom = 0;
+    doc.save();
+    try {
+      doc.fontSize(7).fillColor("#888888").font("Helvetica")
+        .text(
+          `${agencyName} · ${label} · ${refNo} · Generated on: ${generatedOn}`,
+          0,
+          footerY,
+          { align: "center", width: doc.page.width, lineBreak: false, height: 0 },
+        );
+    } finally {
+      doc.restore();
+    }
+  } finally {
+    doc.page.margins.bottom = prevBottomMargin;
+    doc.x = prevX;
+    doc.y = prevY;
+    drawingFooterFor.delete(doc);
+  }
 }
 
 function attachFooterToAllPages(doc: PDFKit.PDFDocument, agencyName: string, refNo: string, label: string) {
-  drawFooter(doc, agencyName, refNo, label);
   doc.on("pageAdded", () => drawFooter(doc, agencyName, refNo, label));
+  drawFooter(doc, agencyName, refNo, label);
 }
 
 function signatureBlock(doc: PDFKit.PDFDocument) {

@@ -456,16 +456,28 @@ export default function ApplicationDetailPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold" data-testid="heading-application">
-              {candidate?.name ?? `Candidate #${app.candidateId}`}
+              {app.candidateId ? (
+                <Link href={`/candidates/${app.candidateId}`}>
+                  <span className="hover:underline cursor-pointer">
+                    {candidate?.name ?? `Candidate #${app.candidateId}`}
+                  </span>
+                </Link>
+              ) : (
+                <span>{candidate?.name ?? "Unknown Candidate"}</span>
+              )}
+              {" "}—{" "}
+              {app.jobId ? (
+                <Link href={`/jobs/${app.jobId}`}>
+                  <span className="hover:underline cursor-pointer">
+                    {jobDetail?.title ?? `Job #${app.jobId}`}
+                  </span>
+                </Link>
+              ) : (
+                <span>{jobDetail?.title ?? "Unknown Job"}</span>
+              )}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Applying for{" "}
-              <Link href={`/jobs/${app.jobId}`}>
-                <span className="font-medium text-foreground hover:underline cursor-pointer">
-                  {jobDetail?.title ?? `Job #${app.jobId}`}
-                </span>
-              </Link>
-              {" "}· Application #{app.id}
+              Application #{app.id}
             </p>
           </div>
           {canUpdateStatus ? (

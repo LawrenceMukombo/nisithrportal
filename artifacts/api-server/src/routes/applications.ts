@@ -1,6 +1,6 @@
 import express, { Router, type IRouter } from "express";
 import multer from "multer";
-import { eq, and, inArray, asc, gt, desc } from "drizzle-orm";
+import { eq, and, inArray, asc, gt, desc, or, ilike, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -174,6 +174,47 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
   }
 
   res.json(allApps.map((a) => ({ ...a, statusHistory: historyByApp[a.id] ?? [] })));
+});
+
+// GET /applications/ids — returns only IDs for the matching filter set (used by bulk "select all results")
+router.get("/applications/ids", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
+  const status = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : null;
+  const search = typeof req.query.search === "string" && req.query.search.trim() ? req.query.search.trim().toLowerCase() : null;
+
+  const agencyId = getTenantAgencyId(req);
+  const baseConditions = [];
+
+  if (agencyId != null) {
+    baseConditions.push(inArray(applicationsTable.jobId,
+      db.select({ id: jobsTable.id }).from(jobsTable).where(eq(jobsTable.agencyId, agencyId)),
+    ));
+  }
+  if (status != null) baseConditions.push(eq(applicationsTable.status, status));
+
+  let rows: { id: number }[];
+  if (search) {
+    const pattern = `%${search}%`;
+    const searchCondition = or(
+      ilike(candidatesTable.name, pattern),
+      ilike(jobsTable.title, pattern),
+      sql`CAST(${applicationsTable.id} AS TEXT) LIKE ${pattern}`,
+      sql`CAST(${applicationsTable.jobId} AS TEXT) LIKE ${pattern}`,
+      sql`CAST(${applicationsTable.candidateId} AS TEXT) LIKE ${pattern}`,
+    );
+    const allConditions = searchCondition ? [...baseConditions, searchCondition] : baseConditions;
+    const q = db
+      .select({ id: applicationsTable.id })
+      .from(applicationsTable)
+      .leftJoin(candidatesTable, eq(applicationsTable.candidateId, candidatesTable.id))
+      .leftJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id));
+    rows = allConditions.length > 0 ? await q.where(and(...allConditions)) : await q;
+  } else {
+    const q = db.select({ id: applicationsTable.id }).from(applicationsTable);
+    rows = baseConditions.length > 0 ? await q.where(and(...baseConditions)) : await q;
+  }
+
+  const ids = rows.map((r) => r.id);
+  res.json({ ids, total: ids.length });
 });
 
 router.get("/applications/my", authMiddleware, async (req, res): Promise<void> => {
@@ -877,7 +918,7 @@ router.get("/applications/:id/documents", authMiddleware, requireRole("admin", "
 // POST /applications/bulk-status — update status of multiple applications at once (#67)
 router.post("/applications/bulk-status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const body = z.object({
-    ids: z.array(z.number().int().positive()).min(1).max(100),
+    ids: z.array(z.number().int().positive()).min(1).max(5000),
     status: z.string().min(1),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "ids (array) and status (string) required" }); return; }

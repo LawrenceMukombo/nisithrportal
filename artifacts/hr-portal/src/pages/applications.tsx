@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, type DataTableColumn, type BulkAction } from "@/components/ui/data-table";
 
@@ -92,6 +93,12 @@ export default function ApplicationsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [, setLocation] = useLocation();
 
+  // select-all-results state: null = not active, array = backend-fetched full ID set
+  const [allResultIds, setAllResultIds] = useState<number[] | null>(null);
+  const [allResultsLoading, setAllResultsLoading] = useState(false);
+  // mirror of DataTable's current selection, updated via onSelectionChange
+  const [tableSelectedIds, setTableSelectedIds] = useState<(number | string)[]>([]);
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -130,24 +137,67 @@ export default function ApplicationsPage() {
     });
   }, [applications.data, search, candidateMap, jobMap]);
 
+  const filteredIds = useMemo(() => filtered.map((a) => a.id), [filtered]);
+
+  // Reset select-all-results mode whenever filters change
+  useEffect(() => {
+    setAllResultIds(null);
+    setTableSelectedIds([]);
+  }, [statusFilter, search]);
+
+  // Whether all visible rows are currently selected in the DataTable
+  const allVisibleSelected =
+    filteredIds.length > 0 &&
+    filteredIds.every((id) => tableSelectedIds.includes(id));
+
+  async function fetchAllResultIds() {
+    setAllResultsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search.trim()) params.set("search", search.trim());
+      const token = getToken();
+      const res = await fetch(`/api/applications/ids?${params.toString()}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) throw new Error("Failed to fetch all matching IDs");
+      const { ids } = await res.json() as { ids: number[]; total: number };
+      setAllResultIds(ids);
+    } catch {
+      toast({ title: "Could not select all results. Please try again.", variant: "destructive" });
+    } finally {
+      setAllResultsLoading(false);
+    }
+  }
+
   async function handleBulkAction(ids: (number | string)[], action: string) {
-    if (ids.length === 0) return;
+    // If in select-all-results mode, use the backend-resolved IDs instead
+    const targetIds: (number | string)[] = allResultIds !== null ? allResultIds : ids;
+    if (targetIds.length === 0) return;
     setBulkLoading(true);
     try {
       const token = getToken();
-      const res = await fetch("/api/applications/bulk-status", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ ids, status: action }),
-      });
-      if (!res.ok) throw new Error("Bulk update failed");
-      const { updated } = await res.json() as { updated: number };
+      const BATCH = 500;
+      let totalUpdated = 0;
+      for (let i = 0; i < targetIds.length; i += BATCH) {
+        const chunk = targetIds.slice(i, i + BATCH);
+        const res = await fetch("/api/applications/bulk-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ ids: chunk, status: action }),
+        });
+        if (!res.ok) throw new Error("Bulk update failed");
+        const { updated } = await res.json() as { updated: number };
+        totalUpdated += updated;
+      }
       await queryClient.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+      setAllResultIds(null);
+      setTableSelectedIds([]);
       const actionLabel = BULK_ACTIONS.find((a) => a.value === action)?.label ?? action;
-      toast({ title: `${updated} application${updated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
+      toast({ title: `${totalUpdated} application${totalUpdated !== 1 ? "s" : ""} updated to "${actionLabel}"` });
     } catch {
       toast({ title: "Bulk update failed", variant: "destructive" });
     } finally {
@@ -260,6 +310,47 @@ export default function ApplicationsPage() {
           </CardContent>
         </Card>
 
+        {/* select-all-results banners */}
+        {allVisibleSelected && !allResultIds && filteredIds.length > 0 && (
+          <div
+            className="flex items-center justify-center gap-2 py-2 px-3 bg-primary/5 border border-primary/20 rounded-lg text-sm"
+            data-testid="select-all-results-banner"
+          >
+            <span className="text-muted-foreground">
+              All {filteredIds.length} rows on this page are selected.
+            </span>
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0 text-primary font-medium"
+              onClick={fetchAllResultIds}
+              disabled={allResultsLoading}
+              data-testid="button-select-all-results"
+            >
+              {allResultsLoading ? "Loading…" : `Select all ${filteredIds.length} applications in this filter`}
+            </Button>
+          </div>
+        )}
+        {allResultIds !== null && (
+          <div
+            className="flex items-center justify-center gap-2 py-2 px-3 bg-primary/5 border border-primary/20 rounded-lg text-sm"
+            data-testid="all-results-selected-banner"
+          >
+            <span className="text-muted-foreground">
+              All {allResultIds.length} applications in this filter are selected.
+            </span>
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0 text-muted-foreground font-medium"
+              onClick={() => setAllResultIds(null)}
+              data-testid="button-clear-all-results"
+            >
+              Clear selection
+            </Button>
+          </div>
+        )}
+
         {applications.isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -273,6 +364,7 @@ export default function ApplicationsPage() {
             onRowClick={(a) => setLocation(`/applications/${a.id}`)}
             bulkActions={BULK_ACTIONS}
             onBulkAction={handleBulkAction}
+            onSelectionChange={setTableSelectedIds}
             isBulkLoading={bulkLoading}
             data-testid="table-applications"
           />

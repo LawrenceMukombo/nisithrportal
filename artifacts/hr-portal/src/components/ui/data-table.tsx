@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -32,6 +32,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   bulkActions?: BulkAction[];
   onBulkAction?: (ids: (number | string)[], action: string) => void;
+  onSelectionChange?: (ids: (number | string)[]) => void;
   isBulkLoading?: boolean;
   caption?: string;
   "data-testid"?: string;
@@ -71,6 +72,7 @@ export function DataTable<T>({
   onRowClick,
   bulkActions,
   onBulkAction,
+  onSelectionChange,
   isBulkLoading,
   "data-testid": testId,
 }: DataTableProps<T>) {
@@ -111,6 +113,13 @@ export function DataTable<T>({
   const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
   const someSelected = allIds.some((id) => selectedIds.has(id));
   const selectedCount = allIds.filter((id) => selectedIds.has(id)).length;
+
+  useEffect(() => {
+    if (onSelectionChange) {
+      onSelectionChange(allIds.filter((id) => selectedIds.has(id)));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, sorted]);
 
   function toggleAll() {
     if (allSelected) {

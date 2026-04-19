@@ -604,6 +604,18 @@ export default function ApplicationDetailPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-border" data-testid="row-total-duration">
+                        <td className="pt-2 pr-3 font-semibold text-foreground" colSpan={3}>
+                          Total
+                        </td>
+                        <td className="pt-2 text-right">
+                          <span className="font-bold tabular-nums text-foreground">
+                            {breakdown.reduce((sum, item) => sum + item.days, 0)}d
+                          </span>
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </CardContent>

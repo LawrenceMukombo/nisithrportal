@@ -17,6 +17,7 @@ function timeAgo(dateStr: string): string {
 
 const TYPE_ICON: Record<string, string> = {
   application_status: "📋",
+  application_withdrawn: "↩️",
   contract_expiry: "⚠️",
   new_application: "📩",
 };
@@ -115,7 +116,8 @@ export function NotificationBell() {
                     data-testid={`notification-item-${notif.id}`}
                     className={cn(
                       "flex items-start gap-3 px-4 py-3 hover:bg-accent/50 transition-colors",
-                      !notif.read && "bg-primary/5"
+                      !notif.read && "bg-primary/5",
+                      notif.type === "application_withdrawn" && "border-l-2 border-orange-400 bg-orange-50/60 dark:bg-orange-950/20"
                     )}
                   >
                     <span className="text-lg shrink-0 mt-0.5" aria-hidden>

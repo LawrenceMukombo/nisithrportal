@@ -6,6 +6,7 @@ import {
   useGetApplication,
   useGetAiScores,
   useGetCandidate,
+  useGetJob,
   useUpdateApplicationStatus,
   useCreateAiScore,
   useUpdateAiScore,
@@ -14,6 +15,7 @@ import {
   getGetAiScoresQueryKey,
   getGetApplicationsQueryKey,
   getGetCandidateQueryKey,
+  getGetJobQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,17 @@ import { ALL_STATUS_OPTIONS } from "@/lib/workflowStages";
 import { ApplicationTimeline } from "@/components/application-timeline";
 
 const STATUS_OPTIONS = ALL_STATUS_OPTIONS;
+
+const STATUS_BADGE_STYLE: Record<string, string> = {
+  applied:    "bg-blue-100 text-blue-700 border border-blue-300",
+  screening:  "bg-yellow-100 text-yellow-700 border border-yellow-300",
+  interview:  "bg-purple-100 text-purple-700 border border-purple-300",
+  offer:      "bg-green-100 text-green-700 border border-green-300",
+  hired:      "bg-teal-100 text-teal-700 border border-teal-300",
+  onboarding: "bg-emerald-100 text-emerald-700 border border-emerald-300",
+  rejected:   "bg-red-100 text-red-700 border border-red-300",
+  withdrawn:  "bg-gray-100 text-gray-500 border border-gray-300",
+};
 
 function InterviewEvaluationPanel({
   applicationId,
@@ -258,6 +271,10 @@ export default function ApplicationDetailPage() {
     query: { enabled: !!app?.candidateId, queryKey: getGetCandidateQueryKey(app?.candidateId ?? 0) },
   });
 
+  const { data: jobDetail } = useGetJob(app?.jobId ?? 0, {
+    query: { enabled: !!app?.jobId, queryKey: getGetJobQueryKey(app?.jobId ?? 0) },
+  });
+
   const { data: aiScores } = useGetAiScores(undefined, { query: { queryKey: getGetAiScoresQueryKey() } });
   const score = aiScores?.find(
     (s) => app?.candidateId && s.candidateId === app.candidateId && s.jobId === app.jobId
@@ -348,7 +365,10 @@ export default function ApplicationDetailPage() {
             <h1 className="text-2xl font-bold" data-testid="heading-application">Application #{app.id}</h1>
             <div className="flex gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
               <Link href={`/jobs/${app.jobId}`}>
-                <span className="hover:underline cursor-pointer">Job #{app.jobId}</span>
+                <span className="hover:underline cursor-pointer flex items-center gap-1">
+                  <Briefcase className="h-3 w-3" />
+                  {jobDetail?.title ?? `Job #${app.jobId}`}
+                </span>
               </Link>
               {app.candidateId && (
                 <Link href={`/candidates/${app.candidateId}`}>
@@ -378,7 +398,9 @@ export default function ApplicationDetailPage() {
               </Select>
             </div>
           ) : (
-            <Badge variant="outline" className="capitalize">{app.status}</Badge>
+            <Badge className={`capitalize ${STATUS_BADGE_STYLE[app.status ?? ""] ?? "border bg-muted text-muted-foreground"}`}>
+              {app.status}
+            </Badge>
           )}
         </div>
 

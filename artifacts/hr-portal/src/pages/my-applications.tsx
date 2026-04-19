@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGetMyApplications, useGetJobs, getGetMyApplicationsQueryKey } from "@workspace/api-client-react";
 import { getToken } from "@/lib/api-config";
@@ -87,6 +87,15 @@ export default function MyApplicationsPage() {
   }, []);
 
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
+
+  const submittedJobIds = useMemo(
+    () => new Set(allApplications.filter((a) => a.status !== "withdrawn").map((a) => a.jobId)),
+    [allApplications],
+  );
+  const activeDrafts = useMemo(
+    () => drafts.filter((d) => !submittedJobIds.has(d.jobId)),
+    [drafts, submittedJobIds],
+  );
 
   const discardDraft = (jobId: number) => {
     localStorage.removeItem(`${DRAFT_KEY_PREFIX}${jobId}`);
@@ -198,15 +207,15 @@ export default function MyApplicationsPage() {
           ))}
         </div>
 
-        {drafts.length > 0 && (
+        {activeDrafts.length > 0 && (
           <div data-testid="drafts-section">
             <h2 className="text-base font-semibold flex items-center gap-2 mb-3">
               <FileEdit className="h-4 w-4 text-primary" />
               Saved Drafts
-              <span className="text-xs font-normal text-muted-foreground">({drafts.length})</span>
+              <span className="text-xs font-normal text-muted-foreground">({activeDrafts.length})</span>
             </h2>
             <div className="space-y-3">
-              {drafts.map((draft) => {
+              {activeDrafts.map((draft) => {
                 const job = jobMap[draft.jobId];
                 return (
                   <Card key={draft.jobId} className="border-dashed border-amber-300 bg-amber-50/40 dark:bg-amber-950/10" data-testid={`card-draft-${draft.jobId}`}>
@@ -320,6 +329,18 @@ export default function MyApplicationsPage() {
                             Withdraw
                           </Button>
                         )}
+                        {app.status === "withdrawn" && (
+                          <Link href={`/jobs/${app.jobId}?apply=1`}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                              data-testid={`btn-reapply-${app.id}`}
+                            >
+                              <ArrowRight className="h-3 w-3" /> Reapply
+                            </Button>
+                          </Link>
+                        )}
                       </div>
                       <button
                         onClick={() => toggleTimeline(app.id)}
@@ -357,7 +378,7 @@ export default function MyApplicationsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Withdraw this application?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action is irreversible. Once withdrawn, your application will be removed from the recruitment process and cannot be reinstated.
+              Your application will be removed from the recruitment process. You can reapply to the same position later if you change your mind.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

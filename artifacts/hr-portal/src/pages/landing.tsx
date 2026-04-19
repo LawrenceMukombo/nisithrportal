@@ -55,7 +55,13 @@ const PNG_PROVINCES = [
   "Bougainville (AROB)",
 ];
 
-function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; deptAccent: string }) {
+function JobCard({ job, deptName, deptAccent, onLocationClick, onWorkTypeClick }: {
+  job: Job;
+  deptName?: string;
+  deptAccent: string;
+  onLocationClick?: (province: string) => void;
+  onWorkTypeClick?: (workType: string) => void;
+}) {
   const daysLeft = job.closingDate
     ? Math.ceil((new Date(job.closingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null;
@@ -90,7 +96,13 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                   || (job as Job & { location?: string }).location;
                 if (!province) return null;
                 return (
-                  <Badge variant="outline" className="text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200" data-testid={`badge-province-${job.id}`}>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs py-0 gap-1 bg-teal-50 text-teal-700 border-teal-200 ${onLocationClick ? "cursor-pointer hover:bg-teal-100 transition-colors" : ""}`}
+                    data-testid={`badge-province-${job.id}`}
+                    onClick={onLocationClick ? () => onLocationClick(province) : undefined}
+                    title={onLocationClick ? `Filter by ${province}` : undefined}
+                  >
                     <MapPin className="h-3 w-3" />{province}
                   </Badge>
                 );
@@ -113,8 +125,15 @@ function JobCard({ job, deptName, deptAccent }: { job: Job; deptName?: string; d
                   const cls = empType
                     ? (WORK_TYPE_BADGE_CLASSES[empType] ?? "bg-gray-50 text-gray-700 border-gray-200")
                     : "bg-blue-50 text-blue-700 border-blue-200";
+                  const clickable = onWorkTypeClick && empType;
                   return (
-                    <Badge variant="outline" className={`text-xs py-0 gap-1 ${cls}`} data-testid={`badge-work-type-${job.id}`}>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs py-0 gap-1 ${cls} ${clickable ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                      data-testid={`badge-work-type-${job.id}`}
+                      onClick={clickable ? () => onWorkTypeClick!(empType!) : undefined}
+                      title={clickable ? `Filter by ${label}` : undefined}
+                    >
                       <Briefcase className="h-3 w-3" />{label}
                     </Badge>
                   );
@@ -394,6 +413,8 @@ export default function LandingPage() {
                 job={job}
                 deptName={job.departmentId ? deptMap[job.departmentId] : undefined}
                 deptAccent={job.departmentId ? (deptAccentMap[job.departmentId] ?? DEPT_ACCENT_COLORS[0]) : DEPT_ACCENT_COLORS[0]}
+                onLocationClick={setLocationFilter}
+                onWorkTypeClick={setWorkTypeFilter}
               />
             ))}
           </div>

@@ -112,9 +112,9 @@ const schema = z.object({
   referenceNumber: z.string().optional(),
   departmentId: z.coerce.number().optional(),
   country: z.string().optional(),
-  province: z.string().optional(),
+  province: z.string().min(1, "Province is required"),
   officeSite: z.string().optional(),
-  employmentType: z.string().optional(),
+  employmentType: z.string().min(1, "Employment type is required"),
   workArrangement: z.string().optional(),
   location: z.string().optional(),
   gradeBand: z.string().optional(),
@@ -777,7 +777,7 @@ export default function JobFormPage() {
 
                     <FormField control={form.control} name="employmentType" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Employment Type</FormLabel>
+                        <FormLabel>Employment Type <span className="text-destructive">*</span></FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-employment-type">
@@ -814,7 +814,7 @@ export default function JobFormPage() {
 
                     <FormField control={form.control} name="province" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Province</FormLabel>
+                        <FormLabel>Province <span className="text-destructive">*</span></FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-location">

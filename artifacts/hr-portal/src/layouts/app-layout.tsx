@@ -57,10 +57,8 @@ function useNavItems() {
     items.push({ label: "Contracts", href: "/contracts", icon: ScrollText });
   }
 
-  if (canManageAgencies) {
-    items.push({ label: "Agencies", href: "/agencies", icon: Building2 });
-  }
-
+  // Single-tenant mode: the platform is locked to PNG NISIT, so the
+  // agency-management nav entry is hidden.
   if (canManageAgencies || isHrOfficer) {
     items.push({ label: "Departments", href: "/departments", icon: FolderKanban });
   }

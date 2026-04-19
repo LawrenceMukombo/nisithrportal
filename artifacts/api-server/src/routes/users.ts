@@ -5,6 +5,7 @@ import { db, usersTable, rolesTable, agenciesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
+import { NISIT_AGENCY_ID } from "../lib/single-tenant";
 import { isStaffDomain, STAFF_ROLES } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { writeAuditLog } from "../lib/audit";
@@ -32,7 +33,8 @@ const ResetPasswordBody = z.object({
 });
 
 router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
-  const agencyId = getTenantAgencyId(req);
+  // Single-tenant mode: every new user is assigned to NISIT, regardless of caller scope.
+  const agencyId = NISIT_AGENCY_ID;
   const body = CreateUserBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });

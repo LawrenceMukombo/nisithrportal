@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { NISIT_AGENCY_ID } from "../lib/single-tenant";
 
 export const DEFAULT_STALE_THRESHOLDS: Record<string, number> = {
   applied:    3,
@@ -30,28 +31,14 @@ const BulkTransitionsBody = z.array(z.object({
 
 const router: IRouter = Router();
 
-router.get("/agencies", authMiddleware, async (req, res): Promise<void> => {
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null) {
-    const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.id, agencyId));
-    res.json(agency ? [agency] : []);
-    return;
-  }
-  const agencies = await db.select().from(agenciesTable).orderBy(agenciesTable.name);
-  res.json(agencies);
+// Single-tenant mode: only the NISIT agency is exposed regardless of caller scope.
+router.get("/agencies", authMiddleware, async (_req, res): Promise<void> => {
+  const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.id, NISIT_AGENCY_ID));
+  res.json(agency ? [agency] : []);
 });
 
-router.post("/agencies", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
-  const parsed = CreateAgencyBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const [agency] = await db.insert(agenciesTable).values({
-    name: parsed.data.name,
-    type: parsed.data.type ?? "government",
-  }).returning();
-  res.status(201).json(agency);
+router.post("/agencies", authMiddleware, requireRole("admin"), async (_req, res): Promise<void> => {
+  res.status(403).json({ error: "Agency creation is disabled — this deployment is locked to PNG NISIT." });
 });
 
 router.get("/agencies/:id", authMiddleware, async (req, res): Promise<void> => {
@@ -60,36 +47,20 @@ router.get("/agencies/:id", authMiddleware, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid agency id" });
     return;
   }
-  const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.id, params.data.id));
-  if (!agency) {
+  if (params.data.id !== NISIT_AGENCY_ID) {
     res.status(404).json({ error: "Agency not found" });
     return;
   }
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null && agency.id !== agencyId) {
-    res.status(403).json({ error: "Forbidden: resource belongs to a different agency" });
+  const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.id, NISIT_AGENCY_ID));
+  if (!agency) {
+    res.status(404).json({ error: "Agency not found" });
     return;
   }
   res.json(agency);
 });
 
-router.delete("/agencies/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
-  const params = DeleteAgencyParams.safeParse({ id: parseIntParam(req.params.id) });
-  if (!params.success) {
-    res.status(400).json({ error: "Invalid agency id" });
-    return;
-  }
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null && params.data.id !== agencyId) {
-    res.status(403).json({ error: "Forbidden: cannot delete another agency's record" });
-    return;
-  }
-  const [agency] = await db.delete(agenciesTable).where(eq(agenciesTable.id, params.data.id)).returning();
-  if (!agency) {
-    res.status(404).json({ error: "Agency not found" });
-    return;
-  }
-  res.sendStatus(204);
+router.delete("/agencies/:id", authMiddleware, requireRole("admin"), async (_req, res): Promise<void> => {
+  res.status(403).json({ error: "Agency deletion is disabled — this deployment is locked to PNG NISIT." });
 });
 
 router.put("/agencies/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
@@ -98,9 +69,8 @@ router.put("/agencies/:id", authMiddleware, requireRole("admin"), async (req, re
     res.status(400).json({ error: "Invalid agency id" });
     return;
   }
-  const agencyId = getTenantAgencyId(req);
-  if (agencyId != null && params.data.id !== agencyId) {
-    res.status(403).json({ error: "Forbidden: cannot update another agency's record" });
+  if (params.data.id !== NISIT_AGENCY_ID) {
+    res.status(403).json({ error: "Forbidden: only the PNG NISIT agency record may be updated." });
     return;
   }
   const body = UpdateAgencyBody.safeParse(req.body);

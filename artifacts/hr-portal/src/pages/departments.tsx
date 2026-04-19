@@ -53,22 +53,6 @@ function CreateDeptDialog() {
         <DialogHeader><DialogTitle>Create Department</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((v) => createMutation.mutate({ data: v }))} className="space-y-4">
-            <FormField control={form.control} name="agencyId" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Agency (optional)</FormLabel>
-                <Select onValueChange={(v) => field.onChange(parseInt(v))} value={field.value?.toString()}>
-                  <FormControl>
-                    <SelectTrigger data-testid="select-agency">
-                      <SelectValue placeholder="Select agency" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {agencies.data?.map((a) => <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
             <FormField control={form.control} name="name" render={({ field }) => (
               <FormItem>
                 <FormLabel>Department Name</FormLabel>

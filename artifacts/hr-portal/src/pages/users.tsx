@@ -358,17 +358,6 @@ function UserDetailSheet({
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Agency</label>
-                  <SearchableSelect
-                    value={agencyId}
-                    onValueChange={setAgencyId}
-                    options={agencyOptions}
-                    placeholder="— No agency —"
-                    searchPlaceholder="Search agencies…"
-                    triggerClassName="w-full"
-                  />
-                </div>
-                <div className="space-y-1">
                   <label className="text-sm font-medium">Role</label>
                   <Select value={roleId} onValueChange={setRoleId} disabled={isSelf}>
                     <SelectTrigger>

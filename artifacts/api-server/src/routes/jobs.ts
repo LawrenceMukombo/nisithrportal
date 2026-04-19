@@ -14,6 +14,7 @@ import {
 } from "@workspace/api-zod";
 import { authMiddleware, optionalAuth, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
+import { NISIT_AGENCY_ID } from "../lib/single-tenant";
 
 const router: IRouter = Router();
 
@@ -34,9 +35,8 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   const isAuthenticated = req.user != null;
   const isStaff = isInternalStaff(req.user);
 
-  if (req.user?.agencyId != null) {
-    conditions.push(eq(jobsTable.agencyId, req.user.agencyId));
-  }
+  // Single-tenant mode: every job listing is hard-scoped to the NISIT agency.
+  conditions.push(eq(jobsTable.agencyId, NISIT_AGENCY_ID));
 
   if (!isAuthenticated || !isStaff) {
     conditions.push(inArray(jobsTable.status, ["open", "published"]));
@@ -46,9 +46,6 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   }
 
   if (query.data.department_id != null) conditions.push(eq(jobsTable.departmentId, query.data.department_id));
-  if (query.data.agency_id != null && req.user?.agencyId == null) {
-    conditions.push(eq(jobsTable.agencyId, query.data.agency_id));
-  }
 
   const jobs = conditions.length > 0
     ? await db.select().from(jobsTable).where(and(...conditions)).orderBy(jobsTable.createdAt)
@@ -108,11 +105,8 @@ router.post("/jobs", authMiddleware, requireRole("admin", "hr_officer"), async (
     res.status(400).json({ error: "Province is required" });
     return;
   }
-  const agencyId = getTenantAgencyId(req) ?? parsed.data.agencyId ?? null;
-  if (agencyId == null) {
-    res.status(403).json({ error: "Forbidden: no agency context — cannot create job" });
-    return;
-  }
+  // Single-tenant mode: every new job belongs to NISIT, regardless of caller payload/scope.
+  const agencyId = NISIT_AGENCY_ID;
   if (parsed.data.departmentId != null) {
     const dept = await db.select({ agencyId: departmentsTable.agencyId }).from(departmentsTable).where(eq(departmentsTable.id, parsed.data.departmentId)).then((r) => r[0]);
     if (!assertTenantAccess(res, dept?.agencyId ?? null, agencyId)) return;

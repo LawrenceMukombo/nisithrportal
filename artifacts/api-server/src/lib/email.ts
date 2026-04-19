@@ -85,6 +85,56 @@ export async function sendOfferLetterEmail(to: string, candidateName: string, po
   }
 }
 
+export async function sendSavedJobClosingEmail(to: string, candidateName: string, jobTitle: string, jobId: number, daysLeft: number, closingDate: string): Promise<void> {
+  const closingPhrase = daysLeft <= 0
+    ? "closes today"
+    : daysLeft === 1
+      ? "closes tomorrow"
+      : `closes in ${daysLeft} days`;
+  const subject = `PNG NISIT HR Portal — Saved job ${closingPhrase}: ${jobTitle}`;
+  const text = `Dear ${candidateName},\n\nA job you saved, "${jobTitle}", ${closingPhrase} (${closingDate}). If you intend to apply, please submit your application before the closing date.\n\nView the vacancy: ${process.env.APP_BASE_URL ?? ""}/jobs/${jobId}\n\nRegards,\nPNG NISIT HR Division`;
+  const html = `
+    <div style="font-family:sans-serif;max-width:540px;margin:auto">
+      <div style="background:#003082;padding:18px 24px">
+        <h2 style="color:#fff;margin:0;font-size:18px">PNG NISIT HR Portal</h2>
+        <p style="color:#f0c040;margin:4px 0 0;font-size:13px">Saved job closing soon</p>
+      </div>
+      <div style="padding:24px">
+        <p>Dear <strong>${candidateName}</strong>,</p>
+        <p>A vacancy you saved, <strong>${jobTitle}</strong>, <strong>${closingPhrase}</strong> (${closingDate}).</p>
+        <p>If you still intend to apply, please submit your application before the closing date.</p>
+        <p style="margin:24px 0">
+          <a href="${process.env.APP_BASE_URL ?? ""}/jobs/${jobId}" style="background:#003082;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">
+            View vacancy
+          </a>
+        </p>
+        <p style="color:#666;font-size:13px">You're receiving this because you saved this job in your applicant account.</p>
+      </div>
+    </div>
+  `;
+
+  const transport = createTransport();
+  if (transport) {
+    try {
+      await transport.sendMail({
+        from: process.env.SMTP_FROM ?? `"PNG NISIT HR Portal" <no-reply@nisit.gov.pg>`,
+        to,
+        subject,
+        text,
+        html,
+      });
+      logger.info({ to, jobId, daysLeft }, "sendSavedJobClosingEmail: closing-soon email sent");
+    } catch (err) {
+      logger.error({ err, to, jobId }, "sendSavedJobClosingEmail: failed to send closing-soon email");
+    }
+  } else {
+    logger.warn({ to, jobId, daysLeft }, "sendSavedJobClosingEmail: SMTP not configured — closing-soon email not sent");
+    if (!IS_PRODUCTION) {
+      logger.info(`[dev] Would send closing-soon email for job #${jobId} to ${to} (${closingPhrase})`);
+    }
+  }
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const subject = "PNG NISIT HR Portal — Reset Your Password";
   const text = `You requested a password reset for your applicant account.\n\nClick the link below to set a new password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, you can safely ignore this email.`;

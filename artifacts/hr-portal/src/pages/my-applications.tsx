@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase, Bookmark, BookmarkX, AlarmClock } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 
@@ -436,6 +436,22 @@ export default function MyApplicationsPage() {
                           {row.job.closingDate && (
                             <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Closes {new Date(row.job.closingDate).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })}</span>
                           )}
+                          {(() => {
+                            if (!row.job.closingDate) return null;
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const close = new Date(row.job.closingDate);
+                            close.setHours(0, 0, 0, 0);
+                            const days = Math.ceil((close.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+                            if (days < 0 || days > 7) return null;
+                            const label = days <= 0 ? "Closes today" : days === 1 ? "Closes tomorrow" : `Closes in ${days} days`;
+                            return (
+                              <Badge variant="destructive" className="flex items-center gap-1 h-5 px-1.5 text-[10px] font-medium" data-testid={`badge-closing-soon-${row.job.id}`}>
+                                <AlarmClock className="h-3 w-3" />
+                                {label}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

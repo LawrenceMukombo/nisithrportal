@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { seedInitialData, backfillMissingJobFields } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
+import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
 import { verifySMTPConnection } from "./lib/email";
 
 const rawPort = process.env["PORT"];
@@ -21,6 +22,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 const CONTRACT_EXPIRY_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 const RESET_TOKEN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // every 24 hours
+const SAVED_JOB_CLOSING_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
 app.listen(port, (err) => {
   if (err) {
@@ -70,4 +72,14 @@ app.listen(port, (err) => {
       logger.error(e, "Scheduled reset-token cleanup failed"),
     );
   }, RESET_TOKEN_CLEANUP_INTERVAL_MS);
+
+  // Notify applicants when their saved jobs are closing within 7 days.
+  triggerSavedJobClosingNotifications().catch((e) =>
+    logger.error(e, "Initial saved-job closing-soon check failed"),
+  );
+  setInterval(() => {
+    triggerSavedJobClosingNotifications().catch((e) =>
+      logger.error(e, "Scheduled saved-job closing-soon check failed"),
+    );
+  }, SAVED_JOB_CLOSING_INTERVAL_MS);
 });

@@ -1,6 +1,6 @@
 import express, { Router, type IRouter } from "express";
 import multer from "multer";
-import { eq, and, inArray, asc, gt, desc, or, ilike, sql } from "drizzle-orm";
+import { eq, and, inArray, asc, gt, desc, or, ilike, sql, ne } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -492,6 +492,24 @@ router.post("/applications", async (req, res): Promise<void> => {
         .where(eq(candidatesTable.id, candidate.id))
         .returning();
     }
+  }
+
+  // Duplicate-application guard: block resubmission unless the previous application was withdrawn.
+  // A withdrawn application is treated as closed by the applicant, so reapplication is permitted.
+  const [activeExisting] = await db
+    .select({ id: applicationsTable.id })
+    .from(applicationsTable)
+    .where(
+      and(
+        eq(applicationsTable.candidateId, candidate.id),
+        eq(applicationsTable.jobId, jobId),
+        ne(applicationsTable.status, "withdrawn"),
+      )
+    )
+    .limit(1);
+  if (activeExisting) {
+    res.status(422).json({ error: "You have already applied to this position." });
+    return;
   }
 
   const [application] = await db.insert(applicationsTable).values({

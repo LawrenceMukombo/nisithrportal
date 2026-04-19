@@ -2,7 +2,7 @@ import { useRoute, useLocation, useSearch, Link } from "wouter";
 import {
   ArrowLeft, Calendar, Building2, Send, Users2, ChevronRight, ChevronDown, Sparkles, Loader2,
   MapPin, Briefcase, GraduationCap, Clock, DollarSign, FileCheck, Star,
-  Monitor, CheckCircle2, Medal, Trophy,
+  Monitor, CheckCircle2, Medal, Trophy, Bookmark, BookmarkCheck, Share2, Check,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs";
 import { WORKFLOW_STAGES, STAGE_COLOR_MAP, TERMINAL_STATUSES } from "@/lib/workflowStages";
 import {
   useGetJob, useGetApplications, useAiRankCandidates, getGetJobQueryKey,
@@ -606,6 +607,12 @@ export default function JobDetailPage() {
   const { isAuthenticated } = useAuth();
   const { isAdmin, isHR, isHiringManager, canManageJobs, isApplicant } = useRole();
   const [wizardOpen, setWizardOpen] = useState(() => new URLSearchParams(searchString).get("apply") === "1");
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
+  const saveJob = useSaveJob();
+  const unsaveJob = useUnsaveJob();
+  const canBookmark = !isAuthenticated || isApplicant;
+  const { data: savedJobIds } = useSavedJobIds(isAuthenticated && isApplicant);
 
   const jobId = match ? parseInt(params!.id) : 0;
   const { data: rawJob, isLoading } = useGetJob(jobId, {
@@ -628,6 +635,37 @@ export default function JobDetailPage() {
   );
 
   const showSalary = job?.salaryVisibility === "public" && (job.salaryMin || job.salaryMax);
+
+  const isSaved = savedJobIds?.includes(jobId) ?? false;
+
+  const handleSaveToggle = () => {
+    if (!isAuthenticated) {
+      setLocation(`/login?returnTo=/jobs/${jobId}`);
+      return;
+    }
+    if (isSaved) {
+      unsaveJob.mutate(jobId, {
+        onSuccess: () => toast({ title: "Job removed from saved" }),
+        onError: () => toast({ title: "Failed to unsave job", variant: "destructive" }),
+      });
+    } else {
+      saveJob.mutate(jobId, {
+        onSuccess: () => toast({ title: "Job saved!" }),
+        onError: () => toast({ title: "Failed to save job", variant: "destructive" }),
+      });
+    }
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}/jobs/${jobId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      toast({ title: "Link copied!" });
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      toast({ title: "Could not copy link", variant: "destructive" });
+    });
+  };
 
   if (isLoading) {
     return (
@@ -726,7 +764,30 @@ export default function JobDetailPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 text-muted-foreground hover:text-primary"
+                onClick={handleShare}
+                title="Copy link"
+                data-testid="button-share-job"
+              >
+                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Share2 className="h-4 w-4" />}
+              </Button>
+              {canBookmark && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`h-9 w-9 ${isSaved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                  onClick={handleSaveToggle}
+                  title={isSaved ? "Remove from saved" : "Save job"}
+                  data-testid="button-save-job"
+                  disabled={saveJob.isPending || unsaveJob.isPending}
+                >
+                  {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+                </Button>
+              )}
               {isPublished && existingApplication ? (
                 <Link href="/my-applications">
                   <Button

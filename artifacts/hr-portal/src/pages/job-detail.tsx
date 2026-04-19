@@ -59,23 +59,62 @@ function useScreeningQuestions(jobId: number, enabled: boolean) {
   return questions;
 }
 
-type RankedCandidate = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
+type RankedCandidate = {
+  applicationId: number;
+  candidateId: number;
+  candidateName: string;
+  score: number;
+  recommendation: string;
+  currentStatus: string;
+};
 
-function QuickMoveButton({ applicationId, candidateName }: { applicationId: number; candidateName: string }) {
+function QuickMoveButton({
+  applicationId,
+  candidateName,
+  currentStatus,
+  jobId,
+}: {
+  applicationId: number;
+  candidateName: string;
+  currentStatus: string;
+  jobId: number;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const update = useUpdateApplicationStatus();
+
+  const alreadyMoved = currentStatus !== "applied";
+  const stageLabel = alreadyMoved
+    ? (WORKFLOW_STAGES.find((s) => s.status === currentStatus)?.label ?? currentStatus)
+    : null;
+
   const handleMove = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     try {
       await update.mutateAsync({ id: applicationId, data: { status: "screening" } });
-      await qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey() }),
+        qc.invalidateQueries({ queryKey: getGetApplicationsQueryKey({ job_id: jobId }) }),
+      ]);
       toast({ title: `${candidateName} moved to CV Screening` });
     } catch {
       toast({ title: "Failed to move candidate", variant: "destructive" });
     }
   };
+
+  if (alreadyMoved) {
+    return (
+      <span
+        className="h-6 text-xs px-2 text-muted-foreground shrink-0 flex items-center gap-0.5 whitespace-nowrap"
+        title={`Already in ${stageLabel}`}
+        data-testid={`btn-move-review-${applicationId}`}
+      >
+        ✓ {stageLabel}
+      </span>
+    );
+  }
+
   return (
     <Button
       size="sm"
@@ -86,7 +125,11 @@ function QuickMoveButton({ applicationId, candidateName }: { applicationId: numb
       data-testid={`btn-move-review-${applicationId}`}
       title="Move to CV Screening"
     >
-      → Review
+      {update.isPending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        "→ Review"
+      )}
     </Button>
   );
 }
@@ -106,29 +149,44 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
   useEffect(() => {
     const jobScores = savedScores.filter((s) => s.jobId === jobId);
     if (jobScores.length === 0) return;
-    setRankings((prev) => {
-      if (prev.length > 0) return prev;
-      const mapped: RankedCandidate[] = jobScores
-        .map((s) => {
-          const app = applications.find((a) => a.candidateId === s.candidateId);
-          if (!app) return null;
-          return {
-            applicationId: app.id,
-            candidateId: s.candidateId,
-            candidateName: candidateNameMap.get(s.candidateId) ?? `Candidate #${s.candidateId}`,
-            score: parseFloat(s.score ?? "0"),
-            recommendation: s.recommendation ?? "",
-          };
-        })
-        .filter(Boolean) as RankedCandidate[];
-      return mapped.length > 0 ? mapped.sort((a, b) => b.score - a.score) : prev;
-    });
+    const mapped: RankedCandidate[] = jobScores
+      .map((s) => {
+        const app = applications.find((a) => a.candidateId === s.candidateId);
+        if (!app) return null;
+        return {
+          applicationId: app.id,
+          candidateId: s.candidateId,
+          candidateName: candidateNameMap.get(s.candidateId) ?? `Candidate #${s.candidateId}`,
+          score: parseFloat(s.score ?? "0"),
+          recommendation: s.recommendation ?? "",
+          currentStatus: app.status,
+        };
+      })
+      .filter(Boolean) as RankedCandidate[];
+    if (mapped.length > 0) {
+      setRankings((prev) => {
+        const prevOrder = new Map(prev.map((r, i) => [r.candidateId, i]));
+        const sorted = [...mapped].sort((a, b) => {
+          const ai = prevOrder.get(a.candidateId);
+          const bi = prevOrder.get(b.candidateId);
+          if (ai != null && bi != null) return ai - bi;
+          return b.score - a.score;
+        });
+        return sorted;
+      });
+    }
   }, [savedScores, applications, jobId]);
 
   const handleRank = async () => {
     try {
       const result = await rankMutation.mutateAsync({ data: { jobId } });
-      const sorted = [...(result as RankedCandidate[])].sort((a, b) => b.score - a.score);
+      type RawRanked = { applicationId: number; candidateId: number; candidateName: string; score: number; recommendation: string };
+      const sorted = [...(result as RawRanked[])]
+        .sort((a, b) => b.score - a.score)
+        .map((r) => {
+          const app = applications.find((a) => a.id === r.applicationId);
+          return { ...r, currentStatus: app?.status ?? "applied" };
+        });
       setRankings(sorted);
       toast({ title: "Candidates ranked by AI" });
     } catch {
@@ -247,11 +305,18 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
             </div>
             <div className="space-y-1" data-testid="table-rankings">
               {/* Header row */}
-              <div className="grid grid-cols-[2rem_1fr_9rem_4.5rem] gap-2 px-2.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">
-                <span>#</span>
-                <span>Candidate</span>
-                <span>Match Score</span>
-                <span className="text-right">View</span>
+              <div className="flex items-center gap-1.5">
+                <div className="flex-1 grid grid-cols-[2rem_1fr_9rem_4rem] gap-2 px-2.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">
+                  <span>#</span>
+                  <span>Candidate</span>
+                  <span>Match Score</span>
+                  <span className="text-right">View</span>
+                </div>
+                {canManageJobs && (
+                  <div className="pr-2 pb-1 shrink-0 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border w-[6rem] text-center">
+                    Action
+                  </div>
+                )}
               </div>
               {rankings.map((r, i) => {
                 const pct = Math.min(100, Math.max(0, r.score));
@@ -300,8 +365,13 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
                       </div>
                     </Link>
                     {canManageJobs && r.applicationId && (
-                      <div className="pr-2 shrink-0">
-                        <QuickMoveButton applicationId={r.applicationId} candidateName={r.candidateName} />
+                      <div className="pr-2 shrink-0 w-[6rem] flex justify-center">
+                        <QuickMoveButton
+                          applicationId={r.applicationId}
+                          candidateName={r.candidateName}
+                          currentStatus={r.currentStatus}
+                          jobId={jobId}
+                        />
                       </div>
                     )}
                   </div>

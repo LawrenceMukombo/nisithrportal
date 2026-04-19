@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { z } from "zod";
 import { eq, and, gt, or, lt } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable, candidatesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
-import { authMiddleware, generateToken } from "../middlewares/auth";
+import { authMiddleware, generateToken, requireRole } from "../middlewares/auth";
 import { isStaffDomain } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { sendPasswordResetEmail } from "../lib/email";
@@ -155,6 +156,57 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
     status: user.status,
     createdAt: user.createdAt.toISOString(),
   });
+});
+
+router.patch("/auth/me/email", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+  const schema = z.object({
+    newEmail: z.string().email("Enter a valid email address"),
+    currentPassword: z.string().min(1, "Current password is required"),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    return;
+  }
+  const { newEmail, currentPassword } = parsed.data;
+
+  if (isStaffDomain(newEmail)) {
+    res.status(400).json({ error: "Government email addresses cannot be used for applicant accounts. Please use a personal email address." });
+    return;
+  }
+
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId));
+  if (users.length === 0) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+  const user = users[0];
+
+  const passwordMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!passwordMatch) {
+    res.status(401).json({ error: "Current password is incorrect." });
+    return;
+  }
+
+  const normalised = newEmail.toLowerCase().trim();
+  if (normalised === user.email.toLowerCase()) {
+    res.status(400).json({ error: "The new email address is the same as your current one." });
+    return;
+  }
+
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalised));
+  if (existing.length > 0) {
+    res.status(409).json({ error: "That email address is already in use." });
+    return;
+  }
+
+  await db.update(usersTable).set({ email: normalised }).where(eq(usersTable.id, user.id));
+
+  // Keep linked candidate records in sync
+  await db.update(candidatesTable).set({ email: normalised }).where(eq(candidatesTable.userId, user.id));
+
+  logger.info({ userId: user.id, newEmail: normalised }, "auth/me/email: applicant email updated");
+  res.json({ message: "Email address updated successfully.", email: normalised });
 });
 
 router.post("/auth/reset-request", async (req, res): Promise<void> => {

@@ -25,6 +25,7 @@ import DepartmentsPage from "@/pages/departments";
 import UsersPage from "@/pages/users";
 import ContractFormPage from "@/pages/contract-form";
 import MyApplicationsPage from "@/pages/my-applications";
+import AccountPage from "@/pages/account";
 import TrackApplicationPage from "@/pages/track-application";
 import ShortlistedPage from "@/pages/shortlisted";
 import RecruitmentWorkflowPage from "@/pages/recruitment-workflow";
@@ -146,6 +147,9 @@ function Router() {
       </Route>
       <Route path="/my-applications">
         {() => <ProtectedRoute component={MyApplicationsPage} roles={["applicant"]} />}
+      </Route>
+      <Route path="/account">
+        {() => <ProtectedRoute component={AccountPage} roles={["applicant"]} />}
       </Route>
       <Route path="/track-application" component={TrackApplicationPage} />
       <Route path="/workflow">

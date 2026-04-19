@@ -15,6 +15,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (token: string) => void;
   logout: () => void;
+  updateEmail: (newEmail: string) => void;
   role: string | null;
   agencyId: number | null;
 }
@@ -54,6 +55,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const updateEmail = useCallback((newEmail: string) => {
+    setUser((prev) => prev ? { ...prev, email: newEmail } : prev);
+  }, []);
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -62,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       login,
       logout,
+      updateEmail,
       role: user?.role ?? null,
       agencyId: user?.agencyId ?? null,
     }}>

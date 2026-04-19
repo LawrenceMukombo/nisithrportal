@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
-  ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle,
+  ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ function useNavItems() {
 
   if (isApplicant) {
     items.push({ label: "My Applications", href: "/my-applications", icon: FileText });
+    items.push({ label: "My Account", href: "/account", icon: UserCog });
   }
 
   if (canManageJobs) {

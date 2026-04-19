@@ -136,22 +136,60 @@ function QuickMoveButton({
   );
 }
 
+function formatTimeAgo(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const ts = new Date(dateStr).getTime();
+  if (!Number.isFinite(ts)) return null;
+  const diff = Date.now() - ts;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canManageJobs: boolean }) {
   const { data: applications = [], isLoading } = useGetApplications({ job_id: jobId });
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [rankings, setRankings] = useState<RankedCandidate[]>([]);
+  const [lastRankedAt, setLastRankedAt] = useState<string | null>(null);
   const rankMutation = useAiRankCandidates();
 
-  const { data: savedScores = [] } = useGetAiScores(undefined, {
-    query: { queryKey: getGetAiScoresQueryKey() },
+  const aiScoresParams = { job_id: jobId };
+  const { data: savedScores = [] } = useGetAiScores(aiScoresParams, {
+    query: { queryKey: getGetAiScoresQueryKey(aiScoresParams) },
   });
   const { data: candidates = [] } = useGetCandidates({ query: { queryKey: getGetCandidatesQueryKey() } });
   const candidateNameMap = new Map(candidates.map((c) => [c.id, c.name ?? `Candidate #${c.id}`]));
 
   useEffect(() => {
-    const jobScores = savedScores.filter((s) => s.jobId === jobId);
-    if (jobScores.length === 0) return;
-    const mapped: RankedCandidate[] = jobScores
+    if (savedScores.length === 0) {
+      setRankings([]);
+      setLastRankedAt(null);
+      return;
+    }
+
+    // Deduplicate: keep only the most recent row per candidateId (backend may
+    // accumulate rows from multiple ranking runs for the same candidate+job).
+    const latestPerCandidate = new Map<number, typeof savedScores[number]>();
+    for (const s of savedScores) {
+      const existing = latestPerCandidate.get(s.candidateId);
+      if (!existing || (s.createdAt && (!existing.createdAt || s.createdAt > existing.createdAt))) {
+        latestPerCandidate.set(s.candidateId, s);
+      }
+    }
+    const deduped = Array.from(latestPerCandidate.values());
+
+    const latestCreatedAt = deduped.reduce<string | null>((latest, s) => {
+      if (!s.createdAt) return latest;
+      return latest == null || s.createdAt > latest ? s.createdAt : latest;
+    }, null);
+    setLastRankedAt(latestCreatedAt);
+
+    const mapped: RankedCandidate[] = deduped
       .map((s) => {
         const app = applications.find((a) => a.candidateId === s.candidateId);
         if (!app) return null;
@@ -165,19 +203,21 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
         };
       })
       .filter(Boolean) as RankedCandidate[];
-    if (mapped.length > 0) {
-      setRankings((prev) => {
-        const prevOrder = new Map(prev.map((r, i) => [r.candidateId, i]));
-        const sorted = [...mapped].sort((a, b) => {
-          const ai = prevOrder.get(a.candidateId);
-          const bi = prevOrder.get(b.candidateId);
-          if (ai != null && bi != null) return ai - bi;
-          return b.score - a.score;
-        });
-        return sorted;
-      });
+    if (mapped.length === 0) {
+      setRankings([]);
+      return;
     }
-  }, [savedScores, applications, jobId]);
+    setRankings((prev) => {
+      const prevOrder = new Map(prev.map((r, i) => [r.candidateId, i]));
+      const sorted = [...mapped].sort((a, b) => {
+        const ai = prevOrder.get(a.candidateId);
+        const bi = prevOrder.get(b.candidateId);
+        if (ai != null && bi != null) return ai - bi;
+        return b.score - a.score;
+      });
+      return sorted;
+    });
+  }, [savedScores, applications, candidates, jobId]);
 
   const handleRank = async () => {
     try {
@@ -190,6 +230,8 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
           return { ...r, currentStatus: app?.status ?? "applied" };
         });
       setRankings(sorted);
+      setLastRankedAt(new Date().toISOString());
+      await qc.invalidateQueries({ queryKey: getGetAiScoresQueryKey(aiScoresParams) });
       toast({ title: "Candidates ranked by AI" });
     } catch {
       toast({ title: "Failed to rank candidates", variant: "destructive" });
@@ -300,9 +342,16 @@ function ApplicationPipelineCard({ jobId, canManageJobs }: { jobId: number; canM
           <Separator />
           <div className="p-4 space-y-4" data-testid="section-ai-rankings">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Trophy className="h-3.5 w-3.5 text-amber-500" /> AI Ranked Shortlist
-              </p>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <Trophy className="h-3.5 w-3.5 text-amber-500" /> AI Ranked Shortlist
+                </p>
+                {lastRankedAt && (
+                  <p className="text-xs text-muted-foreground mt-0.5" data-testid="last-ranked-timestamp">
+                    Last ranked {formatTimeAgo(lastRankedAt)}
+                  </p>
+                )}
+              </div>
               <span className="text-xs text-muted-foreground">{rankings.length} candidate{rankings.length !== 1 ? "s" : ""} ranked</span>
             </div>
             <div className="space-y-1" data-testid="table-rankings">

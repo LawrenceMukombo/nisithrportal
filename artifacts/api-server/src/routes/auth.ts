@@ -258,15 +258,11 @@ router.post("/auth/reset-request", resetRateLimit, async (req, res): Promise<voi
         expiresAt,
       });
 
-      const inferredHost =
-        (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() ??
-        req.headers["host"];
       const baseUrl =
         process.env.APP_BASE_URL ??
-        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ??
-        (inferredHost ? `https://${inferredHost}` : null);
+        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
       if (!baseUrl) {
-        logger.error("[ResetRequest] Cannot determine frontend base URL — set APP_BASE_URL in environment secrets.");
+        logger.error("[ResetRequest] APP_BASE_URL is not configured — cannot construct a trusted reset link. Set APP_BASE_URL in environment secrets to the frontend origin (e.g. https://your-app.replit.app).");
         res.json({ message: "If that email belongs to an applicant account, a reset link has been sent." });
         return;
       }

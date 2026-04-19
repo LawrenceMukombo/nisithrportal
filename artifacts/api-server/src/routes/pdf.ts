@@ -119,6 +119,24 @@ function fieldRow(doc: PDFKit.PDFDocument, label: string, value: string) {
   doc.moveDown(0.3);
 }
 
+function drawFooter(doc: PDFKit.PDFDocument, agencyName: string, refNo: string, label: string) {
+  const footerY = doc.page.height - 40;
+  const generatedOn = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
+  const prevX = doc.x;
+  const prevY = doc.y;
+  doc.save();
+  doc.fontSize(7).fillColor("#888888").font("Helvetica")
+    .text(`${agencyName} · ${label} · ${refNo} · Generated on: ${generatedOn}`, 0, footerY, { align: "center", width: doc.page.width, lineBreak: false });
+  doc.restore();
+  doc.x = prevX;
+  doc.y = prevY;
+}
+
+function attachFooterToAllPages(doc: PDFKit.PDFDocument, agencyName: string, refNo: string, label: string) {
+  drawFooter(doc, agencyName, refNo, label);
+  doc.on("pageAdded", () => drawFooter(doc, agencyName, refNo, label));
+}
+
 function signatureBlock(doc: PDFKit.PDFDocument) {
   doc.moveDown(2);
   const x = doc.page.margins.left;
@@ -196,6 +214,7 @@ router.get(
     res.setHeader("Content-Disposition", `attachment; filename="offer-letter-${applicationId}.pdf"`);
     doc.pipe(res);
 
+    attachFooterToAllPages(doc, agencyName, refNo, "Official Document");
     drawLetterhead(doc, agencyName);
     doc.moveDown(1.2);
 
@@ -265,12 +284,6 @@ router.get(
     // Signature
     signatureBlock(doc);
 
-    // Footer
-    const footerY = doc.page.height - 40;
-    const generatedFooter = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
-    doc.fontSize(7).fillColor("#888888").font("Helvetica")
-      .text(`${agencyName} · Official Document · ${refNo} · Generated on: ${generatedFooter}`, 0, footerY, { align: "center", width: doc.page.width });
-
     doc.end();
   }
 );
@@ -320,6 +333,7 @@ router.post(
       doc.on("end", resolve);
       doc.on("error", reject);
 
+      attachFooterToAllPages(doc, agencyName, refNo, "Official Document");
       drawLetterhead(doc, agencyName);
       doc.moveDown(1.2);
       const mx = doc.page.margins.left;
@@ -354,9 +368,6 @@ router.post(
       bodyText(doc, `We look forward to welcoming you to the ${agencyName} team. Should you have any queries, please do not hesitate to contact the Human Resources Division.`);
       divider(doc);
       signatureBlock(doc);
-      const footerY = doc.page.height - 40;
-      const generatedFooterEmail = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
-      doc.fontSize(7).fillColor("#888888").font("Helvetica").text(`${agencyName} · Official Document · ${refNo} · Generated on: ${generatedFooterEmail}`, 0, footerY, { align: "center", width: doc.page.width });
 
       doc.end();
     });
@@ -451,6 +462,7 @@ router.get(
     res.setHeader("Content-Disposition", `attachment; filename="contract-${contractId}.pdf"`);
     doc.pipe(res);
 
+    attachFooterToAllPages(doc, agencyName, refNo, "Official Contract");
     drawLetterhead(doc, agencyName);
     doc.moveDown(1.2);
 
@@ -555,12 +567,6 @@ router.get(
     doc.moveDown(0.3);
     doc.text("Date", mx, doc.y);
     doc.text("Date", col2, doc.y - doc.currentLineHeight());
-
-    // Footer
-    const footerY = doc.page.height - 40;
-    const generatedFooterContract = new Date().toLocaleDateString("en-PG", { day: "numeric", month: "long", year: "numeric" });
-    doc.fontSize(7).fillColor("#888888").font("Helvetica")
-      .text(`${agencyName} · Official Contract · ${refNo} · Generated on: ${generatedFooterContract}`, 0, footerY, { align: "center", width: doc.page.width });
 
     doc.end();
   }

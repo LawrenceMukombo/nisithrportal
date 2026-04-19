@@ -24,6 +24,7 @@ import AgenciesPage from "@/pages/agencies";
 import DepartmentsPage from "@/pages/departments";
 import UsersPage from "@/pages/users";
 import ContractFormPage from "@/pages/contract-form";
+import EmployeeFormPage from "@/pages/employee-form";
 import MyApplicationsPage from "@/pages/my-applications";
 import AccountPage from "@/pages/account";
 import TrackApplicationPage from "@/pages/track-application";
@@ -123,6 +124,9 @@ function Router() {
       </Route>
       <Route path="/employees">
         {() => <ProtectedRoute component={EmployeesPage} roles={["admin", "hr_officer", "executive"]} />}
+      </Route>
+      <Route path="/employees/new">
+        {() => <ProtectedRoute component={EmployeeFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/employees/:id">
         {() => <ProtectedRoute component={EmployeeDetailPage} roles={["admin", "hr_officer"]} />}

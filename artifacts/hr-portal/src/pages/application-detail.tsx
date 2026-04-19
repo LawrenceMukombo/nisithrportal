@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus } from "lucide-react";
 import { getToken } from "@/lib/api-config";
 import {
   useGetApplication,
@@ -344,19 +344,39 @@ export default function ApplicationDetailPage() {
             </Button>
           )}
           {app.status === "hired" && canUpdateStatus && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={downloadOfferLetter}
-              disabled={offerLetterLoading}
-              data-testid="button-generate-offer-letter"
-              className="border-green-600 text-green-700 hover:bg-green-50 dark:text-green-400 dark:border-green-500 dark:hover:bg-green-950"
-            >
-              {offerLetterLoading
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating...</>
-                : <><FileDown className="h-3.5 w-3.5 mr-1.5" />Generate Offer Letter</>
-              }
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadOfferLetter}
+                disabled={offerLetterLoading}
+                data-testid="button-generate-offer-letter"
+                className="border-green-600 text-green-700 hover:bg-green-50 dark:text-green-400 dark:border-green-500 dark:hover:bg-green-950"
+              >
+                {offerLetterLoading
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating...</>
+                  : <><FileDown className="h-3.5 w-3.5 mr-1.5" />Generate Offer Letter</>
+                }
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-create-employee"
+                className="border-teal-600 text-teal-700 hover:bg-teal-50 dark:text-teal-400 dark:border-teal-500 dark:hover:bg-teal-950"
+                onClick={() => {
+                  const qs = new URLSearchParams();
+                  if (candidate?.name)  qs.set("name",  candidate.name);
+                  if (candidate?.email) qs.set("email", candidate.email);
+                  if (candidate?.phone) qs.set("phone", candidate.phone ?? "");
+                  if (jobDetail?.departmentId) qs.set("departmentId", String(jobDetail.departmentId));
+                  qs.set("fromApp", String(app.id));
+                  setLocation(`/employees/new?${qs.toString()}`);
+                }}
+              >
+                <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                Create Employee Record
+              </Button>
+            </>
           )}
         </div>
 

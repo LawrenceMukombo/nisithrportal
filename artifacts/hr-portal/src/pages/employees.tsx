@@ -1,15 +1,17 @@
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
-import { Search, Building2, Users } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Search, Building2, Users, UserPlus } from "lucide-react";
 import { useGetEmployees, useGetDepartments, getGetEmployeesQueryKey, getGetDepartmentsQueryKey } from "@workspace/api-client-react";
 import type { Employee } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useRole } from "@/contexts/auth-context";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -31,6 +33,8 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [, setLocation] = useLocation();
+  const { isAdmin, isHR } = useRole();
 
   const { data: employees = [], isLoading } = useGetEmployees(
     { status: statusFilter !== "all" ? statusFilter : undefined },
@@ -69,6 +73,12 @@ export default function EmployeesPage() {
               {isLoading ? "Loading…" : `${employees.length} employee${employees.length !== 1 ? "s" : ""} total`}
             </p>
           </div>
+          {(isAdmin || isHR) && (
+            <Button size="sm" onClick={() => setLocation("/employees/new")} data-testid="btn-new-employee">
+              <UserPlus className="h-4 w-4 mr-1.5" />
+              Add Employee
+            </Button>
+          )}
         </div>
 
         <Card>

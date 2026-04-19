@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
-import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2 } from "lucide-react";
+import { ClipboardList, Calendar, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronUp, FileEdit, Trash2, MapPin, Briefcase } from "lucide-react";
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { DRAFT_KEY_PREFIX, draftRelativeTime, isDraftExpired } from "@/lib/draftKeys";
 
@@ -293,13 +293,22 @@ export default function MyApplicationsPage() {
                         <h3 className="font-semibold truncate">
                           {job ? job.title : `Job #${app.jobId}`}
                         </h3>
-                        {job?.description && (
-                          <p className="text-sm text-muted-foreground mt-0.5 truncate">{job.description}</p>
-                        )}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
+                          {(job as { province?: string } | undefined)?.province && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {(job as { province?: string }).province}
+                            </span>
+                          )}
+                          {(job as { employmentType?: string } | undefined)?.employmentType && (
+                            <span className="flex items-center gap-1">
+                              <Briefcase className="h-3 w-3" />
+                              {((job as { employmentType?: string }).employmentType ?? "").replace(/_/g, " ")}
+                            </span>
+                          )}
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
-                            Applied {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : "—"}
+                            Applied {app.createdAt ? new Date(app.createdAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                           </span>
                         </div>
                       </div>
@@ -308,11 +317,13 @@ export default function MyApplicationsPage() {
                           <Icon className={`h-3 w-3 ${config.color}`} />
                           {config.label}
                         </Badge>
-                        <Link href={`/jobs/${app.jobId}`}>
-                          <span className="text-xs text-primary hover:underline cursor-pointer flex items-center gap-0.5">
-                            View Job <ArrowRight className="h-3 w-3" />
-                          </span>
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link href={`/applications/${app.id}`}>
+                            <span className="text-xs text-primary hover:underline cursor-pointer flex items-center gap-0.5">
+                              Details <ArrowRight className="h-3 w-3" />
+                            </span>
+                          </Link>
+                        </div>
                       </div>
                     </div>
 

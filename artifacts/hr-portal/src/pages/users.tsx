@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Users, Search, UserPlus, AlertTriangle, Shield, Key, User, Check, X, ClipboardList, RefreshCw } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
-import { isStaffDomain, STAFF_ROLES } from "@/lib/emailDomain";
+import { isStaffDomain, STAFF_ROLES, getStaffDomainsList } from "@/lib/emailDomain";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getToken } from "@/lib/api-config";
 import { DataTable } from "@/components/ui/data-table";
@@ -477,14 +477,15 @@ function CreateUserDialog({
   const selectedRole = useMemo(() => roles.find((r) => r.id.toString() === roleId), [roles, roleId]);
   const isStaffRole = selectedRole ? STAFF_ROLES.has(selectedRole.name) : false;
   const emailIsStaff = email.trim() ? isStaffDomain(email.trim()) : null;
+  const staffDomains = getStaffDomainsList();
   const domainError = useMemo(() => {
     if (!email.trim() || !selectedRole) return null;
     if (isStaffRole && emailIsStaff === false)
-      return `Staff roles require a government domain email (e.g. @dept.gov.pg).`;
+      return `"${ROLE_LABELS[selectedRole.name] ?? selectedRole.name}" requires a government domain email (@${staffDomains.split(", ")[0]}). Please use your official work email.`;
     if (!isStaffRole && emailIsStaff === true)
-      return "Government domain emails cannot be assigned non-staff roles.";
+      return `Government domain emails (@${staffDomains}) cannot be assigned to the "${ROLE_LABELS[selectedRole.name] ?? selectedRole.name}" role.`;
     return null;
-  }, [email, selectedRole, isStaffRole, emailIsStaff]);
+  }, [email, selectedRole, isStaffRole, emailIsStaff, staffDomains]);
 
   const handleCreate = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !roleId) {
@@ -527,11 +528,23 @@ function CreateUserDialog({
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">Email</label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@agency.gov.pg" data-testid="input-create-user-email" />
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@agency.gov.pg"
+              data-testid="input-create-user-email"
+              className={domainError ? "border-destructive focus-visible:ring-destructive" : ""}
+            />
             {isStaffRole && email.trim() && !domainError && (
               <p className="text-xs text-green-700">Government domain email confirmed for staff role.</p>
             )}
-            {domainError && <p className="text-xs text-destructive">{domainError}</p>}
+            {domainError && (
+              <p className="text-xs text-destructive flex items-start gap-1 mt-1">
+                <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+                {domainError}
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">Password</label>

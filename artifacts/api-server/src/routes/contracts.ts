@@ -256,6 +256,10 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
         newUrl: body.data.documentUrl,
         action: body.data.documentUrl === null ? "cleared" : "replaced",
         performedByRole: req.user?.roleName ?? null,
+        reason:
+          typeof body.data.reason === "string" && body.data.reason.trim().length > 0
+            ? body.data.reason.trim().slice(0, 1000)
+            : null,
       },
       agencyId: auditAgencyId ?? null,
     });
@@ -332,6 +336,11 @@ router.post("/contracts/:id/upload-signed", authMiddleware, requireRole("admin",
     // If a previous signed document existed, audit the replacement so HR has a
     // record of who overwrote the original and when.
     if (previousUrl != null && previousUrl !== fileUrl) {
+      const rawReason = (req.body as { reason?: unknown } | null | undefined)?.reason;
+      const reason =
+        typeof rawReason === "string" && rawReason.trim().length > 0
+          ? rawReason.trim().slice(0, 1000)
+          : null;
       await writeAuditLog({
         performedById: req.user?.userId ?? null,
         performedByEmail: req.user?.email ?? null,
@@ -345,6 +354,7 @@ router.post("/contracts/:id/upload-signed", authMiddleware, requireRole("admin",
           action: "replaced",
           via: "upload-signed",
           performedByRole: req.user?.roleName ?? null,
+          reason,
         },
         agencyId: resolvedAgencyId ?? null,
       });

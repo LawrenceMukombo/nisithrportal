@@ -1386,6 +1386,15 @@ router.delete(
       ));
     if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
 
+    // Optional reason note supplied by HR (captured in the confirm dialog) is
+    // persisted into the audit log so that "Removed Documents" can show *why*
+    // the document was deleted, not just who/what/when.
+    const rawReason = (req.body as { reason?: unknown } | null | undefined)?.reason;
+    const reason =
+      typeof rawReason === "string" && rawReason.trim().length > 0
+        ? rawReason.trim().slice(0, 1000)
+        : null;
+
     // Best-effort: delete the underlying stored object if it's an internal storage URL.
     if (doc.url && doc.url.startsWith(INTERNAL_OBJECT_PREFIX)) {
       try {
@@ -1413,6 +1422,7 @@ router.delete(
         fileName: doc.fileName ?? null,
         url: doc.url ?? null,
         performedByRole: req.user?.roleName ?? null,
+        reason,
       },
       agencyId: appRow.agencyId ?? null,
     });

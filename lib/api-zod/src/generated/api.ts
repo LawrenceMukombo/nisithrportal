@@ -1540,6 +1540,12 @@ export const UpdateContractBody = zod.object({
   type: zod.string().optional(),
   status: zod.string().optional(),
   documentUrl: zod.string().nullish(),
+  reason: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional HR-supplied reason captured when a signed contract document is being cleared or replaced. Persisted into the audit log for the resulting contract_document_clear entry.",
+    ),
 });
 
 export const UpdateContractResponse = zod.object({

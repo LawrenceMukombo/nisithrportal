@@ -751,6 +751,11 @@ export interface UpdateContractRequest {
   status?: string;
   /** @nullable */
   documentUrl?: string | null;
+  /**
+   * Optional HR-supplied reason captured when a signed contract document is being cleared or replaced. Persisted into the audit log for the resulting contract_document_clear entry.
+   * @nullable
+   */
+  reason?: string | null;
 }
 
 export interface AiScore {

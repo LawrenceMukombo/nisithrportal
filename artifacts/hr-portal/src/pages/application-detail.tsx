@@ -249,7 +249,7 @@ type DocDeletion = {
   performedByEmail: string | null;
   performedById: number | null;
   createdAt: string;
-  details: { documentType?: string | null; fileName?: string | null; documentId?: number | null } | null;
+  details: { documentType?: string | null; fileName?: string | null; documentId?: number | null; reason?: string | null } | null;
 };
 type OfferLetterSendLogEntry = {
   id: number;
@@ -276,6 +276,7 @@ export default function ApplicationDetailPage() {
   const [appDocuments, setAppDocuments] = useState<AppDocument[]>([]);
   const [docDeletions, setDocDeletions] = useState<DocDeletion[]>([]);
   const [docToDelete, setDocToDelete] = useState<AppDocument | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
   const [deletingDoc, setDeletingDoc] = useState(false);
 
   const refreshDocDeletions = async () => {
@@ -447,9 +448,14 @@ export default function ApplicationDetailPage() {
     setDeletingDoc(true);
     try {
       const token = getToken();
+      const trimmedReason = deleteReason.trim();
       const res = await fetch(`/api/applications/${appId}/documents/${docToDelete.id}`, {
         method: "DELETE",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(trimmedReason ? { reason: trimmedReason } : {}),
       });
       if (!res.ok && res.status !== 204) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -459,6 +465,7 @@ export default function ApplicationDetailPage() {
       setAppDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
       toast({ title: "Document removed", description: "You can upload a replacement if needed." });
       setDocToDelete(null);
+      setDeleteReason("");
       void refreshDocDeletions();
     } catch {
       toast({ title: "Failed to delete document", variant: "destructive" });
@@ -1020,6 +1027,7 @@ export default function ApplicationDetailPage() {
                 const type = entry.details?.documentType ? String(entry.details.documentType) : null;
                 const typeLabel = type ? (DOC_TYPE_LABELS[type] ?? type) : "document";
                 const fileName = entry.details?.fileName ? String(entry.details.fileName) : null;
+                const reason = entry.details?.reason ? String(entry.details.reason) : null;
                 return (
                   <div
                     key={entry.id}
@@ -1037,6 +1045,14 @@ export default function ApplicationDetailPage() {
                           {" · Deleted by "}
                           <span className="font-medium">{entry.performedByEmail ?? "unknown user"}</span>
                         </p>
+                        {reason && (
+                          <p
+                            className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words"
+                            data-testid={`text-removed-document-reason-${entry.id}`}
+                          >
+                            <span className="font-medium text-foreground">Reason:</span> {reason}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap" title={new Date(entry.createdAt).toLocaleString()}>
@@ -1049,7 +1065,7 @@ export default function ApplicationDetailPage() {
           </Card>
         )}
 
-        <AlertDialog open={docToDelete != null} onOpenChange={(open) => { if (!open && !deletingDoc) setDocToDelete(null); }}>
+        <AlertDialog open={docToDelete != null} onOpenChange={(open) => { if (!open && !deletingDoc) { setDocToDelete(null); setDeleteReason(""); } }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this document?</AlertDialogTitle>
@@ -1058,6 +1074,24 @@ export default function ApplicationDetailPage() {
                 {" "}will be permanently removed from this application. You can upload a replacement afterwards. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <label htmlFor="delete-document-reason" className="text-sm font-medium">
+                Reason <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Textarea
+                id="delete-document-reason"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="e.g. wrong file uploaded, candidate requested removal under data privacy"
+                rows={3}
+                maxLength={1000}
+                disabled={deletingDoc}
+                data-testid="input-delete-document-reason"
+              />
+              <p className="text-xs text-muted-foreground">
+                Saved alongside the deletion entry in Removed Documents for audit review.
+              </p>
+            </div>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deletingDoc}>Cancel</AlertDialogCancel>
               <AlertDialogAction

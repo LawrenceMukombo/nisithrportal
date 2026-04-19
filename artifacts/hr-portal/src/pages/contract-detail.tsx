@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
@@ -33,7 +34,7 @@ type DocDeletion = {
   performedByEmail: string | null;
   performedById: number | null;
   createdAt: string;
-  details: { action?: string | null; previousUrl?: string | null; newUrl?: string | null; via?: string | null } | null;
+  details: { action?: string | null; previousUrl?: string | null; newUrl?: string | null; via?: string | null; reason?: string | null } | null;
 };
 
 function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: number; currentEndDate?: string | null; onClose: () => void }) {
@@ -147,6 +148,7 @@ export default function ContractDetailPage() {
   const [signedUploading, setSignedUploading] = useState(false);
   const [showRemoveDoc, setShowRemoveDoc] = useState(false);
   const [removingDoc, setRemovingDoc] = useState(false);
+  const [removeReason, setRemoveReason] = useState("");
   const [docDeletions, setDocDeletions] = useState<DocDeletion[]>([]);
   const signedFileRef = useRef<HTMLInputElement>(null);
   const updateContractMutation = useUpdateContract();
@@ -205,13 +207,15 @@ export default function ContractDetailPage() {
     if (!contractId) return;
     setRemovingDoc(true);
     try {
+      const trimmedReason = removeReason.trim();
       await updateContractMutation.mutateAsync({
         id: contractId,
-        data: { documentUrl: null },
+        data: { documentUrl: null, ...(trimmedReason ? { reason: trimmedReason } : {}) },
       });
       queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contractId) });
       toast({ title: "Signed contract removed", description: "You can now upload the correct file." });
       setShowRemoveDoc(false);
+      setRemoveReason("");
       void refreshDocDeletions();
     } catch {
       toast({ title: "Failed to remove signed contract", variant: "destructive" });
@@ -442,6 +446,7 @@ export default function ContractDetailPage() {
               {docDeletions.map((entry) => {
                 const action = entry.details?.action === "replaced" ? "Replaced" : "Cleared";
                 const via = entry.details?.via === "upload-signed" ? " (via re-upload)" : "";
+                const reason = entry.details?.reason ? String(entry.details.reason) : null;
                 return (
                   <div
                     key={entry.id}
@@ -457,6 +462,14 @@ export default function ContractDetailPage() {
                         <p className="text-xs text-muted-foreground">
                           By <span className="font-medium">{entry.performedByEmail ?? "unknown user"}</span>
                         </p>
+                        {reason && (
+                          <p
+                            className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words"
+                            data-testid={`text-contract-doc-deletion-reason-${entry.id}`}
+                          >
+                            <span className="font-medium text-foreground">Reason:</span> {reason}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap" title={new Date(entry.createdAt).toLocaleString()}>
@@ -469,7 +482,14 @@ export default function ContractDetailPage() {
           </Card>
         )}
 
-        <AlertDialog open={showRemoveDoc} onOpenChange={(open) => !removingDoc && setShowRemoveDoc(open)}>
+        <AlertDialog
+          open={showRemoveDoc}
+          onOpenChange={(open) => {
+            if (removingDoc) return;
+            setShowRemoveDoc(open);
+            if (!open) setRemoveReason("");
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove signed contract?</AlertDialogTitle>
@@ -477,6 +497,24 @@ export default function ContractDetailPage() {
                 This will clear the document attached to this contract. You can upload a replacement afterwards. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <label htmlFor="remove-signed-contract-reason" className="text-sm font-medium">
+                Reason <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Textarea
+                id="remove-signed-contract-reason"
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                placeholder="e.g. wrong file uploaded, candidate requested removal under data privacy"
+                rows={3}
+                maxLength={1000}
+                disabled={removingDoc}
+                data-testid="input-remove-signed-contract-reason"
+              />
+              <p className="text-xs text-muted-foreground">
+                Saved alongside this entry in Document History for audit review.
+              </p>
+            </div>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={removingDoc}>Cancel</AlertDialogCancel>
               <AlertDialogAction

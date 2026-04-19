@@ -1,4 +1,4 @@
-import { pgTable, serial, text, jsonb, timestamp, date, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, jsonb, timestamp, date, boolean, integer, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -27,7 +27,9 @@ export const candidatesTable = pgTable("candidates", {
   postalAddress: text("postal_address"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  userIdIdx: index("candidates_user_id_idx").on(table.userId),
+}));
 
 export const insertCandidateSchema = createInsertSchema(candidatesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCandidate = z.infer<typeof insertCandidateSchema>;

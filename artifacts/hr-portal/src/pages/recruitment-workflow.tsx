@@ -12,6 +12,7 @@ import {
   Download,
   Search,
   X,
+  Settings,
 } from "lucide-react";
 import {
   useGetApplications,
@@ -23,6 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Application, Candidate, Job } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
+import { useRole } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -546,6 +548,8 @@ function StageCard({
 
 export default function RecruitmentWorkflowPage() {
   const [search, setSearch] = useState("");
+  const { isAdmin, isHrOfficer, isHiringManager } = useRole();
+  const canConfigureSla = isAdmin || isHrOfficer || isHiringManager;
 
   const { data: applications = [], isLoading: appsLoading } = useGetApplications(
     {},
@@ -894,6 +898,16 @@ export default function RecruitmentWorkflowPage() {
                     These applications have exceeded their stage threshold and require attention. HR managers have been notified.
                   </p>
                 </div>
+                {canConfigureSla && (
+                  <Link
+                    href="/settings/pipeline-sla"
+                    className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-200 underline-offset-2 hover:underline"
+                    data-testid="link-configure-sla-thresholds"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                    Configure thresholds
+                  </Link>
+                )}
               </div>
             )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

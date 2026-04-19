@@ -96,6 +96,33 @@ function formatHistoryDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function formatHistoryDateTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleString("en-PG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatRelative(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  if (diffMs < 0) return "just now";
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min !== 1 ? "s" : ""} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr !== 1 ? "s" : ""} ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 30) return `${days} day${days !== 1 ? "s" : ""} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months !== 1 ? "s" : ""} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years !== 1 ? "s" : ""} ago`;
+}
+
 function StageHistoryTimeline({ app }: { app: Application }) {
   const history = sortedHistory(app.statusHistory);
   if (history.length === 0) {
@@ -500,12 +527,10 @@ function StageCard({
               const days = daysInStage(app, stage.status);
               const isStale = days >= threshold;
               const entryItem = lastEntryForStatus(app.statusHistory, stage.status);
-              const entryDate = entryItem
-                ? new Date(entryItem.changedAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
-                : app.createdAt
-                  ? new Date(app.createdAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" })
-                  : null;
-              const enteredLabel = entryDate ? `Entered: ${entryDate}` : null;
+              const entrySource = entryItem?.changedAt ?? app.createdAt ?? null;
+              const enteredLabel = entrySource
+                ? `Entered: ${formatHistoryDateTime(entrySource)} (${formatRelative(entrySource)})`
+                : null;
               const stageTooltip = isStale
                 ? `${enteredLabel ? `${enteredLabel} · ` : ""}Stalled — ${days} days in stage (threshold: ${threshold}d)`
                 : `${enteredLabel ? `${enteredLabel} · ` : ""}${days} day${days !== 1 ? "s" : ""} in this stage`;

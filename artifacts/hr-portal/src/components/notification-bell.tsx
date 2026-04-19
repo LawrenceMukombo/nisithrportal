@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Bell, CheckCheck, X } from "lucide-react";
+import { Bell, CheckCheck, X, UserX, Mail, FileText, AlertTriangle, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useGetNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, getGetNotificationsQueryKey } from "@workspace/api-client-react";
 import type { Notification } from "@workspace/api-client-react";
@@ -15,11 +15,39 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-const TYPE_ICON: Record<string, string> = {
-  application_status: "📋",
-  application_withdrawn: "↩️",
-  contract_expiry: "⚠️",
-  new_application: "📩",
+interface NotificationTypeConfig {
+  icon: LucideIcon;
+  iconClass: string;
+  wrapperClass: string;
+}
+
+const TYPE_CONFIG: Record<string, NotificationTypeConfig> = {
+  new_application: {
+    icon: Mail,
+    iconClass: "text-blue-500",
+    wrapperClass: "bg-blue-100 dark:bg-blue-900/40",
+  },
+  application_withdrawn: {
+    icon: UserX,
+    iconClass: "text-slate-500",
+    wrapperClass: "bg-slate-100 dark:bg-slate-800/60",
+  },
+  application_status: {
+    icon: FileText,
+    iconClass: "text-violet-500",
+    wrapperClass: "bg-violet-100 dark:bg-violet-900/40",
+  },
+  contract_expiry: {
+    icon: AlertTriangle,
+    iconClass: "text-amber-500",
+    wrapperClass: "bg-amber-100 dark:bg-amber-900/40",
+  },
+};
+
+const DEFAULT_CONFIG: NotificationTypeConfig = {
+  icon: Bell,
+  iconClass: "text-muted-foreground",
+  wrapperClass: "bg-muted",
 };
 
 export function NotificationBell() {
@@ -117,12 +145,18 @@ export function NotificationBell() {
                     className={cn(
                       "flex items-start gap-3 px-4 py-3 hover:bg-accent/50 transition-colors",
                       !notif.read && "bg-primary/5",
-                      notif.type === "application_withdrawn" && "border-l-2 border-orange-400 bg-orange-50/60 dark:bg-orange-950/20"
+                      notif.type === "application_withdrawn" && "border-l-2 border-slate-400"
                     )}
                   >
-                    <span className="text-lg shrink-0 mt-0.5" aria-hidden>
-                      {TYPE_ICON[notif.type] ?? "🔔"}
-                    </span>
+                    {(() => {
+                      const cfg = TYPE_CONFIG[notif.type] ?? DEFAULT_CONFIG;
+                      const Icon = cfg.icon;
+                      return (
+                        <span className={cn("shrink-0 mt-0.5 flex h-7 w-7 items-center justify-center rounded-full", cfg.wrapperClass)} aria-hidden>
+                          <Icon className={cn("h-3.5 w-3.5", cfg.iconClass)} />
+                        </span>
+                      );
+                    })()}
                     <div className="flex-1 min-w-0">
                       <p className={cn("text-xs leading-relaxed text-foreground", !notif.read && "font-medium")}>
                         {notif.message}

@@ -343,7 +343,19 @@ function UserDetailSheet({
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Email Address</label>
-                  <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="email@example.com" />
+                  <Input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    type="email"
+                    placeholder="email@example.com"
+                    className={domainError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                  {domainError && (
+                    <p className="text-xs text-destructive flex items-start gap-1 mt-1">
+                      <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+                      {domainError}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Agency</label>
@@ -370,11 +382,6 @@ function UserDetailSheet({
                       ))}
                     </SelectContent>
                   </Select>
-                  {domainError && (
-                    <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                      <AlertTriangle className="h-3 w-3" />{domainError}
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Account Status</label>

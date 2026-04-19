@@ -166,7 +166,12 @@ function StageHistoryTimeline({ app }: { app: Application }) {
                   {days}d{isCurrent ? " (current)" : ""}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground tabular-nums">{formatHistoryDate(item.changedAt)}</p>
+              <p className="text-[11px] text-muted-foreground tabular-nums">
+                {formatHistoryDate(item.changedAt)}
+                <span className="ml-1 not-italic">
+                  {item.changedByName ? `· by ${item.changedByName}` : item.changedBy ? "· by System" : ""}
+                </span>
+              </p>
               {item.note && (
                 <p className="text-[11px] text-muted-foreground/80 italic mt-0.5 line-clamp-2">{item.note}</p>
               )}

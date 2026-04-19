@@ -64,6 +64,13 @@
       "when": 1776643300000,
       "tag": "0008_candidates_user_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776643400000,
+      "tag": "0009_status_history_changed_by",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,7 @@ import {
   jobsTable,
   notificationsTable,
   agenciesTable,
+  usersTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -137,6 +138,30 @@ const ExtendedApplicationBody = z.object({
 
 const INTERNAL_OBJECT_PREFIX = "/api/storage/objects/";
 
+/**
+ * Fetch status history for one or more applications, joined with users so each
+ * row exposes `changedByName` (the actor who moved the candidate to that stage).
+ * Returns rows ordered by changedAt asc.
+ */
+async function fetchStatusHistoryWithActor(applicationIds: number[]) {
+  if (applicationIds.length === 0) return [];
+  return db
+    .select({
+      id: applicationStatusHistoryTable.id,
+      applicationId: applicationStatusHistoryTable.applicationId,
+      fromStatus: applicationStatusHistoryTable.fromStatus,
+      status: applicationStatusHistoryTable.status,
+      changedAt: applicationStatusHistoryTable.changedAt,
+      note: applicationStatusHistoryTable.note,
+      changedBy: applicationStatusHistoryTable.changedBy,
+      changedByName: usersTable.name,
+    })
+    .from(applicationStatusHistoryTable)
+    .leftJoin(usersTable, eq(applicationStatusHistoryTable.changedBy, usersTable.id))
+    .where(inArray(applicationStatusHistoryTable.applicationId, applicationIds))
+    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+}
+
 async function getJobAgencyId(jobId: number): Promise<number | null> {
   const [job] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, jobId));
   return job?.agencyId ?? null;
@@ -165,11 +190,7 @@ router.get("/applications", authMiddleware, requireRole("admin", "hr_officer", "
     : await db.select().from(applicationsTable).orderBy(applicationsTable.createdAt);
 
   const appIds = allApps.map((a) => a.id);
-  const historyRows = appIds.length > 0
-    ? await db.select().from(applicationStatusHistoryTable)
-        .where(inArray(applicationStatusHistoryTable.applicationId, appIds))
-        .orderBy(asc(applicationStatusHistoryTable.changedAt))
-    : [];
+  const historyRows = await fetchStatusHistoryWithActor(appIds);
 
   const historyByApp: Record<number, typeof historyRows> = {};
   for (const row of historyRows) {
@@ -321,11 +342,7 @@ router.get("/applications/my", authMiddleware, async (req, res): Promise<void> =
     .orderBy(applicationsTable.createdAt);
 
   const appIds = apps.map((a) => a.id);
-  const historyRows = appIds.length > 0
-    ? await db.select().from(applicationStatusHistoryTable)
-        .where(inArray(applicationStatusHistoryTable.applicationId, appIds))
-        .orderBy(asc(applicationStatusHistoryTable.changedAt))
-    : [];
+  const historyRows = await fetchStatusHistoryWithActor(appIds);
 
   const historyByApp: Record<number, typeof historyRows> = {};
   for (const row of historyRows) {
@@ -622,6 +639,7 @@ router.post("/applications", async (req, res): Promise<void> => {
   await db.insert(applicationStatusHistoryTable).values({
     applicationId: application.id,
     status: "applied",
+    changedBy: req.user?.userId ?? null,
   });
 
   // Save extended sub-records (education, experience, languages, referees, docs, diversity)
@@ -712,7 +730,7 @@ router.post("/applications", async (req, res): Promise<void> => {
     } catch { /* ignore */ }
   }
 
-  res.status(201).json({ ...application, statusHistory: [{ id: 0, applicationId: application.id, status: "applied", changedAt: application.createdAt, note: null }] });
+  res.status(201).json({ ...application, statusHistory: [{ id: 0, applicationId: application.id, status: "applied", changedAt: application.createdAt, note: null, changedBy: req.user?.userId ?? null, changedByName: null }] });
 
   // Notify the responsible HR officer (job poster) about the new application.
   // If the job has no assigned poster, fall back to all HR officers in the agency.
@@ -845,7 +863,7 @@ async function applyBulkStatusUpdate(
   candidateIds: number[],
   status: string,
   agencyId: number | null,
-  options: { override?: boolean; isAdmin?: boolean } = {},
+  options: { override?: boolean; isAdmin?: boolean; changedBy?: number | null } = {},
 ): Promise<BulkUpdateOutcome> {
   if (candidateIds.length === 0) return { ok: true, updated: 0, skipped: [] };
 
@@ -923,6 +941,7 @@ async function applyBulkStatusUpdate(
         applicationId: a.id,
         fromStatus: a.status,
         status,
+        changedBy: options.changedBy ?? null,
       }))
     );
   });
@@ -997,7 +1016,7 @@ router.patch("/applications/bulk-status", authMiddleware, requireRole("admin", "
   const { ids, status } = body.data;
   const override = (req.body as { override?: unknown })?.override === true;
   const isAdmin = req.user?.roleName === "admin";
-  const result = await applyBulkStatusUpdate(ids, status, getTenantAgencyId(req), { override, isAdmin });
+  const result = await applyBulkStatusUpdate(ids, status, getTenantAgencyId(req), { override, isAdmin, changedBy: req.user?.userId ?? null });
   if (!result.ok) {
     sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
     return;
@@ -1025,7 +1044,7 @@ router.patch("/applications/bulk-status-by-filter", authMiddleware, requireRole(
     res.json({ updated: 0, matched: 0, skipped: [] });
     return;
   }
-  const result = await applyBulkStatusUpdate(matchedIds, status, agencyId, { override, isAdmin });
+  const result = await applyBulkStatusUpdate(matchedIds, status, agencyId, { override, isAdmin, changedBy: req.user?.userId ?? null });
   if (!result.ok) {
     sendBulkBlockedResponse(res, status, result.blocked, result.canOverride);
     return;
@@ -1080,13 +1099,10 @@ router.patch("/applications/:id", authMiddleware, requireRole("applicant"), asyn
     applicationId: application.id,
     status: "withdrawn",
     note: null,
+    changedBy: req.user?.userId ?? null,
   });
 
-  const statusHistory = await db
-    .select()
-    .from(applicationStatusHistoryTable)
-    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
-    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  const statusHistory = await fetchStatusHistoryWithActor([application.id]);
 
   res.json({ ...application, statusHistory });
 
@@ -1137,9 +1153,7 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
     const jobAgencyId = await getJobAgencyId(application.jobId);
     if (!assertTenantAccess(res, jobAgencyId, agencyId)) return;
   }
-  const statusHistory = await db.select().from(applicationStatusHistoryTable)
-    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
-    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  const statusHistory = await fetchStatusHistoryWithActor([application.id]);
   res.json({ ...application, statusHistory });
 });
 
@@ -1182,6 +1196,7 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
         fromStatus: existing.status,
         status: body.data.status,
         note: body.data.notes ?? null,
+        changedBy: req.user?.userId ?? null,
       });
     }
 
@@ -1220,9 +1235,7 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     }
   }
 
-  const statusHistory = await db.select().from(applicationStatusHistoryTable)
-    .where(eq(applicationStatusHistoryTable.applicationId, application.id))
-    .orderBy(asc(applicationStatusHistoryTable.changedAt));
+  const statusHistory = await fetchStatusHistoryWithActor([application.id]);
   res.json({ ...application, statusHistory });
 });
 

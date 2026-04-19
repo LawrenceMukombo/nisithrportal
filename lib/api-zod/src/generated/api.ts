@@ -974,6 +974,8 @@ export const GetMyApplicationsResponseItem = zod.object({
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
+        changedBy: zod.number().nullish(),
+        changedByName: zod.string().nullish(),
       }),
     )
     .optional(),
@@ -1028,6 +1030,8 @@ export const GetApplicationsResponseItem = zod.object({
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
+        changedBy: zod.number().nullish(),
+        changedByName: zod.string().nullish(),
       }),
     )
     .optional(),
@@ -1192,6 +1196,8 @@ export const GetApplicationResponse = zod.object({
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
+        changedBy: zod.number().nullish(),
+        changedByName: zod.string().nullish(),
       }),
     )
     .optional(),
@@ -1208,10 +1214,14 @@ export const BulkUpdateApplicationStatusBody = zod.object({
 
 export const BulkUpdateApplicationStatusResponse = zod.object({
   updated: zod.number().optional(),
-  skipped: zod.array(zod.object({
-    id: zod.number().int(),
-    reason: zod.enum(["not_found", "access_denied"]),
-  })).default([]),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        reason: zod.enum(["not_found", "access_denied"]),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -1229,10 +1239,14 @@ export const BulkUpdateApplicationStatusByFilterBody = zod.object({
 export const BulkUpdateApplicationStatusByFilterResponse = zod.object({
   updated: zod.number().optional(),
   matched: zod.number().optional(),
-  skipped: zod.array(zod.object({
-    id: zod.number().int(),
-    reason: zod.enum(["not_found", "access_denied"]),
-  })).default([]),
+  skipped: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        reason: zod.enum(["not_found", "access_denied"]),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -1285,6 +1299,8 @@ export const UpdateApplicationStatusResponse = zod.object({
         status: zod.string(),
         changedAt: zod.string(),
         note: zod.string().nullish(),
+        changedBy: zod.number().nullish(),
+        changedByName: zod.string().nullish(),
       }),
     )
     .optional(),

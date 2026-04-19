@@ -4,6 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { jobsTable } from "./jobs";
 import { candidatesTable } from "./candidates";
+import { usersTable } from "./users";
 
 export const applicationsTable = pgTable("applications", {
   id: serial("id").primaryKey(),
@@ -54,6 +55,7 @@ export const applicationStatusHistoryTable = pgTable("application_status_history
   status: text("status").notNull(),
   changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
   note: text("note"),
+  changedBy: integer("changed_by").references(() => usersTable.id),
 });
 
 // Document uploads per application

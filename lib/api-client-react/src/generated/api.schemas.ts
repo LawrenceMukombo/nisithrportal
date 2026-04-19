@@ -459,6 +459,19 @@ export interface UpdateCandidateRequest {
   parsedData?: unknown | null;
 }
 
+export type BulkSkippedEntryReason =
+  (typeof BulkSkippedEntryReason)[keyof typeof BulkSkippedEntryReason];
+
+export const BulkSkippedEntryReason = {
+  not_found: "not_found",
+  access_denied: "access_denied",
+} as const;
+
+export interface BulkSkippedEntry {
+  id: number;
+  reason: BulkSkippedEntryReason;
+}
+
 export interface ApplicationStatusHistoryItem {
   id: number;
   applicationId: number;
@@ -468,6 +481,10 @@ export interface ApplicationStatusHistoryItem {
   changedAt: string;
   /** @nullable */
   note?: string | null;
+  /** @nullable */
+  changedBy?: number | null;
+  /** @nullable */
+  changedByName?: string | null;
 }
 
 export interface Application {
@@ -989,11 +1006,13 @@ export type GetApplicationsParams = {
 
 export type BulkUpdateApplicationStatus200 = {
   updated?: number;
+  skipped?: BulkSkippedEntry[];
 };
 
 export type BulkUpdateApplicationStatusByFilter200 = {
   updated?: number;
   matched?: number;
+  skipped?: BulkSkippedEntry[];
 };
 
 export type GetApplicationDraftParams = {

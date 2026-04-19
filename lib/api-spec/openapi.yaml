@@ -1045,6 +1045,10 @@ paths:
                 properties:
                   updated:
                     type: integer
+                  skipped:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BulkSkippedEntry"
 
   /applications/bulk-status-by-filter:
     patch:
@@ -1071,6 +1075,10 @@ paths:
                     type: integer
                   matched:
                     type: integer
+                  skipped:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BulkSkippedEntry"
 
   /applications/{id}/status:
     patch:
@@ -2910,6 +2918,18 @@ components:
         parsedData:
           nullable: true
 
+    BulkSkippedEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        reason:
+          type: string
+          enum: [not_found, access_denied]
+      required:
+        - id
+        - reason
+
     # Application Schemas
     ApplicationStatusHistoryItem:
       type: object
@@ -2925,6 +2945,10 @@ components:
         changedAt:
           type: string
         note:
+          type: ["string", "null"]
+        changedBy:
+          type: ["integer", "null"]
+        changedByName:
           type: ["string", "null"]
       required:
         - id

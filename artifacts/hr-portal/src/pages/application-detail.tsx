@@ -354,6 +354,39 @@ export default function ApplicationDetailPage() {
 
   const [offerLetterLoading, setOfferLetterLoading] = useState(false);
   const [sendOfferLoading, setSendOfferLoading] = useState(false);
+  const [contractUploading, setContractUploading] = useState(false);
+  const contractFileRef = useRef<HTMLInputElement | null>(null);
+
+  async function downloadOfferLetter() {
+    if (!appId) return;
+    setOfferLetterLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/pdf/offer-letter/${appId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: err.error ?? "Failed to generate offer letter", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const candidateName = candidate?.name?.replace(/\s+/g, "_") ?? `application_${appId}`;
+      a.download = `Offer_Letter_${candidateName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Offer letter downloaded" });
+    } catch {
+      toast({ title: "Failed to generate offer letter", variant: "destructive" });
+    } finally {
+      setOfferLetterLoading(false);
+    }
+  }
   const [showOfferPreview, setShowOfferPreview] = useState(false);
   const [confirmSendOffer, setConfirmSendOffer] = useState(false);
   const [offerHistory, setOfferHistory] = useState<OfferLetterSendLogEntry[]>([]);

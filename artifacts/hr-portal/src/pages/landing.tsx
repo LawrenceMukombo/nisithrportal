@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useSavedJobIds, useSaveJob, useUnsaveJob } from "@/hooks/use-saved-jobs";
 import { shareJob } from "@/lib/share";

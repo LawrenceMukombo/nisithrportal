@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { useRole } from "@/contexts/auth-context";
+import { useRole } from "@/contexts/use-auth";
 import { getToken } from "@/lib/api-config";
 import { useQueryClient } from "@tanstack/react-query";
 import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";

@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { initApiAuth, getToken, setToken, clearToken, decodeToken, type JwtPayload } from "@/lib/api-config";
+import { createContext, useState, useEffect, useCallback, useRef } from "react";
+import { initApiAuth, getToken, setToken, clearToken, decodeToken } from "@/lib/api-config";
 import { getSessionTimeoutMinutes } from "@/lib/session-timeout";
 
 export interface AuthUser {
@@ -9,7 +9,7 @@ export interface AuthUser {
   email: string;
 }
 
-interface AuthContextValue {
+export interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
@@ -21,7 +21,7 @@ interface AuthContextValue {
   agencyId: number | null;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
@@ -127,26 +127,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-}
-
-export function useRole() {
-  const { role } = useAuth();
-  return {
-    isAdmin: role === "admin",
-    isHR: role === "hr_officer",
-    isHrOfficer: role === "hr_officer",
-    isHiringManager: role === "hiring_manager",
-    isExecutive: role === "executive",
-    isApplicant: role === "applicant",
-    canViewCandidates: role === "hr_officer" || role === "hiring_manager" || role === "admin",
-    canManageJobs: role === "hr_officer" || role === "admin",
-    canManageEmployees: role === "hr_officer" || role === "admin",
-    canManageContracts: role === "hr_officer" || role === "admin",
-    canViewDashboard: role !== "applicant" && role !== null,
-    canManageAgencies: role === "admin",
-  };
-}

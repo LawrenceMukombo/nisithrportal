@@ -27,7 +27,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Application, Candidate, Job } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
-import { useRole } from "@/contexts/auth-context";
+import { useRole } from "@/contexts/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

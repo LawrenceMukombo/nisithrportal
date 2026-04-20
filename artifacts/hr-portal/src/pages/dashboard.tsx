@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/layouts/app-layout";
-import { useAuth } from "@/contexts/auth-context";
-import { useRole } from "@/contexts/auth-context";
+import { useAuth } from "@/contexts/use-auth";
+import { useRole } from "@/contexts/use-auth";
 
 function StatCard({ label, value, icon: Icon, delta }: { label: string; value: number | string; icon: React.ComponentType<{className?: string}>; delta?: string }) {
   return (

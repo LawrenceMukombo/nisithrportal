@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth } from "@/contexts/use-auth";
 import { Users, Search, UserPlus, AlertTriangle, Shield, Key, User, Check, X, ClipboardList, RefreshCw } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
 import { isStaffDomain, STAFF_ROLES, getStaffDomainsList } from "@/lib/emailDomain";

@@ -30,7 +30,7 @@ import { Label } from "@/components/ui/label";
 import { AppLayout } from "@/layouts/app-layout";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { useRole } from "@/contexts/auth-context";
+import { useRole } from "@/contexts/use-auth";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,

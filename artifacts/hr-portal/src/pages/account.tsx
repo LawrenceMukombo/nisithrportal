@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/use-auth";
 import { isStaffDomain } from "@/lib/emailDomain";
 import { getToken } from "@/lib/api-config";
 import {

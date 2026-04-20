@@ -40,7 +40,7 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { AppLayout } from "@/layouts/app-layout";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/use-auth";
 import { ApplyWizard, DraftBanner, type ScreeningQuestion } from "@/components/apply-wizard";
 import { shareJob } from "@/lib/share";
 

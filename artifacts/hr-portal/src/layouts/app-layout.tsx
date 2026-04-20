@@ -5,7 +5,7 @@ import {
   ScrollText, Building2, FolderKanban, Settings, LogOut,
   ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
 } from "lucide-react";
-import { useAuth, useRole } from "@/contexts/auth-context";
+import { useAuth, useRole } from "@/contexts/use-auth";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-bell";
 

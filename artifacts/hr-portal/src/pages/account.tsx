@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Bell, Info, Mail } from "lucide-react";
+import { Bell, Info, Mail, Clock } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/auth-context";
 import { isStaffDomain } from "@/lib/emailDomain";
 import { getToken } from "@/lib/api-config";
+import {
+  SESSION_TIMEOUT_OPTIONS,
+  getSessionTimeoutMinutes,
+  setSessionTimeoutMinutes,
+} from "@/lib/session-timeout";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const CLOSING_SOON_DAY_OPTIONS = [3, 7, 14] as const;
 type ClosingSoonDays = (typeof CLOSING_SOON_DAY_OPTIONS)[number];
@@ -44,6 +56,20 @@ export default function AccountPage() {
   const [closingSoonDays, setClosingSoonDays] = useState<ClosingSoonDays | null>(null);
   const [closingPrefsLoading, setClosingPrefsLoading] = useState(false);
   const [closingPrefsSaving, setClosingPrefsSaving] = useState(false);
+  const [sessionTimeout, setSessionTimeout] = useState<number>(() => getSessionTimeoutMinutes());
+
+  const onSessionTimeoutChange = (value: string) => {
+    const minutes = Number(value);
+    setSessionTimeout(minutes);
+    setSessionTimeoutMinutes(minutes);
+    toast({
+      title: "Session timeout updated",
+      description:
+        minutes === 0
+          ? "You will stay signed in until you log out manually."
+          : `You'll be signed out after ${minutes} minute${minutes === 1 ? "" : "s"} of inactivity.`,
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -366,6 +392,49 @@ export default function AccountPage() {
             </Form>
           </CardContent>
         </Card>
+
+        {!isApplicant && (
+          <Card data-testid="card-session-timeout">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="h-4 w-4" />
+                Session Timeout
+              </CardTitle>
+              <CardDescription>
+                Automatically sign you out after a period of inactivity. This is a personal setting stored on this device.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-xs space-y-2">
+                <Label htmlFor="session-timeout-select" className="text-sm">
+                  Sign me out after
+                </Label>
+                <Select
+                  value={String(sessionTimeout)}
+                  onValueChange={onSessionTimeoutChange}
+                >
+                  <SelectTrigger id="session-timeout-select" data-testid="select-session-timeout">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SESSION_TIMEOUT_OPTIONS.map((opt) => (
+                      <SelectItem
+                        key={opt.value}
+                        value={String(opt.value)}
+                        data-testid={`option-session-timeout-${opt.value}`}
+                      >
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Any mouse movement, keystroke, or scroll resets the timer. Choosing "Never" keeps you signed in indefinitely on this browser.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isApplicant && (
           <Card data-testid="card-notification-preferences">

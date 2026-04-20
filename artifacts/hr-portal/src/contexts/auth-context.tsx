@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { initApiAuth, getToken, setToken, clearToken, decodeToken, type JwtPayload } from "@/lib/api-config";
+import { getSessionTimeoutMinutes } from "@/lib/session-timeout";
 
 export interface AuthUser {
   userId: number;
@@ -58,6 +59,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateEmail = useCallback((newEmail: string) => {
     setUser((prev) => prev ? { ...prev, email: newEmail } : prev);
   }, []);
+
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!user) return;
+
+    const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+      "scroll",
+      "visibilitychange",
+    ];
+
+    const clearTimer = () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+
+    const scheduleLogout = () => {
+      clearTimer();
+      const minutes = getSessionTimeoutMinutes();
+      if (minutes <= 0) return;
+      idleTimerRef.current = setTimeout(() => {
+        logout();
+        try {
+          sessionStorage.setItem("hr_portal_idle_logout", "1");
+        } catch {}
+        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+          window.location.assign("/login?reason=idle");
+        }
+      }, minutes * 60 * 1000);
+    };
+
+    const onActivity = () => scheduleLogout();
+    const onTimeoutChanged = () => scheduleLogout();
+
+    ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, onActivity, { passive: true }));
+    window.addEventListener("hr-portal:session-timeout-changed", onTimeoutChanged);
+
+    scheduleLogout();
+
+    return () => {
+      clearTimer();
+      ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
+      window.removeEventListener("hr-portal:session-timeout-changed", onTimeoutChanged);
+    };
+  }, [user, logout]);
 
   return (
     <AuthContext.Provider value={{

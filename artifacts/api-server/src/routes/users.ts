@@ -187,6 +187,62 @@ router.get("/roles", authMiddleware, requireRole("admin"), async (_req, res): Pr
   res.json(roles);
 });
 
+const UpdateRolePermissionsBody = z.object({
+  permissions: z.record(z.string(), z.union([z.boolean(), z.array(z.string())])),
+});
+
+router.patch("/roles/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  const id = parseIntParam(req.params.id);
+  if (id == null || isNaN(id)) {
+    res.status(400).json({ error: "Invalid role id" });
+    return;
+  }
+
+  const [existing] = await db.select().from(rolesTable).where(eq(rolesTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Role not found" });
+    return;
+  }
+
+  if (existing.name === "admin") {
+    res.status(400).json({ error: "The System Admin role permissions cannot be modified." });
+    return;
+  }
+
+  const body = UpdateRolePermissionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const [updated] = await db
+    .update(rolesTable)
+    .set({ permissions: body.data.permissions })
+    .where(eq(rolesTable.id, id))
+    .returning();
+
+  logger.info(
+    { roleId: id, roleName: existing.name, adminId: req.user?.userId },
+    "AUDIT permissions-change: role permissions updated",
+  );
+  await writeAuditLog({
+    performedById: req.user?.userId ?? null,
+    performedByEmail: req.user?.email ?? null,
+    actionType: "permissions_change",
+    outcome: "success",
+    details: {
+      roleId: id,
+      roleName: existing.name,
+      oldPermissions: existing.permissions,
+      newPermissions: body.data.permissions,
+    },
+    agencyId: agencyId ?? null,
+  });
+
+  res.json(updated);
+});
+
 router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
   const agencyId = getTenantAgencyId(req);
   const id = parseIntParam(req.params.id);

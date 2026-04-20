@@ -8,6 +8,7 @@ export type AuditActionType =
   | "email_change"
   | "password_reset"
   | "domain_violation"
+  | "permissions_change"
   | "application_document_delete"
   | "contract_document_clear";
 

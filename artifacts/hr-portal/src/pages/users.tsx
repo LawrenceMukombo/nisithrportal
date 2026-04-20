@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useGetUsers, useGetRoles, useUpdateUser, useCreateUser, useGetAgencies } from "@workspace/api-client-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,14 +101,139 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
-function PermissionsMatrix({ permissions, roleName }: { permissions: PermMap | null; roleName: string | null }) {
-  const isAdmin = !!(permissions as { all?: boolean } | null)?.all;
+function permsToMatrix(perms: PermMap | null): Record<string, Set<string>> {
+  const result: Record<string, Set<string>> = {};
+  for (const r of RESOURCES) result[r.key] = new Set();
+  if (!perms) return result;
+  for (const r of RESOURCES) {
+    const p = perms[r.key];
+    if (p === true) {
+      ACTIONS.forEach((a) => result[r.key].add(a.key));
+    } else if (Array.isArray(p)) {
+      p.forEach((a) => result[r.key].add(a));
+    }
+  }
+  return result;
+}
+
+function matrixToPerms(matrix: Record<string, Set<string>>): PermMap {
+  const result: PermMap = {};
+  for (const r of RESOURCES) {
+    const set = matrix[r.key];
+    if (set.size === ACTIONS.length) result[r.key] = true;
+    else if (set.size > 0) result[r.key] = Array.from(set).sort();
+  }
+  return result;
+}
+
+function permsEqual(a: PermMap, b: PermMap): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    const av = a[k];
+    const bv = b[k];
+    if (av === true && bv === true) continue;
+    if (Array.isArray(av) && Array.isArray(bv)) {
+      if (av.length !== bv.length) return false;
+      const as = [...av].sort().join(",");
+      const bs = [...bv].sort().join(",");
+      if (as !== bs) return false;
+      continue;
+    }
+    if (av === undefined && (bv === undefined || (Array.isArray(bv) && bv.length === 0))) continue;
+    if (bv === undefined && (av === undefined || (Array.isArray(av) && av.length === 0))) continue;
+    if (av !== bv) return false;
+  }
+  return true;
+}
+
+function EditablePermissionsMatrix({
+  permissions,
+  roleId,
+  roleName,
+  onSaved,
+}: {
+  permissions: PermMap | null;
+  roleId: number | null;
+  roleName: string | null;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const isAdmin = roleName === "admin" || !!(permissions as { all?: boolean } | null)?.all;
+
+  const [matrix, setMatrix] = useState<Record<string, Set<string>>>(() => permsToMatrix(permissions));
+  const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setMatrix(permsToMatrix(permissions));
+  }, [permissions, roleId]);
+
+  const dirty = useMemo(() => {
+    return !permsEqual(matrixToPerms(matrix), permissions ?? {});
+  }, [matrix, permissions]);
+
+  const toggle = (resource: string, action: string) => {
+    setMatrix((prev) => {
+      const next = { ...prev };
+      const set = new Set(next[resource]);
+      if (set.has(action)) set.delete(action);
+      else set.add(action);
+      next[resource] = set;
+      return next;
+    });
+  };
+
+  const toggleRow = (resource: string, allOn: boolean) => {
+    setMatrix((prev) => {
+      const next = { ...prev };
+      next[resource] = allOn ? new Set() : new Set(ACTIONS.map((a) => a.key));
+      return next;
+    });
+  };
+
+  const reset = () => setMatrix(permsToMatrix(permissions));
+
+  const performSave = async () => {
+    if (!roleId) return;
+    setSaving(true);
+    try {
+      const matrixPerms = matrixToPerms(matrix);
+      const knownKeys = new Set(RESOURCES.map((r) => r.key));
+      const preserved: PermMap = {};
+      if (permissions) {
+        for (const [k, v] of Object.entries(permissions)) {
+          if (!knownKeys.has(k)) preserved[k] = v;
+        }
+      }
+      const newPerms: PermMap = { ...preserved, ...matrixPerms };
+      await apiFetch(`/roles/${roleId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissions: newPerms }),
+      });
+      toast({ title: "Permissions updated", description: `Role "${ROLE_LABELS[roleName ?? ""] ?? roleName}" permissions saved.` });
+      await queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      onSaved();
+    } catch (err: unknown) {
+      toast({ title: "Failed to update permissions", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+      setConfirmOpen(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Permissions are determined by the assigned role.
+        Permissions are managed at the role level.
         {roleName && <span className="font-medium text-foreground"> Current role: {ROLE_LABELS[roleName] ?? roleName}</span>}
       </p>
+      {!isAdmin && (
+        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>Changes here apply to <strong>every user</strong> assigned the &ldquo;{ROLE_LABELS[roleName ?? ""] ?? roleName}&rdquo; role.</span>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">
           <thead>
@@ -115,37 +242,87 @@ function PermissionsMatrix({ permissions, roleName }: { permissions: PermMap | n
               {ACTIONS.map((a) => (
                 <th key={a.key} className="text-center px-2 py-2 font-medium text-muted-foreground">{a.label}</th>
               ))}
+              {!isAdmin && <th className="text-center px-2 py-2 font-medium text-muted-foreground w-12">All</th>}
             </tr>
           </thead>
           <tbody>
             {RESOURCES.map((r, i) => {
-              const anyAccess = ACTIONS.some((a) => hasPermission(permissions, r.key, a.key));
+              const set = matrix[r.key] ?? new Set<string>();
+              const allOn = set.size === ACTIONS.length;
               return (
-                <tr key={r.key} className={`border-t ${i % 2 === 0 ? "" : "bg-muted/20"} ${!anyAccess ? "opacity-40" : ""}`}>
+                <tr key={r.key} className={`border-t ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
                   <td className="px-3 py-2 font-medium">{r.label}</td>
                   {ACTIONS.map((a) => {
-                    const allowed = hasPermission(permissions, r.key, a.key);
+                    const allowed = isAdmin ? true : set.has(a.key);
                     return (
                       <td key={a.key} className="text-center px-2 py-2">
-                        {allowed
-                          ? <Check className="h-4 w-4 text-green-600 mx-auto" />
-                          : <X className="h-4 w-4 text-muted-foreground/30 mx-auto" />}
+                        {isAdmin ? (
+                          <Check className="h-4 w-4 text-green-600 mx-auto" />
+                        ) : (
+                          <Checkbox
+                            checked={allowed}
+                            onCheckedChange={() => toggle(r.key, a.key)}
+                            data-testid={`perm-${r.key}-${a.key}`}
+                            aria-label={`${a.label} on ${r.label}`}
+                          />
+                        )}
                       </td>
                     );
                   })}
+                  {!isAdmin && (
+                    <td className="text-center px-2 py-2">
+                      <Checkbox
+                        checked={allOn}
+                        onCheckedChange={() => toggleRow(r.key, allOn)}
+                        aria-label={`Toggle all permissions on ${r.label}`}
+                      />
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {isAdmin && (
               <tr className="border-t bg-amber-50">
                 <td colSpan={6} className="px-3 py-2 text-xs text-amber-700 font-medium">
-                  System Admin has unrestricted access to all resources and actions.
+                  System Admin has unrestricted access. These permissions are locked.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+      {!isAdmin && (
+        <div className="flex gap-2 pt-1">
+          <Button variant="outline" onClick={reset} disabled={!dirty || saving} className="flex-1">
+            Reset
+          </Button>
+          <Button
+            onClick={() => setConfirmOpen(true)}
+            disabled={!dirty || saving || !roleId}
+            className="flex-1"
+            data-testid="button-save-permissions"
+          >
+            {saving ? "Saving…" : "Save Permissions"}
+          </Button>
+        </div>
+      )}
+      <Dialog open={confirmOpen} onOpenChange={(v) => !v && !saving && setConfirmOpen(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Update role permissions?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will change permissions for <strong>every user</strong> with the &ldquo;{ROLE_LABELS[roleName ?? ""] ?? roleName}&rdquo; role,
+            not just this account. Continue?
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving} className="flex-1">Cancel</Button>
+            <Button onClick={performSave} disabled={saving} className="flex-1">
+              {saving ? "Saving…" : "Yes, update role"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -373,6 +550,15 @@ function UserDetailSheet({
                   </Select>
                 </div>
                 <div className="space-y-1">
+                  <label className="text-sm font-medium">Agency</label>
+                  <SearchableSelect
+                    value={agencyId}
+                    onValueChange={setAgencyId}
+                    options={agencyOptions}
+                    placeholder="Select agency"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-sm font-medium">Account Status</label>
                   <Select value={status} onValueChange={(v) => setStatus(v as "active" | "inactive")} disabled={isSelf}>
                     <SelectTrigger>
@@ -437,12 +623,18 @@ function UserDetailSheet({
               </TabsContent>
 
               <TabsContent value="permissions" className="pb-6">
-                <PermissionsMatrix
+                <EditablePermissionsMatrix
                   permissions={livePermissions as PermMap | null}
+                  roleId={selectedRole?.id ?? user.roleId ?? null}
                   roleName={selectedRole?.name ?? user.roleName ?? null}
+                  onSaved={() => {
+                    onSaved();
+                    if (userId != null) fetchUser(userId);
+                  }}
                 />
                 <p className="text-xs text-muted-foreground mt-4">
-                  To change permissions, update the user's Role in the Profile tab. Each role grants a fixed set of access rights across the system.
+                  Tip: To assign a different set of access rights to a single person, change their <strong>Role</strong> in the Profile tab.
+                  To change what a role can do across the system, edit the matrix above.
                 </p>
               </TabsContent>
             </Tabs>

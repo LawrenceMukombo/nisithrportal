@@ -18,3 +18,9 @@ id = "TV_OkhCOrwQChd-ma0Pu6"
 uri = "file://docs/PNG_NISIT_HR_Portal_Pitch.pdf"
 type = "pdf"
 title = "PNG NISIT HR Portal — Stakeholder & Sponsor Pitch"
+
+[[outputs]]
+id = "tGh6aByUBAzyHuQcacPMd"
+uri = "file://docs/PNG_NISIT_HR_Portal_Pitch.pptx"
+type = "slides"
+title = "PNG NISIT HR Portal — Stakeholder & Sponsor Pitch (PowerPoint)"

@@ -355,7 +355,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card sticky top-0 z-10 backdrop-blur-sm">
+      <header className="border-b border-border bg-card sticky top-0 z-50 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <NisitLogo asLink />
           <div className="flex items-center gap-3">

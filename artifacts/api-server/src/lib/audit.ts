@@ -3,6 +3,7 @@ import { logger } from "./logger";
 
 export type AuditActionType =
   | "user_create"
+  | "user_delete"
   | "role_change"
   | "status_change"
   | "email_change"

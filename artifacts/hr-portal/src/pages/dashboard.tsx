@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGetDashboardSummary, useGetDashboardRecruitmentPipeline, useGetDashboardContractExpiries, useGetDashboardWorkforceGaps, useAiPredictWorkforce, getGetDashboardSummaryQueryKey, getGetDashboardRecruitmentPipelineQueryKey, getGetDashboardContractExpiriesQueryKey, getGetDashboardWorkforceGapsQueryKey, getAiPredictWorkforceQueryKey } from "@workspace/api-client-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { Briefcase, Users, FileText, UserCheck, ScrollText, TrendingUp, AlertTriangle, Clock, Brain, Loader2, RefreshCw, ChevronRight, Database } from "lucide-react";
+import { Briefcase, Users, FileText, UserCheck, ScrollText, TrendingUp, AlertTriangle, Clock, Brain, Loader2, RefreshCw, ChevronRight, Database, Bookmark, Send, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,14 +18,14 @@ type DrilldownMetric = "open_jobs" | "total_jobs" | "applications" | "active_emp
 type DrilldownRecord = { id: number; primary: string; secondary: string; status: string | null; href: string };
 type DrilldownResponse = { title: string; records: DrilldownRecord[] };
 
-function StatCard({ label, value, icon: Icon, delta, onClick }: { label: string; value: number | string; icon: React.ComponentType<{className?: string}>; delta?: string; onClick: () => void }) {
+function StatCard({ label, value, icon: Icon, delta, onClick }: { label: string; value: number | string; icon: React.ComponentType<{className?: string}>; delta?: string; onClick?: () => void }) {
   return (
     <Card
-      role="button"
-      tabIndex={0}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}
-      className="cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onKeyDown={(event) => { if (onClick && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onClick(); } }}
+      className={`transition-all ${onClick ? "cursor-pointer hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
       data-testid={`card-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}
     >
       <CardContent className="p-5">
@@ -44,11 +44,203 @@ function StatCard({ label, value, icon: Icon, delta, onClick }: { label: string;
   );
 }
 
-const PIPELINE_COLORS = ["#3b4fa8", "#d4a017", "#22c55e", "#ef4444", "#6366f1"];
+// ─── APPLICANT DASHBOARD VIEW ───────────────────────────────────────────────
+
+function ApplicantDashboardView() {
+  const { user, token } = useAuth();
+  const [, setLocation] = useLocation();
+  const [myApplications, setMyApplications] = useState<any[]>([]);
+  const [savedJobs, setSavedJobs] = useState<any[]>([]);
+  const [openJobs, setOpenJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    Promise.all([
+      fetch("/api/applications/my", { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch("/api/saved-jobs", { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch("/api/jobs").then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then(([apps, saved, jobs]) => {
+      setMyApplications(Array.isArray(apps) ? apps : []);
+      setSavedJobs(Array.isArray(saved) ? saved : []);
+      const published = Array.isArray(jobs) ? jobs.filter((j: any) => ["open", "published"].includes(j.status)) : [];
+      setOpenJobs(published);
+      setLoading(false);
+    });
+  }, [token]);
+
+  const activeApps = myApplications.filter(a => !["rejected", "withdrawn"].includes(a.status));
+  const offersCount = myApplications.filter(a => ["offer", "hired"].includes(a.status)).length;
+  const interviewsCount = myApplications.filter(a => a.status === "interview").length;
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Welcome Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-primary/10 via-primary/5 to-background p-6 rounded-xl border border-primary/20">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">
+              Candidate Hub
+            </h1>
+            <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30">
+              Applicant Portal
+            </Badge>
+          </div>
+          <p className="text-muted-foreground text-sm mt-1">
+            Welcome back{user?.name ? `, ${user.name}` : ""}. Track your job applications, saved vacancies, and public service opportunities.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => setLocation("/jobs")} className="gap-2">
+            <Briefcase className="h-4 w-4" /> Browse Vacancies
+          </Button>
+          <Button variant="outline" onClick={() => setLocation("/my-applications")} className="gap-2">
+            <FileText className="h-4 w-4" /> My Applications
+          </Button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}><CardContent className="p-5"><Skeleton className="h-20 w-full" /></CardContent></Card>
+          ))
+        ) : (
+          <>
+            <StatCard
+              label="Total Applied"
+              value={myApplications.length}
+              icon={Send}
+              onClick={() => setLocation("/my-applications")}
+            />
+            <StatCard
+              label="Active Applications"
+              value={activeApps.length}
+              icon={CheckCircle2}
+              onClick={() => setLocation("/my-applications")}
+            />
+            <StatCard
+              label="Saved Vacancies"
+              value={savedJobs.length}
+              icon={Bookmark}
+              onClick={() => setLocation("/my-applications")}
+            />
+            <StatCard
+              label="Open NISIT Jobs"
+              value={openJobs.length}
+              icon={Briefcase}
+              onClick={() => setLocation("/jobs")}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Main Grid: Active Applications & Recommended Jobs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Active Applications Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" /> My Recent Applications
+              </CardTitle>
+              <CardDescription>Status of your active submissions</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setLocation("/my-applications")} className="gap-1 text-xs">
+              View All <ArrowRight className="h-3 w-3" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-48 w-full" />
+            ) : myApplications.length === 0 ? (
+              <div className="py-12 text-center">
+                <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-sm font-medium">No applications submitted yet</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                  Explore open positions at NISIT and submit your application online.
+                </p>
+                <Button size="sm" onClick={() => setLocation("/jobs")} className="mt-4">
+                  Find Vacancies
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {myApplications.slice(0, 4).map((app: any) => (
+                  <div
+                    key={app.id}
+                    onClick={() => setLocation("/my-applications")}
+                    className="p-3.5 rounded-lg border hover:border-primary/50 hover:bg-muted/40 transition-all cursor-pointer flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate">{app.jobTitle ?? `Application #${app.id}`}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {app.departmentName ?? "NISIT"} · Applied {app.createdAt ? new Date(app.createdAt).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="capitalize shrink-0 text-xs font-semibold px-2.5 py-0.5">
+                      {app.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recommended Open Vacancies */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-amber-500" /> Featured NISIT Opportunities
+              </CardTitle>
+              <CardDescription>Explore open technical and administrative roles</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setLocation("/jobs")} className="gap-1 text-xs">
+              View All <ArrowRight className="h-3 w-3" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-48 w-full" />
+            ) : openJobs.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground text-sm">
+                No open vacancies at this time.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {openJobs.slice(0, 4).map((job: any) => (
+                  <div
+                    key={job.id}
+                    className="p-3.5 rounded-lg border hover:border-primary/50 hover:bg-muted/40 transition-all flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate">{job.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {job.location ?? "Port Moresby"} · {job.employmentType ?? "Full-time"} {job.closingDate ? `· Closes ${new Date(job.closingDate).toLocaleDateString("en-PG", { day: "numeric", month: "short" })}` : ""}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="default" onClick={() => setLocation(`/jobs/${job.id}?apply=1`)} className="shrink-0 text-xs h-8">
+                      Apply
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN DASHBOARD (ROLE-AWARE) ───────────────────────────────────────────
 
 export default function DashboardPage() {
   const { agencyId, token } = useAuth();
-  const { isAdmin, isHR, isExecutive } = useRole();
+  const { isAdmin, isHR, isExecutive, isHiringManager } = useRole();
   const [predictEnabled, setPredictEnabled] = useState(false);
   const [, setLocation] = useLocation();
   const [drilldown, setDrilldown] = useState<{ metric: DrilldownMetric; params?: Record<string, string | number> } | null>(null);
@@ -56,24 +248,26 @@ export default function DashboardPage() {
   const [drilldownError, setDrilldownError] = useState<string | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
+  const isStaffRole = isAdmin || isHR || isExecutive || isHiringManager;
+
   const summary = useGetDashboardSummary(
     { agency_id: agencyId ?? undefined },
-    { query: { queryKey: getGetDashboardSummaryQueryKey({ agency_id: agencyId ?? undefined }) } }
+    { query: { queryKey: getGetDashboardSummaryQueryKey({ agency_id: agencyId ?? undefined }), enabled: isStaffRole } }
   );
 
   const pipeline = useGetDashboardRecruitmentPipeline(
     { agency_id: agencyId ?? undefined },
-    { query: { queryKey: getGetDashboardRecruitmentPipelineQueryKey({ agency_id: agencyId ?? undefined }) } }
+    { query: { queryKey: getGetDashboardRecruitmentPipelineQueryKey({ agency_id: agencyId ?? undefined }), enabled: isStaffRole } }
   );
 
   const expiries = useGetDashboardContractExpiries(
     { agency_id: agencyId ?? undefined, days: 90 },
-    { query: { queryKey: getGetDashboardContractExpiriesQueryKey({ agency_id: agencyId ?? undefined, days: 90 }) } }
+    { query: { queryKey: getGetDashboardContractExpiriesQueryKey({ agency_id: agencyId ?? undefined, days: 90 }), enabled: isStaffRole } }
   );
 
   const gaps = useGetDashboardWorkforceGaps(
     { agency_id: agencyId ?? undefined },
-    { query: { queryKey: getGetDashboardWorkforceGapsQueryKey({ agency_id: agencyId ?? undefined }) } }
+    { query: { queryKey: getGetDashboardWorkforceGapsQueryKey({ agency_id: agencyId ?? undefined }), enabled: isStaffRole } }
   );
 
   const predictions = useAiPredictWorkforce(
@@ -81,7 +275,7 @@ export default function DashboardPage() {
     {
       query: {
         queryKey: getAiPredictWorkforceQueryKey(agencyId != null ? { agency_id: agencyId } : undefined),
-        enabled: predictEnabled,
+        enabled: predictEnabled && isStaffRole,
         staleTime: 5 * 60 * 1000,
       },
     }
@@ -100,7 +294,7 @@ export default function DashboardPage() {
   const openDrilldown = (metric: DrilldownMetric, params?: Record<string, string | number>) => setDrilldown({ metric, params });
 
   useEffect(() => {
-    if (!drilldown) return;
+    if (!drilldown || !isStaffRole) return;
     const controller = new AbortController();
     const search = new URLSearchParams({ metric: drilldown.metric, ...(agencyId != null ? { agency_id: String(agencyId) } : {}) });
     Object.entries(drilldown.params ?? {}).forEach(([key, value]) => search.set(key, String(value)));
@@ -152,14 +346,24 @@ export default function DashboardPage() {
       .catch((error: unknown) => { if ((error as { name?: string }).name !== "AbortError") setDrilldownError(error instanceof Error ? error.message : "Unable to load the source records."); })
       .finally(() => { if (!controller.signal.aborted) setDrilldownLoading(false); });
     return () => controller.abort();
-  }, [agencyId, drilldown, token]);
+  }, [agencyId, drilldown, isStaffRole, token]);
 
+  // Render role-tailored view for applicants
+  if (!isStaffRole) {
+    return (
+      <AppLayout>
+        <ApplicantDashboardView />
+      </AppLayout>
+    );
+  }
+
+  // Render enterprise workforce dashboard for HR / Admin / Execs
   return (
     <AppLayout>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground" data-testid="heading-dashboard">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Workforce and recruitment overview</p>
+          <h1 className="text-2xl font-bold text-foreground" data-testid="heading-dashboard">Executive Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Enterprise workforce, capacity, and recruitment metrics</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -250,7 +454,7 @@ export default function DashboardPage() {
         <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openDrilldown("expiring_contracts")}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="h-4 w-4 text-secondary" />
+              <Clock className="h-4 w-4 text-amber-500" />
               Contract Expiries (Next 90 Days)
             </CardTitle>
             <CardDescription>Contracts expiring soon that need attention</CardDescription>
@@ -259,43 +463,41 @@ export default function DashboardPage() {
             {expiries.isLoading ? (
               <Skeleton className="h-32 w-full" />
             ) : expiries.data && expiries.data.length > 0 ? (
-              <DataTable columns={expiryColumns} rows={expiries.data} getRowId={(row) => row.id ?? row.employeeId} tableId="dashboard-contract-expiries" exportFilename="contract-expiries" searchPlaceholder="Search expiring contracts…" data-testid="table-contract-expiries" />
+              <DataTable
+                columns={expiryColumns}
+                data={expiries.data}
+                searchKey="employeeName"
+                searchPlaceholder="Filter expiring contracts..."
+                pageSize={5}
+                exportFilename="contract-expiries"
+              />
             ) : (
-              <p className="text-muted-foreground text-sm py-4 text-center">No contracts expiring in the next 90 days</p>
+              <div className="py-6 text-center text-muted-foreground text-sm">
+                No contracts expiring in the next 90 days
+              </div>
             )}
           </CardContent>
         </Card>
+
         {canViewPredictions && (
-          <Card data-testid="card-ai-predictions">
-            <CardHeader>
+          <Card className="border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10">
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Brain className="h-4 w-4 text-indigo-500" />
-                    AI Workforce Predictions
+                  <CardTitle className="flex items-center gap-2 text-base text-indigo-700 dark:text-indigo-300">
+                    <Brain className="h-4 w-4" /> AI Workforce Intelligence
                   </CardTitle>
-                  <CardDescription>AI-powered attrition risk and vacancy forecasts</CardDescription>
+                  <CardDescription>Predictive analytics for attrition risk, future vacancies, and hiring recommendations</CardDescription>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    if (predictEnabled) {
-                      predictions.refetch();
-                    } else {
-                      setPredictEnabled(true);
-                    }
-                  }}
+                  onClick={() => setPredictEnabled(true)}
                   disabled={predictions.isFetching}
-                  data-testid="button-run-predictions"
+                  className="gap-1.5"
                 >
-                  {predictions.isFetching ? (
-                    <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Analysing...</>
-                  ) : predictions.data ? (
-                    <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh</>
-                  ) : (
-                    <><Brain className="h-3.5 w-3.5 mr-1" /> Run AI Analysis</>
-                  )}
+                  {predictions.isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  {predictions.data ? "Refresh AI Insights" : "Run AI Analysis"}
                 </Button>
               </div>
             </CardHeader>

@@ -32,10 +32,17 @@ export const hrLetterRequestsTable = pgTable("hr_letter_requests", {
   letterType: text("letter_type").notNull(), // employment_verification, salary_confirmation, service_certificate, appointment_letter, visa_support, bank_letter
   addressee: text("addressee").notNull(), // e.g. "To Whom It May Concern", "Bank South Pacific", "Department of Immigration"
   purpose: text("purpose").notNull(),
-  status: text("status").notNull().default("pending"), // pending, generated, rejected
+  status: text("status").notNull().default("pending"), // pending, ready_to_sign, signed_and_stamped, rejected
   generatedLetterContent: text("generated_letter_content"),
   generatedByUserId: integer("generated_by_user_id").references(() => usersTable.id),
   generatedAt: timestamp("generated_at"),
+  signatoryUserId: integer("signatory_user_id").references(() => usersTable.id),
+  signatoryName: text("signatory_name"),
+  signatoryTitle: text("signatory_title"),
+  signedAt: timestamp("signed_at"),
+  signatureDataUrl: text("signature_data_url"),
+  verificationRef: text("verification_ref"),
+  isStamped: boolean("is_stamped").default(false),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

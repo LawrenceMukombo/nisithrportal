@@ -391,24 +391,30 @@ export function DocumentOfficialStampBlock({
         <p className="text-[11px] text-muted-foreground">Date: {date}</p>
       </div>
 
-      {/* Official Circular / Boxed Stamp */}
+      {/* Official Circular / Boxed Stamp with Real NISIT Emblem */}
       <div className="flex justify-end">
-        <div className="w-48 h-32 border-2 border-dashed border-red-700/80 rounded-xl p-2.5 bg-red-50/40 dark:bg-red-950/20 text-red-900 dark:text-red-300 flex flex-col items-center justify-between text-center transform -rotate-1 shadow-xs">
-          <div className="flex items-center gap-1">
-            <Award className="h-3.5 w-3.5 text-red-700" />
-            <span className="text-[9px] font-bold tracking-wider uppercase">GOVERNMENT OF PNG</span>
+        <div className="w-52 border-2 border-dashed border-red-700/90 rounded-xl p-3 bg-red-50/50 dark:bg-red-950/30 text-red-950 dark:text-red-200 flex flex-col items-center justify-between text-center transform -rotate-1 shadow-md">
+          <div className="flex items-center gap-1.5 border-b border-red-300 dark:border-red-800 pb-1 w-full justify-center">
+            <img src="/nisit-logo.png" alt="NISIT Emblem" className="w-5 h-5 object-contain" />
+            <span className="text-[9px] font-black tracking-wider uppercase text-red-900 dark:text-red-300">
+              GOVERNMENT OF PNG
+            </span>
           </div>
-          <div className="my-0.5 space-y-0.5">
-            <p className="text-[10px] font-extrabold tracking-tight leading-tight uppercase">
+
+          <div className="my-1 space-y-0.5">
+            <p className="text-[11px] font-black tracking-tight leading-tight uppercase text-red-900 dark:text-red-200">
               NISIT STATUTORY SEAL
             </p>
-            <p className="text-[8px] font-mono tracking-widest text-red-700 uppercase">
-              ★ OFFICIAL VERIFIED ★
+            <p className="text-[8px] font-mono font-bold tracking-widest text-red-700 dark:text-red-400 uppercase">
+              ★ OFFICIALLY VERIFIED &amp; AUTHENTICATED ★
             </p>
           </div>
-          <div className="w-full border-t border-red-300 dark:border-red-800 pt-1 text-[8px] space-y-0.5">
-            <p className="font-semibold">{date}</p>
-            <p className="font-mono text-[7px] text-red-600">ID: NISIT-{new Date().getFullYear()}-SEC</p>
+
+          <div className="w-full border-t border-red-300 dark:border-red-800 pt-1 text-[8px] space-y-0.5 font-medium">
+            <p className="font-semibold text-foreground">{date}</p>
+            <p className="font-mono text-[7px] text-red-700 dark:text-red-400 font-bold">
+              AUTH REF: {signatureData?.verificationCode || `NISIT-SIG-${new Date().getFullYear()}-AUTH`}
+            </p>
           </div>
         </div>
       </div>

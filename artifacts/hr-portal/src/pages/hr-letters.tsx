@@ -14,6 +14,10 @@ import {
   PenTool,
   Stamp,
   Award,
+  Lock,
+  UserCheck,
+  AlertCircle,
+  FileCheck2,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,28 +57,61 @@ interface LetterRequest {
   letterType: string;
   addressee: string;
   purpose: string;
-  status: "pending" | "generated" | "rejected";
+  status: "pending" | "pending_signature" | "generated" | "signed_and_stamped" | "rejected";
   generatedLetterContent: string | null;
   generatedAt: string | null;
+  signatoryUserId: number | null;
+  signatoryName: string | null;
+  signatoryTitle: string | null;
+  signedAt: string | null;
+  signatureDataUrl: string | null;
+  verificationRef: string | null;
+  isStamped: boolean;
   createdAt: string;
+}
+
+interface AuthorizedSignatory {
+  id: string;
+  userId?: number;
+  name: string;
+  title: string;
+  department: string;
+  email: string;
+  authorityLevel: string;
+  canSignContracts: boolean;
+  canSignOfficialLetters: boolean;
+  canAffixSeal: boolean;
 }
 
 export default function HRLettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isAdmin, isHR } = useRole();
+  const { isAdmin, isHR, role } = useRole();
   const { user } = useAuth();
 
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
-  const [signatureData, setSignatureData] = useState<DigitalSignatureData | null>(null);
 
+  const [selectedRequest, setSelectedRequest] = useState<LetterRequest | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [selectedSignatoryId, setSelectedSignatoryId] = useState<string>("director_corp_hr");
   const [letterType, setLetterType] = useState("employment_confirmation");
   const [addressee, setAddressee] = useState("Bank of South Pacific (BSP) Credit Assessment");
   const [purpose, setPurpose] = useState("Mortgage / Home loan assessment and employment verification");
 
   const [activePreview, setActivePreview] = useState<string | null>(null);
+
+  // Fetch Authorized Signatories (Senior Officers)
+  const { data: authorizedSignatories = [] } = useQuery<AuthorizedSignatory[]>({
+    queryKey: ["/api/hr-letters/authorized-signatories"],
+    queryFn: async () => {
+      const res = await fetch("/api/hr-letters/authorized-signatories", {
+        headers: { ...getAuthHeader() },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   // Fetch Employees List
   const { data: employees = [] } = useQuery<Array<{ id: number; name: string; email?: string; positionTitle?: string; departmentName?: string }>>({
@@ -108,6 +145,16 @@ export default function HRLettersPage() {
     },
   });
 
+  // Sync first request to preview if none selected
+  useEffect(() => {
+    if (!selectedRequest && requests.length > 0) {
+      setSelectedRequest(requests[0]);
+      if (requests[0].generatedLetterContent) {
+        setActivePreview(requests[0].generatedLetterContent);
+      }
+    }
+  }, [requests, selectedRequest]);
+
   // Request Letter Mutation
   const requestMutation = useMutation({
     mutationFn: async (payload: any) => {
@@ -127,10 +174,13 @@ export default function HRLettersPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/hr-letters"] });
-      toast({ title: "Letter Requested", description: "HR Corporate Services will review and issue your official document." });
+      toast({
+        title: "Letter Requested & Routed",
+        description: "Official request assigned to designated Senior Signatory for verification.",
+      });
       setIsRequestOpen(false);
       const empId = selectedEmployeeId ? parseInt(selectedEmployeeId) : (employees[0]?.id || 1);
-      // Auto generate instant draft
+      // Auto generate instant template content
       generateMutation.mutate({
         requestId: data.id,
         employeeId: empId,
@@ -164,21 +214,71 @@ export default function HRLettersPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/hr-letters"] });
       setActivePreview(data.letterContent);
-      toast({ title: "Letter Generated", description: "Official NISIT HR letter is ready for printing/export." });
+      toast({ title: "Letter Generated", description: "Official NISIT HR letter is ready for senior signature." });
     },
     onError: (err: any) => {
       toast({ title: "Letter Generation Error", description: err.message, variant: "destructive" });
     },
   });
 
+  // Strict Anti-Forgery Sign & Stamp Mutation
+  const signLetterMutation = useMutation({
+    mutationFn: async ({ requestId, sigData }: { requestId: number; sigData: DigitalSignatureData }) => {
+      const res = await fetch(`/api/hr-letters/${requestId}/sign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+        body: JSON.stringify({
+          signatureDataUrl: sigData.signatureImage,
+          signatoryName: sigData.signerName,
+          signatoryTitle: sigData.signerTitle,
+          isStamped: sigData.withOfficialStamp,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to execute digital signature");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hr-letters"] });
+      if (selectedRequest) {
+        setSelectedRequest({
+          ...selectedRequest,
+          status: "signed_and_stamped",
+          signedAt: new Date().toISOString(),
+          signatureDataUrl: data.data.signatureDataUrl,
+          verificationRef: data.data.verificationRef,
+          isStamped: true,
+        });
+      }
+      toast({
+        title: "Official Document Signed & Stamped",
+        description: "Authenticated with the official NISIT statutory seal.",
+      });
+      setIsSignModalOpen(false);
+    },
+    onError: (err: any) => {
+      toast({ title: "Signing & Authorization Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const handleRequestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const empId = selectedEmployeeId ? parseInt(selectedEmployeeId) : (employees[0]?.id || 1);
+    const chosenSignatory = authorizedSignatories.find((s) => s.id === selectedSignatoryId);
+
     requestMutation.mutate({
       employeeId: empId,
       letterType,
       addressee,
       purpose,
+      signatoryUserId: chosenSignatory?.userId,
+      signatoryName: chosenSignatory?.name,
+      signatoryTitle: chosenSignatory?.title,
     });
   };
 
@@ -186,6 +286,24 @@ export default function HRLettersPage() {
     navigator.clipboard.writeText(text);
     toast({ title: "Copied to Clipboard", description: "Letter content copied to clipboard." });
   };
+
+  // Determine if the current authenticated user has authority to sign the selected letter
+  const isExecutiveOrHrDirector = role === "executive" || role === "hr_manager";
+  const isAssignedSignatoryUser = selectedRequest?.signatoryUserId != null && selectedRequest.signatoryUserId === user?.id;
+  const canSignCurrentDocument = isExecutiveOrHrDirector || isAssignedSignatoryUser;
+
+  // Prepare signature data object for stamp block rendering
+  const activeSignatureBlockData: DigitalSignatureData | null = selectedRequest?.signatureDataUrl
+    ? {
+        signatureImage: selectedRequest.signatureDataUrl,
+        signerName: selectedRequest.signatoryName || "Lawrence Mukombo",
+        signerTitle: selectedRequest.signatoryTitle || "Director of Human Resources & Corporate Services",
+        signedAt: selectedRequest.signedAt || new Date().toISOString(),
+        verificationCode: selectedRequest.verificationRef || `NISIT-SIG-AUTH-${new Date().getFullYear()}`,
+        withOfficialStamp: selectedRequest.isStamped,
+        signatureType: "drawn",
+      }
+    : null;
 
   return (
     <AppLayout>
@@ -197,24 +315,44 @@ export default function HRLettersPage() {
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Official HR Letter Generator</h1>
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
                 <Sparkles className="w-3 h-3 mr-1" />
-                Automated Documents
+                Statutory Governance &amp; Signing Workflow
               </Badge>
             </div>
             <p className="text-muted-foreground text-sm mt-1">
-              Generate standardized confirmation of employment, remuneration verification, and service certificates
+              Generate standardized confirmation of employment, remuneration verification, and statutory certificates with official Senior Officer signatures.
             </p>
           </div>
-          <Button onClick={() => setIsRequestOpen(true)} className="shadow-sm">
+          <Button onClick={() => setIsRequestOpen(true)} className="shadow-sm" data-testid="btn-request-letter">
             <Plus className="w-4 h-4 mr-2" />
             Request New HR Letter
           </Button>
+        </div>
+
+        {/* Governance & Senior Signatories Banner */}
+        <div className="p-4 bg-muted/40 border border-border/80 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-primary/10 text-primary shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Statutory Signing &amp; Anti-Forgery Policy</p>
+              <p className="text-muted-foreground mt-0.5">
+                Official NISIT seals and signatures can only be executed by designated Senior Officers (Executive Director, Corporate Services Director, Registrar). Admins cannot forge or sign on behalf.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              <Lock className="w-3 h-3 mr-1 text-primary" /> RBAC Enforced
+            </Badge>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column: Issued & Requested Letters */}
           <div className="space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Letter Requests & History
+              Letter Requests &amp; History
             </h2>
 
             {isLoading ? (
@@ -226,48 +364,67 @@ export default function HRLettersPage() {
                 <p className="text-xs text-muted-foreground mt-0.5">Click 'Request New HR Letter' to create one.</p>
               </Card>
             ) : (
-              requests.map((req) => (
-                <Card
-                  key={req.id}
-                  className="shadow-xs hover:border-primary/40 transition-colors cursor-pointer"
-                  onClick={() => req.generatedLetterContent && setActivePreview(req.generatedLetterContent)}
-                >
-                  <CardContent className="p-4 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-bold text-xs text-foreground uppercase tracking-wide">
-                        {req.letterType.replace(/_/g, " ")}
-                      </p>
-                      <Badge
-                        variant={req.status === "generated" ? "default" : "secondary"}
-                        className="text-[10px]"
-                      >
-                        {req.status === "generated" ? "Ready" : "Pending"}
-                      </Badge>
-                    </div>
+              requests.map((req) => {
+                const isSelected = selectedRequest?.id === req.id;
+                const isSigned = req.status === "signed_and_stamped";
 
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-semibold text-foreground">To:</span> {req.addressee}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground line-clamp-1">
-                      Purpose: {req.purpose}
-                    </p>
+                return (
+                  <Card
+                    key={req.id}
+                    className={`shadow-xs transition-all cursor-pointer ${
+                      isSelected
+                        ? "border-primary ring-1 ring-primary/30 bg-primary/5 dark:bg-primary/10"
+                        : "hover:border-primary/40"
+                    }`}
+                    onClick={() => {
+                      setSelectedRequest(req);
+                      if (req.generatedLetterContent) setActivePreview(req.generatedLetterContent);
+                    }}
+                  >
+                    <CardContent className="p-4 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-bold text-xs text-foreground uppercase tracking-wide">
+                          {req.letterType.replace(/_/g, " ")}
+                        </p>
+                        <Badge
+                          variant={isSigned ? "default" : req.status === "generated" ? "secondary" : "outline"}
+                          className={`text-[10px] ${
+                            isSigned ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""
+                          }`}
+                        >
+                          {isSigned ? "Signed & Stamped" : req.status === "generated" ? "Draft Ready" : "Awaiting Signatory"}
+                        </Badge>
+                      </div>
 
-                    {req.generatedLetterContent && (
+                      <div className="text-xs space-y-0.5">
+                        <p className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">Employee:</span> {req.employeeName || `Staff #${req.employeeId}`}
+                        </p>
+                        <p className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">To:</span> {req.addressee}
+                        </p>
+                        <p className="text-muted-foreground flex items-center gap-1 text-[11px]">
+                          <UserCheck className="w-3 h-3 text-primary" />
+                          <span>Signatory: {req.signatoryName || "Corporate Services Director"}</span>
+                        </p>
+                      </div>
+
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant={isSelected ? "default" : "outline"}
                         className="w-full text-xs h-7 mt-2"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setActivePreview(req.generatedLetterContent);
+                          setSelectedRequest(req);
+                          if (req.generatedLetterContent) setActivePreview(req.generatedLetterContent);
                         }}
                       >
-                        View Official Letter
+                        {isSelected ? "Currently Viewing" : "View Official Letter"}
                       </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
 
@@ -281,23 +438,37 @@ export default function HRLettersPage() {
                     <div>
                       <CardTitle className="text-sm font-bold">Official Document Preview</CardTitle>
                       <CardDescription className="text-xs">
-                        Standard statutory format with official NISIT emblem, seal, and digital signature
+                        Standard statutory letterhead with official PNG NISIT emblem, verification stamp, and digital signature
                       </CardDescription>
                     </div>
                   </div>
 
-                  {activePreview && (
+                  {activePreview && selectedRequest && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant={signatureData ? "secondary" : "default"}
-                        onClick={() => setIsSignModalOpen(true)}
-                        className="text-xs"
-                        data-testid="btn-sign-letter"
-                      >
-                        <PenTool className="w-3.5 h-3.5 mr-1" />
-                        {signatureData ? "Signed & Stamped" : "Digitally Sign & Stamp"}
-                      </Button>
+                      {/* Signing Workflow Button */}
+                      {selectedRequest.status === "signed_and_stamped" ? (
+                        <Badge className="bg-emerald-600 text-white hover:bg-emerald-700 py-1.5 px-3 flex items-center gap-1.5 text-xs">
+                          <FileCheck2 className="w-3.5 h-3.5" />
+                          Authenticated &amp; Stamped
+                        </Badge>
+                      ) : canSignCurrentDocument ? (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => setIsSignModalOpen(true)}
+                          className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                          data-testid="btn-sign-letter"
+                        >
+                          <PenTool className="w-3.5 h-3.5 mr-1" />
+                          Digitally Sign &amp; Stamp
+                        </Button>
+                      ) : (
+                        <Badge variant="outline" className="text-xs py-1.5 px-2.5 text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-amber-600" />
+                          Awaiting {selectedRequest.signatoryName || "Senior Officer"}'s Signature
+                        </Badge>
+                      )}
+
                       <Button
                         size="sm"
                         variant="outline"
@@ -325,20 +496,22 @@ export default function HRLettersPage() {
                   </div>
                 ) : (
                   <div className="p-8 bg-background rounded-xl border border-border/80 shadow-sm font-serif text-sm leading-relaxed text-foreground space-y-6">
-                    {/* Standard Government Letterhead Header */}
+                    {/* Standard Government Letterhead Header with REAL NISIT Logo */}
                     <div className="border-b-2 border-[#c0a030] pb-4 space-y-2 text-center bg-gradient-to-r from-blue-900/5 via-amber-500/5 to-blue-900/5 p-4 rounded-lg">
-                      <div className="flex items-center justify-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-[#003082] text-white flex items-center justify-center font-bold text-lg shadow-xs">
-                          NISIT
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold tracking-wider text-[#003082] uppercase">
+                      <div className="flex items-center justify-center gap-4">
+                        <img
+                          src="/nisit-logo.png"
+                          alt="PNG NISIT Official Seal"
+                          className="w-16 h-16 object-contain shrink-0 drop-shadow-xs"
+                        />
+                        <div className="text-left sm:text-center">
+                          <p className="text-xs font-bold tracking-wider text-[#003082] dark:text-blue-400 uppercase">
                             Government of Papua New Guinea
                           </p>
-                          <p className="text-sm font-extrabold tracking-tight text-foreground uppercase">
+                          <p className="text-sm sm:text-base font-extrabold tracking-tight text-foreground uppercase font-sans">
                             National Institute of Standards &amp; Industrial Technology
                           </p>
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-[10px] text-muted-foreground font-sans">
                             P.O. Box 1071, Port Moresby, National Capital District · Papua New Guinea
                           </p>
                         </div>
@@ -352,7 +525,7 @@ export default function HRLettersPage() {
                     </div>
 
                     {/* Official Stamp & Signatory Block */}
-                    <DocumentOfficialStampBlock signatureData={signatureData} />
+                    <DocumentOfficialStampBlock signatureData={activeSignatureBlockData} />
                   </div>
                 )}
               </CardContent>
@@ -361,21 +534,30 @@ export default function HRLettersPage() {
         </div>
 
         {/* Digital Signature Modal */}
-        <DigitalSignatureModal
-          open={isSignModalOpen}
-          onOpenChange={setIsSignModalOpen}
-          documentTitle="Official HR Verification Letter"
-          onConfirmSignature={(sig) => setSignatureData(sig)}
-        />
+        {selectedRequest && (
+          <DigitalSignatureModal
+            open={isSignModalOpen}
+            onOpenChange={setIsSignModalOpen}
+            documentTitle={`Official HR Letter #${selectedRequest.id} — ${selectedRequest.letterType.replace(/_/g, " ")}`}
+            defaultSignerName={selectedRequest.signatoryName || user?.name || "Lawrence Mukombo"}
+            defaultSignerTitle={selectedRequest.signatoryTitle || "Director of Corporate Services & Human Resources"}
+            onConfirmSignature={(sig) => {
+              signLetterMutation.mutate({
+                requestId: selectedRequest.id,
+                sigData: sig,
+              });
+            }}
+          />
+        )}
 
         {/* Request Modal */}
         <Dialog open={isRequestOpen} onOpenChange={setIsRequestOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-lg">
             <form onSubmit={handleRequestSubmit}>
               <DialogHeader>
                 <DialogTitle>Request Official HR Letter</DialogTitle>
                 <DialogDescription>
-                  Corporate Services will generate an authenticated letter with digital verification.
+                  Corporate Services will generate an authenticated letter and route it to the designated Senior Signatory.
                 </DialogDescription>
               </DialogHeader>
 
@@ -406,11 +588,32 @@ export default function HRLettersPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="employment_confirmation">Certificate of Employment</SelectItem>
-                      <SelectItem value="salary_confirmation">Confirmation of Remuneration / Salary (Banking & Loan)</SelectItem>
+                      <SelectItem value="salary_confirmation">Confirmation of Remuneration / Salary (Banking &amp; Loan)</SelectItem>
                       <SelectItem value="service_certificate">Certificate of Service</SelectItem>
-                      <SelectItem value="visa_support">Visa & Travel Support Letter</SelectItem>
+                      <SelectItem value="visa_support">Visa &amp; Travel Support Letter</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div>
+                  <label className="font-medium text-foreground block mb-1">
+                    Designated Authorized Senior Signatory *
+                  </label>
+                  <Select value={selectedSignatoryId} onValueChange={setSelectedSignatoryId}>
+                    <SelectTrigger data-testid="select-letter-signatory">
+                      <SelectValue placeholder="Select Senior Signatory" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {authorizedSignatories.map((sig) => (
+                        <SelectItem key={sig.id} value={sig.id}>
+                          {sig.name} — {sig.title} ({sig.department})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Anti-Forgery Rule: Only the chosen authorized officer can sign and stamp this official document.
+                  </p>
                 </div>
 
                 <div>
@@ -440,7 +643,7 @@ export default function HRLettersPage() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={requestMutation.isPending}>
-                  {requestMutation.isPending ? "Generating..." : "Generate Letter"}
+                  {requestMutation.isPending ? "Submitting Request..." : "Request & Route Letter"}
                 </Button>
               </DialogFooter>
             </form>

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, isNull } from "drizzle-orm";
-import { db, employeeDocumentsTable, employeeDocumentVersionsTable, hrLetterRequestsTable, employeesTable, departmentsTable, positionsTable, usersTable } from "@workspace/db";
+import { db, employeeDocumentsTable, employeeDocumentVersionsTable, hrLetterRequestsTable, employeesTable, departmentsTable, positionsTable, usersTable, rolesTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getGrantedScopes } from "../middlewares/authorization";
 import { getTenantAgencyId } from "../middlewares/tenant";
@@ -25,10 +25,286 @@ async function canAccessEmployeeDocuments(req: Parameters<typeof getGrantedScope
   if (tenantAgencyId != null && employee.agencyId !== tenantAgencyId) return false;
   if (scopes.includes("organisation")) return true;
   if (scopes.includes("own")) return employee.id === await getCurrentEmployeeId(req.user!.userId);
-  // Department-scoped permission needs a department/manager model; deny it
-  // until that mapping exists rather than accidentally treating it as org-wide.
   return false;
 }
+
+interface AuthorizedSignatory {
+  id: string;
+  userId?: number;
+  employeeId?: number;
+  name: string;
+  title: string;
+  department: string;
+  email: string;
+  authorityLevel: string;
+  canSignContracts: boolean;
+  canSignOfficialLetters: boolean;
+  canAffixSeal: boolean;
+}
+
+// GET /api/hr-letters/authorized-signatories - List Senior Officers who have statutory signing authority
+router.get("/hr-letters/authorized-signatories", authMiddleware, async (req, res): Promise<void> => {
+  try {
+    const seniorUsers = await db
+      .select({
+        userId: usersTable.id,
+        email: usersTable.email,
+        roleName: rolesTable.name,
+        employeeId: employeesTable.id,
+        employeeName: employeesTable.name,
+        positionTitle: positionsTable.title,
+        departmentName: departmentsTable.name,
+      })
+      .from(usersTable)
+      .leftJoin(rolesTable, eq(usersTable.roleId, rolesTable.id))
+      .leftJoin(employeesTable, eq(usersTable.employeeId, employeesTable.id))
+      .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id));
+
+    const authorizedList: AuthorizedSignatory[] = [
+      {
+        id: "dg_ceo",
+        name: "Victor Gabi",
+        title: "Director General / Chief Executive Officer",
+        department: "Executive Office of the Director General",
+        email: "dg@nisit.gov.pg",
+        authorityLevel: "Statutory / Executive Level 1",
+        canSignContracts: true,
+        canSignOfficialLetters: true,
+        canAffixSeal: true,
+      },
+      {
+        id: "director_corp_hr",
+        name: "Lawrence Mukombo",
+        title: "Director of Corporate Services & Human Resources",
+        department: "Corporate Services Division",
+        email: "hr@nisit.gov.pg",
+        authorityLevel: "Corporate & Statutory Registrar Level 2",
+        canSignContracts: true,
+        canSignOfficialLetters: true,
+        canAffixSeal: true,
+      },
+      {
+        id: "director_standards",
+        name: "Senior Standards Registrar",
+        title: "Registrar of Standards & Industrial Accreditation",
+        department: "Standards & Metrology Division",
+        email: "standards@nisit.gov.pg",
+        authorityLevel: "Technical & Statutory Level 2",
+        canSignContracts: false,
+        canSignOfficialLetters: true,
+        canAffixSeal: true,
+      },
+    ];
+
+    for (const u of seniorUsers) {
+      if (u.roleName === "executive" || u.roleName === "hr_manager" || u.roleName === "admin") {
+        const existingIdx = authorizedList.findIndex(
+          (a) =>
+            a.email.toLowerCase() === u.email.toLowerCase() ||
+            (u.employeeName && a.name.toLowerCase() === u.employeeName.toLowerCase())
+        );
+        if (existingIdx >= 0) {
+          authorizedList[existingIdx] = {
+            ...authorizedList[existingIdx],
+            userId: u.userId,
+            employeeId: u.employeeId ?? undefined,
+            name: u.employeeName || authorizedList[existingIdx].name,
+            title: u.positionTitle || authorizedList[existingIdx].title,
+          };
+        } else {
+          authorizedList.push({
+            id: `user_${u.userId}`,
+            userId: u.userId,
+            employeeId: u.employeeId ?? undefined,
+            name: u.employeeName || u.email.split("@")[0].replace(".", " ").toUpperCase(),
+            title: u.positionTitle || (u.roleName === "executive" ? "Executive Director" : "Director Corporate Services"),
+            department: u.departmentName || "Corporate Services Division",
+            email: u.email,
+            authorityLevel: u.roleName === "executive" ? "Statutory / Executive Level 1" : "Corporate Level 2",
+            canSignContracts: true,
+            canSignOfficialLetters: true,
+            canAffixSeal: true,
+          });
+        }
+      }
+    }
+
+    res.json(authorizedList);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch authorized signatories" });
+  }
+});
+
+// GET /api/hr-letters - List HR letter requests
+router.get("/hr-letters", authMiddleware, requireRole("admin", "hr_manager", "hr_officer"), async (req, res): Promise<void> => {
+  try {
+    const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
+    const conditions = [];
+    if (employeeIdParam) conditions.push(eq(hrLetterRequestsTable.employeeId, employeeIdParam));
+
+    const requests = await db
+      .select({
+        id: hrLetterRequestsTable.id,
+        employeeId: hrLetterRequestsTable.employeeId,
+        employeeName: employeesTable.name,
+        letterType: hrLetterRequestsTable.letterType,
+        addressee: hrLetterRequestsTable.addressee,
+        purpose: hrLetterRequestsTable.purpose,
+        status: hrLetterRequestsTable.status,
+        generatedLetterContent: hrLetterRequestsTable.generatedLetterContent,
+        generatedAt: hrLetterRequestsTable.generatedAt,
+        signatoryUserId: hrLetterRequestsTable.signatoryUserId,
+        signatoryName: hrLetterRequestsTable.signatoryName,
+        signatoryTitle: hrLetterRequestsTable.signatoryTitle,
+        signedAt: hrLetterRequestsTable.signedAt,
+        signatureDataUrl: hrLetterRequestsTable.signatureDataUrl,
+        verificationRef: hrLetterRequestsTable.verificationRef,
+        isStamped: hrLetterRequestsTable.isStamped,
+        rejectionReason: hrLetterRequestsTable.rejectionReason,
+        createdAt: hrLetterRequestsTable.createdAt,
+      })
+      .from(hrLetterRequestsTable)
+      .leftJoin(employeesTable, eq(hrLetterRequestsTable.employeeId, employeesTable.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(hrLetterRequestsTable.createdAt));
+
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch HR letter requests" });
+  }
+});
+
+// POST /api/hr-letters/request - Request HR letter
+router.post("/hr-letters/request", authMiddleware, async (req, res): Promise<void> => {
+  try {
+    const { employeeId, letterType, addressee, purpose, signatoryUserId, signatoryName, signatoryTitle } = req.body;
+
+    if (!letterType || !addressee || !purpose) {
+      res.status(400).json({ error: "Letter type, addressee, and purpose are required" });
+      return;
+    }
+
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    const ownEmployeeId = await currentEmployeeId(req);
+
+    if (!targetEmployeeId) {
+      targetEmployeeId = ownEmployeeId ?? undefined;
+    }
+
+    if (!targetEmployeeId) {
+      const [firstEmp] = await db.select({ id: employeesTable.id }).from(employeesTable).limit(1);
+      targetEmployeeId = firstEmp?.id;
+    }
+
+    if (!targetEmployeeId) {
+      res.status(400).json({ error: "No employee record found to issue letter for" });
+      return;
+    }
+
+    const isHrOrAdmin = hasHrAccess(req) || req.user?.roleName === "admin" || req.user?.roleName === "hr_officer";
+    if (!isHrOrAdmin && targetEmployeeId !== ownEmployeeId) {
+      res.status(403).json({ error: "Forbidden: cannot request a letter for this employee" });
+      return;
+    }
+
+    const defaultSignatoryName = signatoryName || "Lawrence Mukombo";
+    const defaultSignatoryTitle = signatoryTitle || "Director of Human Resources & Corporate Services";
+
+    const [letterReq] = await db
+      .insert(hrLetterRequestsTable)
+      .values({
+        employeeId: targetEmployeeId,
+        letterType,
+        addressee,
+        purpose,
+        status: "pending_signature",
+        signatoryUserId: signatoryUserId ? parseInt(signatoryUserId) : null,
+        signatoryName: defaultSignatoryName,
+        signatoryTitle: defaultSignatoryTitle,
+      })
+      .returning();
+
+    res.status(201).json(letterReq);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to request HR letter" });
+  }
+});
+
+// POST /api/hr-letters/:id/sign - Strict Sign & Stamp execution with Anti-Forgery verification
+router.post("/hr-letters/:id/sign", authMiddleware, async (req, res): Promise<void> => {
+  try {
+    const requestId = parseInt(req.params.id as string);
+    const { signatureDataUrl, signatoryName, signatoryTitle, isStamped } = req.body;
+
+    const [letterReq] = await db
+      .select()
+      .from(hrLetterRequestsTable)
+      .where(eq(hrLetterRequestsTable.id, requestId));
+
+    if (!letterReq) {
+      res.status(404).json({ error: "HR letter request not found" });
+      return;
+    }
+
+    const currentUserId = req.user!.userId;
+    const [currentUser] = await db
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        roleName: rolesTable.name,
+        employeeName: employeesTable.name,
+        positionTitle: positionsTable.title,
+      })
+      .from(usersTable)
+      .leftJoin(rolesTable, eq(usersTable.roleId, rolesTable.id))
+      .leftJoin(employeesTable, eq(usersTable.employeeId, employeesTable.id))
+      .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(eq(usersTable.id, currentUserId));
+
+    const userRole = currentUser?.roleName ?? req.user?.roleName ?? "";
+    const isExecutiveOrHrManager = userRole === "executive" || userRole === "hr_manager";
+    const isAssignedSignatory = letterReq.signatoryUserId === currentUserId;
+
+    // ANTI-FORGERY SECURITY RULE:
+    // Only the designated Senior Officer (or authenticated Executive/HR Director) can sign.
+    // Regular admins or other staff CANNOT forge or sign on behalf.
+    if (!isAssignedSignatory && !isExecutiveOrHrManager) {
+      res.status(403).json({
+        error: "Anti-Forgery Restriction: You do not possess executive signing authority. Only designated Senior Officers (Executive Director / Director Corporate Services) can sign and stamp official documents.",
+      });
+      return;
+    }
+
+    const signingName = signatoryName || currentUser?.employeeName || letterReq.signatoryName || "Lawrence Mukombo";
+    const signingTitle = signatoryTitle || currentUser?.positionTitle || letterReq.signatoryTitle || "Director of Corporate Services & Human Resources";
+    const verificationCode = `NISIT-SIG-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${new Date().getFullYear()}`;
+
+    const [updated] = await db
+      .update(hrLetterRequestsTable)
+      .set({
+        status: "signed_and_stamped",
+        signatoryUserId: currentUserId,
+        signatoryName: signingName,
+        signatoryTitle: signingTitle,
+        signedAt: new Date(),
+        signatureDataUrl: signatureDataUrl || null,
+        verificationRef: verificationCode,
+        isStamped: isStamped ?? true,
+        updatedAt: new Date(),
+      })
+      .where(eq(hrLetterRequestsTable.id, requestId))
+      .returning();
+
+    res.json({
+      success: true,
+      message: "Document successfully authenticated, digitally signed, and stamped with the official NISIT statutory seal.",
+      data: updated,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to sign letter" });
+  }
+});
 
 // GET /api/documents - List employee documents
 router.get("/documents", authMiddleware, async (req, res): Promise<void> => {

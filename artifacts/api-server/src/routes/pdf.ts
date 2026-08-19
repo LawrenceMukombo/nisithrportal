@@ -337,7 +337,7 @@ router.post(
     const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, appRow.candidateId!));
     const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, appRow.jobId));
 
-    const candidateEmail = candidate?.email ?? appRow.candidateEmail;
+    const candidateEmail = candidate?.email;
     if (!candidateEmail) { res.status(400).json({ error: "Candidate has no email address on file" }); return; }
 
     const agencyId = job?.agencyId ?? req.user?.agencyId;

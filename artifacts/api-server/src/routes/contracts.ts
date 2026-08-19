@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, lte, gte, sql, desc } from "drizzle-orm";
+import { eq, and, inArray, lte, gte, lt, sql, desc } from "drizzle-orm";
 import multer from "multer";
 import { db, contractsTable, employeesTable, notificationsTable, auditLogTable } from "@workspace/db";
 import {
@@ -15,8 +15,30 @@ import { notifyHrOfficers } from "../lib/notificationService";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { setObjectAclPolicy } from "../lib/objectAcl";
 import { writeAuditLog } from "../lib/audit";
+import { createApproval } from "./workflows";
 
 const router: IRouter = Router();
+
+function isValidDateOnly(value: string | null | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function contractDateError(type: string | null | undefined, startDate: string | null | undefined, endDate: string | null | undefined): string | null {
+  if (!isValidDateOnly(startDate)) return "A valid contract start date is required";
+  if (type === "permanent") return endDate == null ? null : "Permanent contracts must not have an end date";
+  if (!isValidDateOnly(endDate)) return "A valid end date is required for fixed-term contracts";
+  return endDate > startDate ? null : "Contract end date must be after its start date";
+}
+
+async function expireElapsedContracts(): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  await db.update(contractsTable).set({ status: "expired" }).where(and(
+    eq(contractsTable.status, "active"),
+    lt(contractsTable.endDate, today),
+  ));
+}
 const objectStorageService = new ObjectStorageService();
 
 async function getEmployeeAgencyId(employeeId: number): Promise<number | null> {
@@ -111,6 +133,7 @@ router.get("/contracts", authMiddleware, requireRole("admin", "hr_officer", "exe
     res.status(400).json({ error: "Invalid query parameters", details: query.error.issues });
     return;
   }
+  await expireElapsedContracts();
   const agencyId = getTenantAgencyId(req);
   const conditions = [];
 
@@ -135,6 +158,8 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const dateError = contractDateError(parsed.data.type ?? "fixed_term", parsed.data.startDate, parsed.data.endDate ?? null);
+  if (dateError) { res.status(400).json({ error: dateError }); return; }
   const agencyId = getTenantAgencyId(req);
   if (agencyId != null) {
     const empAgencyId = await getEmployeeAgencyId(parsed.data.employeeId);
@@ -154,6 +179,7 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
       .where(eq(employeesTable.id, parsed.data.employeeId));
     return created;
   });
+  await createApproval("contract", contract.id, req.user?.userId ?? null, agencyId ?? (await getEmployeeAgencyId(contract.employeeId)));
 
   // Apply tenant ACL to contract document if an internal storage URL was provided
   const contractAgencyId = agencyId ?? (await getEmployeeAgencyId(parsed.data.employeeId));
@@ -170,6 +196,7 @@ router.get("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer", 
     res.status(400).json({ error: "Invalid contract id" });
     return;
   }
+  await expireElapsedContracts();
   const [contract] = await db.select().from(contractsTable).where(eq(contractsTable.id, params.data.id));
   if (!contract) {
     res.status(404).json({ error: "Contract not found" });
@@ -203,6 +230,13 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
     return;
+  }
+  const finalType = body.data.type ?? existing.type;
+  const finalEndDate = body.data.endDate === undefined ? existing.endDate : body.data.endDate;
+  const dateError = contractDateError(finalType, existing.startDate, finalEndDate);
+  if (dateError) { res.status(400).json({ error: dateError }); return; }
+  if (body.data.status === "active" && body.data.endDate && body.data.endDate <= new Date().toISOString().slice(0, 10)) {
+    res.status(400).json({ error: "An active renewed contract must end in the future" }); return;
   }
   const contract = await db.transaction(async (tx) => {
     const [updated] = await tx.update(contractsTable)

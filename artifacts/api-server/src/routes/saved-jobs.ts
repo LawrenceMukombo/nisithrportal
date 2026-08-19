@@ -37,11 +37,36 @@ function daysUntil(closingDate: string): number {
 }
 
 async function getCandidateId(userId: number): Promise<number | null> {
-  const [row] = await db
+  const [linkedCandidate] = await db
     .select({ id: candidatesTable.id })
     .from(candidatesTable)
     .where(eq(candidatesTable.userId, userId));
-  return row?.id ?? null;
+  if (linkedCandidate) return linkedCandidate.id;
+
+  // Older applicant registrations created a candidate record by email but did not
+  // populate candidates.userId. Link that record on first use; if a profile was not
+  // created yet, create a minimal one so saving a vacancy never fails unnecessarily.
+  const [user] = await db
+    .select({ name: usersTable.name, email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  if (!user) return null;
+
+  const [emailCandidate] = await db
+    .select({ id: candidatesTable.id })
+    .from(candidatesTable)
+    .where(eq(candidatesTable.email, user.email));
+  if (emailCandidate) {
+    await db.update(candidatesTable).set({ userId }).where(eq(candidatesTable.id, emailCandidate.id));
+    return emailCandidate.id;
+  }
+
+  const [created] = await db.insert(candidatesTable).values({
+    userId,
+    name: user.name,
+    email: user.email,
+  }).returning({ id: candidatesTable.id });
+  return created?.id ?? null;
 }
 
 /**

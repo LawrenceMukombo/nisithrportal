@@ -471,7 +471,7 @@ bullet("Hot-reloadable workflows; new features ship without service interruption
 
 subsection("Cost profile");
 paragraph(
-  "Hosted on Replit's managed deployment platform with predictable monthly costs that scale with usage rather than seat count. There is no per-user SaaS licensing tax. The platform is owned by PNG NISIT.",
+  "Hosted on a dedicated secure cloud deployment platform with predictable monthly costs that scale with usage rather than seat count. There is no per-user SaaS licensing tax. The platform is owned by PNG NISIT.",
 );
 
 // ========================================================================

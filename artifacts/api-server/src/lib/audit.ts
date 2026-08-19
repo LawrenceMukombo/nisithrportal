@@ -10,7 +10,15 @@ export type AuditActionType =
   | "domain_violation"
   | "permissions_change"
   | "application_document_delete"
-  | "contract_document_clear";
+  | "contract_document_clear"
+  | "login_success"
+  | "login_failure"
+  | "logout"
+  | "account_locked"
+  | "account_unlocked"
+  | "employee_create"
+  | "employee_update"
+  | "employee_position_change";
 
 export type AuditOutcome = "success" | "rejected";
 

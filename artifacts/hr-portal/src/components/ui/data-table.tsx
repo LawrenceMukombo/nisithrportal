@@ -1,16 +1,16 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Printer, Columns3, CheckSquare } from "lucide-react";
+import {
+  ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronsLeft,
+  ChevronsRight, Download, Printer, Columns3, CheckSquare, Search, SlidersHorizontal,
+  RotateCcw,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem,
+  DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 export type DataTableColumn<T> = {
@@ -18,6 +18,9 @@ export type DataTableColumn<T> = {
   label: string;
   sortable?: boolean;
   defaultHidden?: boolean;
+  /** Columns are resizable by default. Set false for utility/action columns. */
+  resizable?: boolean;
+  minWidth?: number;
   render: (row: T) => React.ReactNode;
   sortValue?: (row: T) => string | number;
   exportValue?: (row: T) => string;
@@ -30,6 +33,7 @@ export type DataTableBulkAction = {
 };
 
 type SortDir = "asc" | "desc" | null;
+type ExportFormat = "csv" | "tsv" | "json";
 
 type DataTableProps<T> = {
   columns: DataTableColumn<T>[];
@@ -39,662 +43,249 @@ type DataTableProps<T> = {
   skeletonRows?: number;
   emptyState?: React.ReactNode;
   bulkActions?: DataTableBulkAction[];
-  /**
-   * Bulk action handler. The third argument carries selection metadata so callers can
-   * distinguish a partial selection from "every matching result selected" — the latter
-   * lets the caller hit a server-side filter endpoint instead of pushing a large id list.
-   * `allSelected` is true when the user opted into select-all-results mode OR when every
-   * loaded row is selected; `totalRows` is the backend total when known, otherwise the
-   * loaded row count.
-   */
-  onBulkAction?: (
-    ids: number[],
-    action: string,
-    meta: { allSelected: boolean; totalRows: number },
-  ) => void | Promise<void>;
-  /**
-   * Live progress for an in-flight bulk action. When provided alongside `bulkLoading`,
-   * the action bar renders a progress bar and "Updated X / N" text so recruiters get
-   * feedback instead of an opaque pause when applying bulk actions to large id sets.
-   */
+  onBulkAction?: (ids: number[], action: string, meta: { allSelected: boolean; totalRows: number }) => void | Promise<void>;
   bulkProgress?: { done: number; total: number } | null;
   exportFilename?: string;
-  /**
-   * Total count of rows matching the active server-side filters. When provided and the user
-   * has selected every loaded row, the bulk action bar shows the backend total instead of
-   * the client-loaded count, and offers to expand selection to all matching results
-   * (select-all-results mode). This is the foundation for pagination-aware bulk actions:
-   * the count comes from the server, so it stays correct across page navigation if the
-   * caller ever paginates the rows prop.
-   */
   totalMatchingResults?: number;
-  /**
-   * A token that changes whenever the active filter/search changes. When this changes,
-   * the select-all-results mode is cleared so the banner doesn't bleed across filter changes.
-   */
   filterToken?: string;
-  /**
-   * Stable identifier for this table (e.g. "applications", "employees"). When provided,
-   * the user's column visibility choices are persisted to localStorage under
-   * `dt-columns-${tableId}` and restored on next mount.
-   */
+  /** Persist the user's column visibility and widths. Defaults to exportFilename. */
   tableId?: string;
+  /** Enables the standard global search bar. Defaults to true. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  /** Optional more precise search text for rows that do not expose export values. */
+  getSearchText?: (row: T) => string;
   "data-testid"?: string;
   rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>;
 };
 
-function escapeCSV(val: string): string {
-  if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-    return `"${val.replace(/"/g, '""')}"`;
-  }
-  return val;
+function escapeDelimited(value: string, delimiter: string): string {
+  if (value.includes(delimiter) || value.includes('"') || value.includes("\n")) return `"${value.replace(/"/g, '""')}"`;
+  return value;
 }
 
-function buildCSV<T>(cols: DataTableColumn<T>[], rows: T[]): string {
-  const exportCols = cols.filter((c) => c.exportValue);
-  if (exportCols.length === 0) return "";
-  const headers = exportCols.map((c) => escapeCSV(c.label)).join(",");
-  const dataRows = rows.map((row) =>
-    exportCols.map((c) => escapeCSV(c.exportValue!(row))).join(",")
-  );
-  return [headers, ...dataRows].join("\n");
+function exportColumns<T>(columns: DataTableColumn<T>[]) {
+  return columns.filter((column) => column.exportValue);
 }
 
-function downloadCSV(csv: string, filename: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+function buildDelimited<T>(columns: DataTableColumn<T>[], rows: T[], delimiter: string): string {
+  const cols = exportColumns(columns);
+  if (!cols.length) return "";
+  return [
+    cols.map((column) => escapeDelimited(column.label, delimiter)).join(delimiter),
+    ...rows.map((row) => cols.map((column) => escapeDelimited(column.exportValue!(row), delimiter)).join(delimiter)),
+  ].join("\n");
+}
+
+function buildJson<T>(columns: DataTableColumn<T>[], rows: T[]): string {
+  const cols = exportColumns(columns);
+  return JSON.stringify(rows.map((row) => Object.fromEntries(cols.map((column) => [column.label, column.exportValue!(row)]))), null, 2);
+}
+
+function downloadFile(contents: string, filename: string, format: ExportFormat) {
+  const type = format === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
+  const blob = new Blob([contents], { type });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${filename}.csv`;
-  a.click();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${filename}.${format}`;
+  anchor.click();
   URL.revokeObjectURL(url);
 }
 
-function PageJumpInput({
-  currentPage,
-  totalPages,
-  onJump,
-}: {
-  currentPage: number;
-  totalPages: number;
-  onJump: (page: number) => void;
-}) {
+function PageJumpInput({ currentPage, totalPages, onJump }: { currentPage: number; totalPages: number; onJump: (page: number) => void }) {
   const [value, setValue] = useState(String(currentPage));
-  useEffect(() => {
-    setValue(String(currentPage));
-  }, [currentPage]);
-
+  useEffect(() => setValue(String(currentPage)), [currentPage]);
   function commit() {
-    const parsed = parseInt(value, 10);
-    if (!Number.isFinite(parsed)) {
-      setValue(String(currentPage));
-      return;
-    }
-    const clamped = Math.min(Math.max(1, parsed), totalPages);
-    if (clamped !== currentPage) onJump(clamped);
-    setValue(String(clamped));
+    const parsed = Number.parseInt(value, 10);
+    const page = Number.isFinite(parsed) ? Math.min(Math.max(1, parsed), totalPages) : currentPage;
+    if (page !== currentPage) onJump(page);
+    setValue(String(page));
   }
-
-  return (
-    <Input
-      type="number"
-      min={1}
-      max={totalPages}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          (e.target as HTMLInputElement).blur();
-        } else if (e.key === "Escape") {
-          setValue(String(currentPage));
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      aria-label="Jump to page"
-      data-testid="input-page-jump"
-      className="h-7 w-14 px-1.5 text-xs text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-    />
-  );
+  return <Input type="number" min={1} max={totalPages} value={value} onChange={(event) => setValue(event.target.value)} onBlur={commit}
+    onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); if (event.key === "Escape") setValue(String(currentPage)); (event.target as HTMLInputElement).blur(); } }}
+    aria-label="Jump to page" data-testid="input-page-jump" className="h-7 w-14 px-1.5 text-xs text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />;
 }
 
+/**
+ * The portal-wide table standard. New list pages should use this component instead of a
+ * hand-built `<table>` so sorting, column preferences, filters, exports, pagination and
+ * selection remain consistent for every role.
+ */
 export function DataTable<T>({
-  columns,
-  rows,
-  getRowId,
-  isLoading = false,
-  skeletonRows = 5,
-  emptyState,
-  bulkActions = [],
-  onBulkAction,
-  bulkProgress = null,
-  exportFilename = "export",
-  totalMatchingResults,
-  filterToken,
-  tableId,
-  "data-testid": testId,
-  rowProps,
+  columns, rows, getRowId, isLoading = false, skeletonRows = 5, emptyState, bulkActions = [], onBulkAction,
+  bulkProgress = null, exportFilename = "export", totalMatchingResults, filterToken, tableId,
+  searchable = true, searchPlaceholder = "Search this table…", getSearchText, "data-testid": testId, rowProps,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
-  // Tracks the "select all matching results" mode — distinct from selecting every loaded row.
-  // In this mode bulk actions apply to every server-matching record (resolved by the caller),
-  // not just the loaded subset. Cleared when filters change or selection is cleared.
   const [selectAllResults, setSelectAllResults] = useState(false);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageSize, setPageSize] = useState(25);
   const [pageIndex, setPageIndex] = useState(0);
-
-  useEffect(() => {
-    setSelectAllResults(false);
-    setSelectedIds(new Set());
-    setPageIndex(0);
-  }, [filterToken]);
-
-  const defaultHiddenKeys = useMemo(
-    () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
-    [columns]
-  );
-  const storageKey = tableId ? `dt-columns-${tableId}` : null;
+  const [search, setSearch] = useState("");
+  const [advancedColumn, setAdvancedColumn] = useState("all");
+  const [advancedSearch, setAdvancedSearch] = useState("");
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const defaultHiddenKeys = useMemo(() => new Set(columns.filter((column) => column.defaultHidden).map((column) => column.key)), [columns]);
+  const resolvedTableId = tableId ?? exportFilename;
+  const visibilityStorageKey = `dt-columns-${resolvedTableId}`;
+  const widthsStorageKey = `dt-widths-${resolvedTableId}`;
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => {
-    if (!storageKey || typeof window === "undefined") return defaultHiddenKeys;
+    if (typeof window === "undefined") return defaultHiddenKeys;
     try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return defaultHiddenKeys;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        // Filter to keys that still exist on the table to avoid stale entries surviving
-        // a column rename/removal.
-        const validKeys = new Set(columns.map((c) => c.key));
-        return new Set((parsed as unknown[]).filter((k): k is string => typeof k === "string" && validKeys.has(k)));
-      }
-    } catch {
-      // Corrupt entry — fall back to defaults.
-    }
+      const parsed = JSON.parse(window.localStorage.getItem(visibilityStorageKey) ?? "null");
+      const validKeys = new Set(columns.map((column) => column.key));
+      if (Array.isArray(parsed)) return new Set(parsed.filter((key): key is string => typeof key === "string" && validKeys.has(key)));
+    } catch { /* storage is optional */ }
     return defaultHiddenKeys;
   });
 
   useEffect(() => {
-    if (!storageKey || typeof window === "undefined") return;
-    // When the user's choice matches the table's defaults, remove the saved entry
-    // entirely rather than writing the defaults. This keeps "Reset to defaults"
-    // truly clearing storage, and lets future changes to defaultHidden flow through
-    // for users who haven't explicitly customized anything.
-    const matchesDefaults =
-      hiddenKeys.size === defaultHiddenKeys.size &&
-      Array.from(hiddenKeys).every((k) => defaultHiddenKeys.has(k));
+    if (typeof window === "undefined") return;
     try {
-      if (matchesDefaults) {
-        window.localStorage.removeItem(storageKey);
-      } else {
-        window.localStorage.setItem(storageKey, JSON.stringify(Array.from(hiddenKeys)));
+      const parsed = JSON.parse(window.localStorage.getItem(widthsStorageKey) ?? "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const validKeys = new Set(columns.map((column) => column.key));
+        setColumnWidths(Object.fromEntries(Object.entries(parsed).filter(([key, value]) => validKeys.has(key) && typeof value === "number" && value >= 60)));
       }
-    } catch {
-      // Storage may be unavailable (private mode, quota) — silently ignore.
-    }
-  }, [hiddenKeys, storageKey, defaultHiddenKeys]);
+    } catch { /* storage is optional */ }
+  // Preferences intentionally load once per table identity, not on each column render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widthsStorageKey]);
 
-  function resetColumnsToDefaults() {
-    setHiddenKeys(new Set(defaultHiddenKeys));
-  }
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(widthsStorageKey, JSON.stringify(columnWidths)); } catch { /* storage is optional */ }
+  }, [columnWidths, widthsStorageKey]);
 
-  const visibleColumns = useMemo(
-    () => columns.filter((c) => !hiddenKeys.has(c.key)),
-    [columns, hiddenKeys]
-  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const matchesDefaults = hiddenKeys.size === defaultHiddenKeys.size && [...hiddenKeys].every((key) => defaultHiddenKeys.has(key));
+    try {
+      if (matchesDefaults) window.localStorage.removeItem(visibilityStorageKey);
+      else window.localStorage.setItem(visibilityStorageKey, JSON.stringify([...hiddenKeys]));
+    } catch { /* storage is optional */ }
+  }, [hiddenKeys, visibilityStorageKey, defaultHiddenKeys]);
 
-  const sorted = useMemo(() => {
-    if (!sortKey || !sortDir) return rows;
-    const col = columns.find((c) => c.key === sortKey);
-    if (!col?.sortValue) return rows;
-    return [...rows].sort((a, b) => {
-      const av = col.sortValue!(a);
-      const bv = col.sortValue!(b);
-      if (av === bv) return 0;
-      const cmp = av < bv ? -1 : 1;
-      return sortDir === "asc" ? cmp : -cmp;
+  useEffect(() => { setSelectAllResults(false); setSelectedIds(new Set()); setPageIndex(0); }, [filterToken]);
+  useEffect(() => { setPageIndex(0); }, [search, advancedColumn, advancedSearch, pageSize]);
+
+  const visibleColumns = useMemo(() => columns.filter((column) => !hiddenKeys.has(column.key)), [columns, hiddenKeys]);
+  const valueForColumn = useCallback((row: T, key: string) => {
+    const column = columns.find((candidate) => candidate.key === key);
+    return column?.exportValue ? column.exportValue(row) : "";
+  }, [columns]);
+  const searchableText = useCallback((row: T) => {
+    if (getSearchText) return getSearchText(row).toLocaleLowerCase();
+    const exported = columns.map((column) => column.exportValue?.(row) ?? "").join(" ");
+    return (exported || JSON.stringify(row)).toLocaleLowerCase();
+  }, [columns, getSearchText]);
+  const filtered = useMemo(() => {
+    const globalTerm = search.trim().toLocaleLowerCase();
+    const advancedTerm = advancedSearch.trim().toLocaleLowerCase();
+    return rows.filter((row) => {
+      if (globalTerm && !searchableText(row).includes(globalTerm)) return false;
+      if (!advancedTerm) return true;
+      const text = advancedColumn === "all" ? searchableText(row) : valueForColumn(row, advancedColumn).toLocaleLowerCase();
+      return text.includes(advancedTerm);
     });
-  }, [rows, sortKey, sortDir, columns]);
+  }, [rows, search, advancedSearch, advancedColumn, searchableText, valueForColumn]);
+  const sorted = useMemo(() => {
+    if (!sortKey || !sortDir) return filtered;
+    const column = columns.find((candidate) => candidate.key === sortKey);
+    if (!column?.sortValue) return filtered;
+    return [...filtered].sort((a, b) => {
+      const av = column.sortValue!(a); const bv = column.sortValue!(b);
+      if (av === bv) return 0;
+      return (av < bv ? -1 : 1) * (sortDir === "asc" ? 1 : -1);
+    });
+  }, [filtered, sortKey, sortDir, columns]);
 
   const totalRows = sorted.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePageIndex = Math.min(pageIndex, totalPages - 1);
-  useEffect(() => {
-    if (pageIndex !== safePageIndex) setPageIndex(safePageIndex);
-  }, [pageIndex, safePageIndex]);
-  const pageStart = totalRows === 0 ? 0 : safePageIndex * pageSize;
+  useEffect(() => { if (pageIndex !== safePageIndex) setPageIndex(safePageIndex); }, [pageIndex, safePageIndex]);
+  const pageStart = totalRows ? safePageIndex * pageSize : 0;
   const pageEnd = Math.min(pageStart + pageSize, totalRows);
   const showPagination = totalRows > pageSize;
-  const pageRows = useMemo(
-    () => (showPagination ? sorted.slice(pageStart, pageEnd) : sorted),
-    [sorted, pageStart, pageEnd, showPagination]
-  );
-
+  const pageRows = useMemo(() => showPagination ? sorted.slice(pageStart, pageEnd) : sorted, [sorted, showPagination, pageStart, pageEnd]);
   const rowIds = useMemo(() => sorted.map(getRowId), [sorted, getRowId]);
-  // In select-all-results mode every loaded row is conceptually part of the selection,
-  // even after the user navigates to another page (where selectedIds wouldn't include
-  // those rows yet). Treating the whole loaded subset as selected keeps the checkboxes
-  // and bulk bar consistent with the user's intent across page changes.
   const allSelected = selectAllResults || (rowIds.length > 0 && rowIds.every((id) => selectedIds.has(id)));
   const someSelected = selectAllResults || rowIds.some((id) => selectedIds.has(id));
-  const selectedCount = selectAllResults
-    ? rowIds.length
-    : rowIds.filter((id) => selectedIds.has(id)).length;
+  const selectedCount = selectAllResults ? rowIds.length : rowIds.filter((id) => selectedIds.has(id)).length;
 
   function toggleAll() {
-    // Toggling the header checkbox while in select-all-results mode collapses out of
-    // that mode entirely (clears the broad selection); otherwise toggle the page subset.
-    if (selectAllResults) {
-      setSelectAllResults(false);
-      setSelectedIds(new Set());
-      return;
-    }
-    if (allSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        rowIds.forEach((id) => next.delete(id));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        rowIds.forEach((id) => next.add(id));
-        return next;
-      });
-    }
-  }
-
-  function toggleRow(id: number) {
-    // Per-row interaction in select-all-results mode collapses back to an explicit
-    // subset selection (every loaded row minus the one being toggled off).
-    if (selectAllResults) {
-      setSelectAllResults(false);
-      setSelectedIds(new Set(rowIds.filter((rid) => rid !== id)));
-      return;
-    }
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+    if (selectAllResults) { setSelectAllResults(false); setSelectedIds(new Set()); return; }
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (allSelected) rowIds.forEach((id) => next.delete(id)); else rowIds.forEach((id) => next.add(id));
       return next;
     });
   }
-
+  function toggleRow(id: number) {
+    if (selectAllResults) { setSelectAllResults(false); setSelectedIds(new Set(rowIds.filter((rowId) => rowId !== id))); return; }
+    setSelectedIds((previous) => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  }
   function handleSort(key: string) {
-    if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir("asc");
-    } else if (sortDir === "asc") {
-      setSortDir("desc");
-    } else if (sortDir === "desc") {
-      setSortKey(null);
-      setSortDir(null);
-    }
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir(null); }
   }
-
-  const handleBulkAction = useCallback(
-    async (action: string) => {
-      const ids = rowIds.filter((id) => selectedIds.has(id));
-      if (!onBulkAction) return;
-      setBulkLoading(true);
-      try {
-        // In select-all-results mode the user explicitly opted into "every matching record"
-        // so report allSelected=true with the backend total (when known). Otherwise we only
-        // report allSelected when every loaded row is in the selection set.
-        await onBulkAction(ids, action, {
-          allSelected: selectAllResults || (rowIds.length > 0 && ids.length === rowIds.length),
-          totalRows: selectAllResults && totalMatchingResults != null ? totalMatchingResults : rowIds.length,
-        });
-        setSelectedIds(new Set());
-        setSelectAllResults(false);
-      } finally {
-        setBulkLoading(false);
-      }
-    },
-    [rowIds, selectedIds, onBulkAction, selectAllResults, totalMatchingResults]
-  );
-
-  function handleExportSelected() {
-    const selectedRows = sorted.filter((row) => selectedIds.has(getRowId(row)));
-    const csv = buildCSV(visibleColumns, selectedRows);
-    if (csv) downloadCSV(csv, `${exportFilename}-selected`);
+  function resetColumns() { setHiddenKeys(new Set(defaultHiddenKeys)); setColumnWidths({}); }
+  function resetFilters() { setSearch(""); setAdvancedColumn("all"); setAdvancedSearch(""); }
+  function startResize(event: React.PointerEvent<HTMLSpanElement>, column: DataTableColumn<T>) {
+    event.preventDefault(); event.stopPropagation();
+    const header = event.currentTarget.closest("th");
+    const initialWidth = columnWidths[column.key] ?? header?.getBoundingClientRect().width ?? 160;
+    const startX = event.clientX;
+    const onMove = (moveEvent: PointerEvent) => setColumnWidths((previous) => ({ ...previous, [column.key]: Math.max(column.minWidth ?? 90, Math.round(initialWidth + moveEvent.clientX - startX)) }));
+    const onEnd = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onEnd); };
+    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onEnd);
   }
+  const exportRows = (format: ExportFormat, selected = false) => {
+    const data = selected ? sorted.filter((row) => selectedIds.has(getRowId(row))) : sorted;
+    const contents = format === "json" ? buildJson(visibleColumns, data) : buildDelimited(visibleColumns, data, format === "csv" ? "," : "\t");
+    if (contents) downloadFile(contents, selected ? `${exportFilename}-selected` : exportFilename, format);
+  };
+  const handleBulkAction = useCallback(async (action: string) => {
+    if (!onBulkAction) return;
+    const ids = rowIds.filter((id) => selectedIds.has(id));
+    setBulkLoading(true);
+    try {
+      await onBulkAction(ids, action, { allSelected: selectAllResults || (rowIds.length > 0 && ids.length === rowIds.length), totalRows: selectAllResults && totalMatchingResults != null ? totalMatchingResults : rowIds.length });
+      setSelectedIds(new Set()); setSelectAllResults(false);
+    } finally { setBulkLoading(false); }
+  }, [onBulkAction, rowIds, selectedIds, selectAllResults, totalMatchingResults]);
+  const SortIcon = ({ columnKey }: { columnKey: string }) => sortKey !== columnKey ? <ChevronsUpDown className="ml-1 h-3.5 w-3.5 opacity-40" /> : sortDir === "asc" ? <ChevronUp className="ml-1 h-3.5 w-3.5 text-primary" /> : <ChevronDown className="ml-1 h-3.5 w-3.5 text-primary" />;
 
-  function handleExportAll() {
-    const csv = buildCSV(visibleColumns, sorted);
-    if (csv) downloadCSV(csv, exportFilename);
-  }
-
-  function handlePrint() {
-    window.print();
-  }
-
-  function SortIcon({ colKey }: { colKey: string }) {
-    if (sortKey !== colKey) return <ChevronsUpDown className="h-3.5 w-3.5 ml-1 opacity-40" />;
-    if (sortDir === "asc") return <ChevronUp className="h-3.5 w-3.5 ml-1 text-primary" />;
-    return <ChevronDown className="h-3.5 w-3.5 ml-1 text-primary" />;
-  }
-
-  return (
-    <div className="space-y-2">
-      {/* Toolbar — hidden on print */}
-      <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
-        {/* Bulk action bar — always shown when rows are selected */}
-        {(selectedCount > 0 || selectAllResults) && (
-          <div
-            className="flex items-center gap-2 px-3 py-1.5 bg-muted/60 rounded-md border border-border flex-wrap"
-            data-testid="bulk-action-bar"
-          >
-            <CheckSquare className="h-4 w-4 text-primary shrink-0" />
-            {/* When in select-all-results mode the banner intentionally stays visible even
-                when the current page has zero selected rows (e.g. user navigated to another
-                page in a paginated view). The backend total drives the label so it remains
-                accurate independently of which page is currently loaded. */}
-            <span className="text-sm font-medium" data-testid="bulk-selected-label">
-              {selectAllResults && totalMatchingResults != null
-                ? `All ${totalMatchingResults} matching results selected`
-                : `${selectedCount} selected`}
-            </span>
-            {/* Offer to expand selection from "all on page" to "all matching results" when
-                the backend total is larger than the loaded subset. With no pagination today
-                the totals match and this prompt stays hidden, but the wiring is ready for
-                when the rows prop becomes a single page. */}
-            {!selectAllResults && allSelected && totalMatchingResults != null && totalMatchingResults > rowIds.length && (
-              <Button
-                size="sm"
-                variant="link"
-                className="h-auto p-0 text-xs"
-                onClick={() => setSelectAllResults(true)}
-                data-testid="button-select-all-results"
-              >
-                Select all {totalMatchingResults} matching results
-              </Button>
-            )}
-            {bulkLoading && bulkProgress && bulkProgress.total > 0 && (
-              <div className="flex items-center gap-2" data-testid="bulk-progress">
-                <div className="h-1.5 w-32 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-150"
-                    style={{
-                      width: `${Math.min(100, Math.round((bulkProgress.done / bulkProgress.total) * 100))}%`,
-                    }}
-                    data-testid="bulk-progress-bar"
-                  />
-                </div>
-                <span
-                  className="text-xs text-muted-foreground tabular-nums"
-                  data-testid="bulk-progress-text"
-                >
-                  Updated {bulkProgress.done} / {bulkProgress.total}
-                </span>
-              </div>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={bulkLoading}
-                  className="h-7 text-xs gap-1"
-                  data-testid="button-bulk-action"
-                >
-                  {bulkLoading ? "Working…" : "Actions"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={handleExportSelected} data-testid="bulk-action-export_selected">
-                  <Download className="h-3.5 w-3.5 mr-2" /> Export Selected
-                </DropdownMenuItem>
-                {bulkActions.length > 0 && <DropdownMenuSeparator />}
-                {bulkActions.map((action) => (
-                  <DropdownMenuItem
-                    key={action.value}
-                    onSelect={() => handleBulkAction(action.value)}
-                    className={action.variant === "destructive" ? "text-destructive" : ""}
-                    data-testid={`bulk-action-${action.value}`}
-                  >
-                    {action.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => { setSelectedIds(new Set()); setSelectAllResults(false); }}
-              className="h-7 text-xs text-muted-foreground"
-            >
-              Clear
-            </Button>
-          </div>
-        )}
-
-        <div className="flex items-center gap-1.5 ml-auto">
-          {/* Column visibility */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
-                <Columns3 className="h-3.5 w-3.5" /> Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              {columns.map((col) => (
-                <DropdownMenuCheckboxItem
-                  key={col.key}
-                  checked={!hiddenKeys.has(col.key)}
-                  onCheckedChange={(checked) => {
-                    setHiddenKeys((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.delete(col.key);
-                      else next.add(col.key);
-                      return next;
-                    });
-                  }}
-                >
-                  {col.label}
-                </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              {hiddenKeys.size > 0 && (
-                <DropdownMenuItem onSelect={() => setHiddenKeys(new Set())}>
-                  Show all
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onSelect={resetColumnsToDefaults}
-                data-testid="button-reset-columns"
-              >
-                Reset to defaults
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Export */}
-          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={handleExportAll}>
-            <Download className="h-3.5 w-3.5" /> Export
-          </Button>
-
-          {/* Print */}
-          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={handlePrint}>
-            <Printer className="h-3.5 w-3.5" /> Print
-          </Button>
-        </div>
+  return <div className="space-y-2">
+    <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
+      {searchable && <div className="relative min-w-[220px] flex-1 max-w-md"><Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={searchPlaceholder} className="h-8 pl-8 text-xs" data-testid="input-table-search" /></div>}
+      {(selectedCount > 0 || selectAllResults) && <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/60 rounded-md border border-border flex-wrap" data-testid="bulk-action-bar">
+        <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+        <span className="text-sm font-medium" data-testid="bulk-selected-label">{selectAllResults && totalMatchingResults != null ? `All ${totalMatchingResults} matching results selected` : `${selectedCount} selected`}</span>
+        {!selectAllResults && allSelected && totalMatchingResults != null && totalMatchingResults > rowIds.length && <Button size="sm" variant="link" className="h-auto p-0 text-xs" onClick={() => setSelectAllResults(true)}>Select all {totalMatchingResults} matching results</Button>}
+        {bulkLoading && bulkProgress && bulkProgress.total > 0 && <span className="text-xs text-muted-foreground">Updated {bulkProgress.done} / {bulkProgress.total}</span>}
+        <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={bulkLoading} className="h-7 text-xs">{bulkLoading ? "Working…" : "Actions"}</Button></DropdownMenuTrigger><DropdownMenuContent align="start">
+          <DropdownMenuItem onSelect={() => exportRows("csv", true)}><Download className="mr-2 h-3.5 w-3.5" />Export selected CSV</DropdownMenuItem>
+          {bulkActions.length > 0 && <DropdownMenuSeparator />}
+          {bulkActions.map((action) => <DropdownMenuItem key={action.value} onSelect={() => handleBulkAction(action.value)} className={action.variant === "destructive" ? "text-destructive" : ""}>{action.label}</DropdownMenuItem>)}
+        </DropdownMenuContent></DropdownMenu>
+        <Button size="sm" variant="ghost" onClick={() => { setSelectedIds(new Set()); setSelectAllResults(false); }} className="h-7 text-xs text-muted-foreground">Clear</Button>
+      </div>}
+      <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+        <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"><SlidersHorizontal className="h-3.5 w-3.5" />Filters</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72 p-3" onCloseAutoFocus={(event) => event.preventDefault()}>
+          <p className="mb-2 text-xs font-medium">Advanced search</p><select value={advancedColumn} onChange={(event) => setAdvancedColumn(event.target.value)} className="mb-2 h-8 w-full rounded-md border border-input bg-background px-2 text-xs"><option value="all">All searchable fields</option>{columns.filter((column) => column.exportValue).map((column) => <option key={column.key} value={column.key}>{column.label}</option>)}</select>
+          <Input value={advancedSearch} onChange={(event) => setAdvancedSearch(event.target.value)} placeholder="Contains…" className="h-8 text-xs" /><Button size="sm" variant="ghost" onClick={resetFilters} className="mt-2 h-7 px-0 text-xs"><RotateCcw className="mr-1 h-3.5 w-3.5" />Clear filters</Button>
+        </DropdownMenuContent></DropdownMenu>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"><Columns3 className="h-3.5 w-3.5" />Columns</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48">{columns.map((column) => <DropdownMenuCheckboxItem key={column.key} checked={!hiddenKeys.has(column.key)} onCheckedChange={(checked) => setHiddenKeys((previous) => { const next = new Set(previous); checked ? next.delete(column.key) : next.add(column.key); return next; })}>{column.label}</DropdownMenuCheckboxItem>)}<DropdownMenuSeparator /><DropdownMenuItem onSelect={() => setHiddenKeys(new Set())}>Show all</DropdownMenuItem><DropdownMenuItem onSelect={resetColumns} data-testid="button-reset-columns">Reset columns & widths</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"><Download className="h-3.5 w-3.5" />Export</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => exportRows("csv")}>CSV spreadsheet</DropdownMenuItem><DropdownMenuItem onSelect={() => exportRows("tsv")}>TSV spreadsheet</DropdownMenuItem><DropdownMenuItem onSelect={() => exportRows("json")}>JSON data</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => window.print()}><Printer className="h-3.5 w-3.5" />Print</Button>
       </div>
-
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto" data-testid={testId}>
-        {isLoading ? (
-          <div className="p-4 space-y-3">
-            {Array.from({ length: skeletonRows }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-[#f5f5f5]">
-                {/* Checkbox column — always present, hidden on print */}
-                <th className="py-3 px-4 w-10 print:hidden">
-                  <Checkbox
-                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                    onCheckedChange={toggleAll}
-                    aria-label="Select all"
-                    data-testid="checkbox-select-all"
-                  />
-                </th>
-                {visibleColumns.map((col) => (
-                  <th
-                    key={col.key}
-                    className={`text-left py-3 px-4 font-medium text-muted-foreground whitespace-nowrap ${
-                      col.sortable ? "cursor-pointer select-none hover:text-foreground" : ""
-                    }`}
-                    onClick={col.sortable ? () => handleSort(col.key) : undefined}
-                  >
-                    <span className="inline-flex items-center">
-                      {col.label}
-                      {col.sortable && <SortIcon colKey={col.key} />}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={visibleColumns.length + 1}
-                    className="text-center py-12 text-muted-foreground"
-                  >
-                    {emptyState ?? "No results found"}
-                  </td>
-                </tr>
-              ) : (
-                pageRows.map((row, idx) => {
-                  const id = getRowId(row);
-                  const extra = rowProps?.(row) ?? {};
-                  return (
-                    <tr
-                      key={id}
-                      {...extra}
-                      className={`border-b border-border last:border-0 transition-colors ${
-                        selectedIds.has(id)
-                          ? "bg-[#ebebeb]"
-                          : idx % 2 === 1
-                          ? "bg-[#fafafa] hover:bg-[#f5f5f5]"
-                          : "bg-white hover:bg-[#f5f5f5]"
-                      } ${extra.className ?? ""}`}
-                    >
-                      {/* Per-row checkbox — always present, hidden on print */}
-                      <td
-                        className="py-3 px-4 print:hidden"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Checkbox
-                          checked={selectedIds.has(id)}
-                          onCheckedChange={() => toggleRow(id)}
-                          aria-label={`Select row ${id}`}
-                        />
-                      </td>
-                      {visibleColumns.map((col) => (
-                        <td key={col.key} className="py-3 px-4 align-middle">
-                          {col.render(row)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Pagination footer — hidden on print, only shown when total exceeds page size */}
-      {showPagination && (
-        <div
-          className="flex items-center justify-between gap-2 flex-wrap pt-1 print:hidden"
-          data-testid="pagination-controls"
-        >
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span data-testid="pagination-range">
-              Showing {pageStart + 1}–{pageEnd} of {totalRows}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Rows per page</span>
-              <select
-                className="h-7 rounded-md border border-input bg-background px-1.5 text-xs"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPageIndex(0);
-                }}
-                data-testid="select-page-size"
-              >
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </label>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 w-7 p-0"
-              onClick={() => setPageIndex(0)}
-              disabled={safePageIndex === 0}
-              aria-label="First page"
-              data-testid="button-first-page"
-            >
-              <ChevronsLeft className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 w-7 p-0"
-              onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
-              disabled={safePageIndex === 0}
-              aria-label="Previous page"
-              data-testid="button-prev-page"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="pagination-page-label">
-              Page
-              <PageJumpInput
-                currentPage={safePageIndex + 1}
-                totalPages={totalPages}
-                onJump={(p) => setPageIndex(p - 1)}
-              />
-              of {totalPages}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 w-7 p-0"
-              onClick={() => setPageIndex((i) => Math.min(totalPages - 1, i + 1))}
-              disabled={safePageIndex >= totalPages - 1}
-              aria-label="Next page"
-              data-testid="button-next-page"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 w-7 p-0"
-              onClick={() => setPageIndex(totalPages - 1)}
-              disabled={safePageIndex >= totalPages - 1}
-              aria-label="Last page"
-              data-testid="button-last-page"
-            >
-              <ChevronsRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
-  );
+    <div className="rounded-md border overflow-x-auto" data-testid={testId}><table className="w-full text-sm table-fixed"><thead><tr className="border-b border-border bg-[#f5f5f5]"><th className="py-3 px-4 w-10 print:hidden"><Checkbox checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={toggleAll} aria-label="Select all" data-testid="checkbox-select-all" /></th>{visibleColumns.map((column) => <th key={column.key} style={columnWidths[column.key] ? { width: columnWidths[column.key] } : undefined} className={`relative text-left py-3 px-4 font-medium text-muted-foreground whitespace-nowrap ${column.sortable ? "cursor-pointer select-none hover:text-foreground" : ""}`} onClick={column.sortable ? () => handleSort(column.key) : undefined}><span className="inline-flex max-w-full items-center truncate">{column.label}{column.sortable && <SortIcon columnKey={column.key} />}</span>{column.resizable !== false && <span role="separator" aria-orientation="vertical" aria-label={`Resize ${column.label} column`} onPointerDown={(event) => startResize(event, column)} className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none hover:bg-primary/20" />}</th>)}</tr></thead><tbody>{totalRows === 0 ? <tr><td colSpan={visibleColumns.length + 1} className="text-center py-12 text-muted-foreground">{emptyState ?? "No results found"}</td></tr> : pageRows.map((row, index) => { const id = getRowId(row); const extra = rowProps?.(row) ?? {}; return <tr key={id} {...extra} className={`border-b border-border last:border-0 transition-colors ${selectedIds.has(id) ? "bg-[#ebebeb]" : index % 2 ? "bg-[#fafafa] hover:bg-[#f5f5f5]" : "bg-white hover:bg-[#f5f5f5]"} ${extra.className ?? ""}`}><td className="py-3 px-4 print:hidden" onClick={(event) => event.stopPropagation()}><Checkbox checked={selectedIds.has(id)} onCheckedChange={() => toggleRow(id)} aria-label={`Select row ${id}`} /></td>{visibleColumns.map((column) => <td key={column.key} style={columnWidths[column.key] ? { width: columnWidths[column.key] } : undefined} className="py-3 px-4 align-middle overflow-hidden">{column.render(row)}</td>)}</tr>; })}</tbody></table>{isLoading && <div className="p-4 space-y-3">{Array.from({ length: skeletonRows }).map((_, index) => <Skeleton key={index} className="h-12 w-full" />)}</div>}</div>
+    {showPagination && <div className="flex items-center justify-between gap-2 flex-wrap pt-1 print:hidden" data-testid="pagination-controls"><span className="text-xs text-muted-foreground" data-testid="pagination-range">Showing {pageStart + 1}–{pageEnd} of {totalRows}</span><div className="flex items-center gap-2"><label className="flex items-center gap-1.5 text-xs text-muted-foreground">Rows per page<select className="h-7 rounded-md border border-input bg-background px-1.5 text-xs" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} data-testid="select-page-size"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => setPageIndex(0)} disabled={safePageIndex === 0} aria-label="First page"><ChevronsLeft className="h-3.5 w-3.5" /></Button><Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => setPageIndex((index) => Math.max(0, index - 1))} disabled={safePageIndex === 0} aria-label="Previous page"><ChevronLeft className="h-3.5 w-3.5" /></Button><span className="text-xs text-muted-foreground inline-flex items-center gap-1">Page <PageJumpInput currentPage={safePageIndex + 1} totalPages={totalPages} onJump={(page) => setPageIndex(page - 1)} /> of {totalPages}</span><Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => setPageIndex((index) => Math.min(totalPages - 1, index + 1))} disabled={safePageIndex >= totalPages - 1} aria-label="Next page"><ChevronRight className="h-3.5 w-3.5" /></Button><Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => setPageIndex(totalPages - 1)} disabled={safePageIndex >= totalPages - 1} aria-label="Last page"><ChevronsRight className="h-3.5 w-3.5" /></Button></div></div>}
+  </div>;
 }

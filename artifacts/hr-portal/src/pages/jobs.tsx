@@ -285,10 +285,11 @@ export default function JobsPage() {
     return <ChevronDn className="h-3 w-3 ml-1 text-primary inline-block" />;
   }
 
-  const { data: departments = [] } = useGetDepartments(
+  const { data: rawDepartments = [] } = useGetDepartments(
     { agency_id: agencyId ?? undefined },
     {}
   );
+  const departments = Array.isArray(rawDepartments) ? rawDepartments : [];
 
   const deptMap = useMemo(() => {
     const m: Record<number, string> = {};

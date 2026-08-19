@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
-import { eq, and, gt, or, lt, isNull } from "drizzle-orm";
+import { eq, and, gt, or, lt, isNull, sql } from "drizzle-orm";
 import { db, usersTable, agenciesTable, rolesTable, candidatesTable, passwordResetTokensTable } from "@workspace/db";
 import { RegisterBody, LoginBody } from "@workspace/api-zod";
 import { authMiddleware, generateToken, requireRole } from "../middlewares/auth";
@@ -126,26 +126,112 @@ router.post("/auth/applicant-register", registerRateLimit, async (req, res): Pro
 });
 
 router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
-  const parsed = LoginBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+  try {
+    const parsed = LoginBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
 
-  const { email, password } = parsed.data;
+    const { email, password } = parsed.data;
 
-  const users = await db.select().from(usersTable).where(eq(usersTable.email, email));
-  if (users.length === 0) {
-    res.status(401).json({ error: "Invalid credentials" });
-    return;
-  }
+    const users = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase().trim()));
+    if (users.length === 0) {
+      await writeAuditLog({
+        targetEmail: email,
+        actionType: "login_failure",
+        outcome: "rejected",
+        details: { reason: "user_not_found" },
+      });
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
 
   const user = users[0];
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) {
-    res.status(401).json({ error: "Invalid credentials" });
+
+  // Check account status
+  if (user.status === "inactive") {
+    await writeAuditLog({
+      performedById: user.id,
+      performedByEmail: user.email,
+      targetUserId: user.id,
+      targetEmail: user.email,
+      actionType: "login_failure",
+      outcome: "rejected",
+      details: { reason: "account_deactivated" },
+      agencyId: user.agencyId,
+    });
+    res.status(403).json({ error: "Your account has been deactivated. Please contact your system administrator." });
     return;
   }
+
+  // Check lockout
+  if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+    const minsLeft = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
+    await writeAuditLog({
+      performedById: user.id,
+      performedByEmail: user.email,
+      targetUserId: user.id,
+      targetEmail: user.email,
+      actionType: "login_failure",
+      outcome: "rejected",
+      details: { reason: "account_currently_locked", minutesRemaining: minsLeft },
+      agencyId: user.agencyId,
+    });
+    res.status(423).json({ error: `Account temporarily locked due to consecutive failed attempts. Please try again in ${minsLeft} minute(s) or contact administrator.` });
+    return;
+  }
+
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) {
+    const newAttempts = (user.failedLoginAttempts || 0) + 1;
+    if (newAttempts >= 5) {
+      const lockTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      await db.update(usersTable).set({ failedLoginAttempts: newAttempts, lockedUntil: lockTime }).where(eq(usersTable.id, user.id));
+      await writeAuditLog({
+        performedById: user.id,
+        performedByEmail: user.email,
+        targetUserId: user.id,
+        targetEmail: user.email,
+        actionType: "account_locked",
+        outcome: "rejected",
+        details: { consecutiveFailures: newAttempts, lockDurationMinutes: 30 },
+        agencyId: user.agencyId,
+      });
+      res.status(423).json({ error: "Account locked for 30 minutes due to 5 consecutive failed login attempts." });
+      return;
+    }
+
+    await db.update(usersTable).set({ failedLoginAttempts: newAttempts }).where(eq(usersTable.id, user.id));
+    await writeAuditLog({
+      performedById: user.id,
+      performedByEmail: user.email,
+      targetUserId: user.id,
+      targetEmail: user.email,
+      actionType: "login_failure",
+      outcome: "rejected",
+      details: { attempts: newAttempts, remainingAttempts: 5 - newAttempts },
+      agencyId: user.agencyId,
+    });
+    res.status(401).json({ error: `Invalid credentials. ${5 - newAttempts} attempt(s) remaining before account lockout.` });
+    return;
+  }
+
+  // Reset lockout counters on success and record login
+  await db
+    .update(usersTable)
+    .set({ failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() })
+    .where(eq(usersTable.id, user.id));
+
+  await writeAuditLog({
+    performedById: user.id,
+    performedByEmail: user.email,
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actionType: "login_success",
+    outcome: "success",
+    agencyId: user.agencyId,
+  });
 
   let roleName: string | null = null;
   if (user.roleId) {
@@ -153,7 +239,7 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
     if (roles.length > 0) roleName = roles[0].name;
   }
 
-  // #77 Link any candidate records submitted before account creation
+  // Link candidate records for applicant
   if (roleName === "applicant") {
     const linked = await db
       .update(candidatesTable)
@@ -171,20 +257,60 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
     roleId: user.roleId ?? null,
     agencyId: user.agencyId ?? null,
     roleName,
+    tokenVersion: user.tokenVersion,
   });
 
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      roleId: user.roleId,
-      agencyId: user.agencyId,
-      status: user.status,
-      createdAt: user.createdAt.toISOString(),
-    },
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roleId: user.roleId,
+        agencyId: user.agencyId,
+        status: user.status,
+        lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+        createdAt: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString(),
+      },
+    });
+  } catch (err: any) {
+    logger.error(err, "Login internal error occurred");
+    console.error("DETAILED LOGIN ERROR:", err);
+    res.status(500).json({ error: "Internal server error: " + (err?.message || "Unknown error") });
+  }
+});
+
+router.post("/auth/logout", authMiddleware, async (req, res): Promise<void> => {
+  if (req.user) {
+    await writeAuditLog({
+      performedById: req.user.userId,
+      performedByEmail: req.user.email,
+      targetUserId: req.user.userId,
+      targetEmail: req.user.email,
+      actionType: "logout",
+      outcome: "success",
+      agencyId: req.user.agencyId,
+    });
+  }
+  res.json({ success: true, message: "Logged out successfully" });
+});
+
+// JWTs are otherwise stateless. Incrementing a per-user version invalidates
+// every existing token immediately, including tokens on lost devices.
+router.post("/auth/logout-all", authMiddleware, async (req, res): Promise<void> => {
+  await db.update(usersTable)
+    .set({ tokenVersion: sql`${usersTable.tokenVersion} + 1` })
+    .where(eq(usersTable.id, req.user!.userId));
+  await writeAuditLog({
+    performedById: req.user!.userId,
+    performedByEmail: req.user!.email,
+    targetUserId: req.user!.userId,
+    targetEmail: req.user!.email,
+    actionType: "logout",
+    outcome: "success",
+    agencyId: req.user!.agencyId,
   });
+  res.json({ success: true, message: "All sessions have been signed out" });
 });
 
 router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
@@ -435,11 +561,9 @@ router.post("/auth/reset-request", resetRateLimit, async (req, res): Promise<voi
         expiresAt,
       });
 
-      const baseUrl =
-        process.env.APP_BASE_URL ??
-        (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+      const baseUrl = process.env.APP_BASE_URL ?? null;
       if (!baseUrl) {
-        logger.error("[ResetRequest] APP_BASE_URL is not configured — cannot construct a trusted reset link. Set APP_BASE_URL in environment secrets to the frontend origin (e.g. https://your-app.replit.app).");
+        logger.error("[ResetRequest] APP_BASE_URL is not configured — cannot construct a trusted reset link. Set APP_BASE_URL to the frontend origin.");
         res.json({ message: "If that email belongs to an applicant account, a reset link has been sent." });
         return;
       }
@@ -511,7 +635,7 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   const record = records[0];
 
   const users = await db
-    .select({ id: usersTable.id, roleId: usersTable.roleId })
+    .select({ id: usersTable.id, email: usersTable.email, roleId: usersTable.roleId })
     .from(usersTable)
     .where(eq(usersTable.id, record.userId));
 
@@ -532,8 +656,25 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, user.id));
+  await db
+    .update(usersTable)
+    .set({
+      passwordHash,
+      lastPasswordChangeAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    })
+    .where(eq(usersTable.id, user.id));
+
   await db.update(passwordResetTokensTable).set({ used: true }).where(eq(passwordResetTokensTable.id, record.id));
+
+  await writeAuditLog({
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actionType: "password_reset",
+    outcome: "success",
+    details: { context: "applicant_self_service_reset" },
+  });
 
   // Notify the applicant that their password was reset
   try {
@@ -559,9 +700,7 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
  * Also accepts POST (per RFC 8058) to support one-click unsubscribe headers.
  */
 async function handleSavedJobClosingUnsubscribe(req: import("express").Request, res: import("express").Response): Promise<void> {
-  const baseUrl =
-    process.env.APP_BASE_URL ??
-    (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
+  const baseUrl = process.env.APP_BASE_URL ?? "";
   const confirmUrl = (status: "ok" | "invalid") =>
     `${baseUrl}/unsubscribed?type=saved-job-closing&status=${status}`;
 

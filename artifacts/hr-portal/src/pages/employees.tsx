@@ -37,14 +37,16 @@ export default function EmployeesPage() {
   const [, setLocation] = useLocation();
   const { isAdmin, isHR } = useRole();
 
-  const { data: employees = [], isLoading } = useGetEmployees(
+  const { data: rawEmployees = [], isLoading } = useGetEmployees(
     { status: statusFilter !== "all" ? statusFilter : undefined },
     { query: { queryKey: getGetEmployeesQueryKey({ status: statusFilter !== "all" ? statusFilter : undefined }) } }
   );
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
-  const { data: departments = [] } = useGetDepartments(undefined, {
+  const { data: rawDepartments = [] } = useGetDepartments(undefined, {
     query: { queryKey: getGetDepartmentsQueryKey() },
   });
+  const departments = Array.isArray(rawDepartments) ? rawDepartments : [];
 
   const deptMap = useMemo(() => {
     const m: Record<number, string> = {};
@@ -54,17 +56,31 @@ export default function EmployeesPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return employees.filter((e) => {
+    return employees.filter((e: any) => {
       const matchSearch = !q ||
         (e.name ?? "").toLowerCase().includes(q) ||
+        (e.employeeNumber ?? "").toLowerCase().includes(q) ||
         (e.email ?? "").toLowerCase().includes(q) ||
+        (e.nationalId ?? "").toLowerCase().includes(q) ||
         (e.phone ?? "").toLowerCase().includes(q);
       const matchDept = deptFilter === "all" || String(e.departmentId) === deptFilter;
       return matchSearch && matchDept;
     });
   }, [employees, search, deptFilter]);
 
-  const columns: DataTableColumn<Employee>[] = [
+  const columns: DataTableColumn<any>[] = [
+    {
+      key: "employeeNumber",
+      label: "Emp ID",
+      sortable: true,
+      sortValue: (e) => e.employeeNumber ?? "",
+      exportValue: (e) => e.employeeNumber ?? "",
+      render: (e) => (
+        <span className="font-mono text-xs font-semibold text-primary">
+          {e.employeeNumber || `EMP-${String(e.id).padStart(4, "0")}`}
+        </span>
+      ),
+    },
     {
       key: "name",
       label: "Employee",
@@ -88,13 +104,6 @@ export default function EmployeesPage() {
       ),
     },
     {
-      key: "email",
-      label: "Email",
-      defaultHidden: true,
-      exportValue: (e) => e.email ?? "",
-      render: (e) => <span className="text-muted-foreground text-xs">{e.email ?? "—"}</span>,
-    },
-    {
       key: "department",
       label: "Department",
       sortable: true,
@@ -104,6 +113,16 @@ export default function EmployeesPage() {
         <span className="text-muted-foreground">
           {e.departmentId ? (deptMap[e.departmentId] ?? `Dept #${e.departmentId}`) : "—"}
         </span>
+      ),
+    },
+    {
+      key: "gradeLevel",
+      label: "Grade",
+      sortable: true,
+      sortValue: (e) => e.gradeLevel ?? "",
+      exportValue: (e) => e.gradeLevel ?? "—",
+      render: (e) => (
+        <span className="text-xs font-medium text-muted-foreground">{e.gradeLevel ?? "Grade 10"}</span>
       ),
     },
     {

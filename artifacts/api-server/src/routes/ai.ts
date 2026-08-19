@@ -31,6 +31,7 @@ const cvPrefillRateLimit = rateLimit({
   max: CV_PREFILL_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
   keyGenerator: (req) => String(req.user?.userId ?? req.ip),
   message: { error: "Too many CV prefill requests — please wait before trying again." },
 });

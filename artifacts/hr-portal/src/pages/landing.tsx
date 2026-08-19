@@ -311,20 +311,23 @@ export default function LandingPage() {
   );
 
   const depts = useGetDepartments(undefined, { query: { enabled: true, queryKey: getGetDepartmentsQueryKey() } });
+  const deptsList = useMemo(() => (Array.isArray(depts.data) ? depts.data : []), [depts.data]);
+  const jobsList = useMemo(() => (Array.isArray(jobs.data) ? jobs.data : []), [jobs.data]);
+
   const deptMap = useMemo(() => {
     const m: Record<number, string> = {};
-    (depts.data ?? []).forEach(d => { m[d.id] = d.name; });
+    deptsList.forEach((d: { id: number; name: string }) => { m[d.id] = d.name; });
     return m;
-  }, [depts.data]);
+  }, [deptsList]);
 
   const deptAccentMap = useMemo(() => {
     const m: Record<number, string> = {};
-    (depts.data ?? []).forEach((d, i) => { m[d.id] = DEPT_ACCENT_COLORS[i % DEPT_ACCENT_COLORS.length]; });
+    deptsList.forEach((d: { id: number; name: string }, i: number) => { m[d.id] = DEPT_ACCENT_COLORS[i % DEPT_ACCENT_COLORS.length]; });
     return m;
-  }, [depts.data]);
+  }, [deptsList]);
 
   const filtered = useMemo(() => {
-    return (jobs.data ?? []).filter(j => {
+    return jobsList.filter(j => {
       const matchSearch = !search || j.title.toLowerCase().includes(search.toLowerCase()) ||
         (j.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);
@@ -415,7 +418,7 @@ export default function LandingPage() {
             onValueChange={setDeptFilter}
             options={[
               { value: "all", label: "All Departments" },
-              ...(depts.data ?? []).map(d => ({ value: String(d.id), label: d.name })),
+              ...deptsList.map((d: { id: number; name: string }) => ({ value: String(d.id), label: d.name })),
             ]}
             placeholder="All Departments"
             searchPlaceholder="Search departments…"

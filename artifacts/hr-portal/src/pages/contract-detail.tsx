@@ -37,15 +37,27 @@ type DocDeletion = {
   details: { action?: string | null; previousUrl?: string | null; newUrl?: string | null; via?: string | null; reason?: string | null } | null;
 };
 
+function todayDateOnly(): string { return new Date().toISOString().slice(0, 10); }
+function formatDate(value: string | null | undefined): string { return value ? new Date(`${value}T00:00:00`).toLocaleDateString("en-PG", { day: "numeric", month: "short", year: "numeric" }) : "—"; }
+
 function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: number; currentEndDate?: string | null; onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const updateContract = useUpdateContract();
   const [newEndDate, setNewEndDate] = useState(currentEndDate ?? "");
+  const minimumRenewalDate = (() => {
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowString = tomorrow.toISOString().slice(0, 10);
+    return currentEndDate && currentEndDate >= tomorrowString ? currentEndDate : tomorrowString;
+  })();
 
   const handleRenew = async () => {
     if (!newEndDate) {
       toast({ title: "Please enter a new end date", variant: "destructive" });
+      return;
+    }
+    if (newEndDate <= minimumRenewalDate) {
+      toast({ title: "Choose a later renewal date", description: `The new end date must be after ${formatDate(minimumRenewalDate)}.`, variant: "destructive" });
       return;
     }
     try {
@@ -73,6 +85,7 @@ function RenewDialog({ contractId, currentEndDate, onClose }: { contractId: numb
             <Input
               type="date"
               value={newEndDate}
+              min={minimumRenewalDate}
               onChange={(e) => setNewEndDate(e.target.value)}
               data-testid="input-renew-end-date"
             />
@@ -144,6 +157,7 @@ export default function ContractDetailPage() {
   const [showRenew, setShowRenew] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [contractPdfLoading, setContractPdfLoading] = useState(false);
   const [signedUploading, setSignedUploading] = useState(false);
   const [showRemoveDoc, setShowRemoveDoc] = useState(false);
@@ -270,8 +284,10 @@ export default function ContractDetailPage() {
     return <AppLayout><div className="p-6 text-center py-20 text-muted-foreground">Contract not found.</div></AppLayout>;
   }
 
-  const isExpiredOrExpiring = contract.status === "expired" ||
-    (contract.endDate && new Date(contract.endDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+  const isPermanent = contract.type === "permanent" || !contract.endDate;
+  const today = todayDateOnly();
+  const isExpired = !isPermanent && (contract.status === "expired" || contract.endDate! < today);
+  const isExpiringSoon = !isExpired && !isPermanent && contract.status === "active" && contract.endDate! <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   return (
     <AppLayout>
@@ -288,7 +304,7 @@ export default function ContractDetailPage() {
             </Badge>
             {canManageContracts && (
               <>
-                {(contract.status === "expired" || isExpiredOrExpiring) && (
+                {!isPermanent && (isExpired || isExpiringSoon) && (
                   <Button size="sm" variant="outline" onClick={() => setShowRenew(true)} data-testid="button-renew-contract">
                     <RefreshCw className="h-3.5 w-3.5 mr-1" /> Renew
                   </Button>
@@ -342,11 +358,11 @@ export default function ContractDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Start Date</span>
-              <span>{contract.startDate ? new Date(contract.startDate).toLocaleDateString() : "—"}</span>
+              <span>{formatDate(contract.startDate)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">End Date</span>
-              <span>{contract.endDate ? new Date(contract.endDate).toLocaleDateString() : "Ongoing (Permanent)"}</span>
+              <span>{isPermanent ? "Ongoing (permanent)" : formatDate(contract.endDate)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Status</span>
@@ -355,9 +371,7 @@ export default function ContractDetailPage() {
             {contract.documentUrl && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Document</span>
-                <a href={contract.documentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs">
-                  View Document
-                </a>
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setDocumentPreviewUrl(contract.documentUrl!)} data-testid="button-view-contract-document">View Document</Button>
               </div>
             )}
           </CardContent>
@@ -379,9 +393,7 @@ export default function ContractDetailPage() {
                       ? "Signed contract uploaded —"
                       : "Contract document on file —"}
                   </span>
-                  <a href={contract.documentUrl} target="_blank" rel="noreferrer" className="underline font-medium">
-                    View Document
-                  </a>
+                  <Button variant="link" size="sm" className="h-auto p-0 underline font-medium" onClick={() => setDocumentPreviewUrl(contract.documentUrl!)} data-testid="button-view-signed-contract-document">View Document</Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-300" data-testid="banner-signed-missing">
@@ -529,16 +541,16 @@ export default function ContractDetailPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {isExpiredOrExpiring && contract.status === "active" && (
+        {(isExpired || isExpiringSoon) && (
           <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950 dark:border-amber-800">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="font-medium text-amber-800 dark:text-amber-200 text-sm">Contract Expiring Soon</p>
+                <p className="font-medium text-amber-800 dark:text-amber-200 text-sm">{isExpired ? "Contract Expired" : "Contract Expiring Soon"}</p>
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                  This contract expires on {contract.endDate ? new Date(contract.endDate).toLocaleDateString() : "—"}.
+                  This contract {isExpired ? "expired" : "expires"} on {formatDate(contract.endDate)}.
                 </p>
               </div>
-              {canManageContracts && (
+              {canManageContracts && !isPermanent && (
                 <Button size="sm" onClick={() => setShowRenew(true)} variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-200">
                   <RefreshCw className="h-3.5 w-3.5 mr-1" /> Renew
                 </Button>
@@ -569,6 +581,15 @@ export default function ContractDetailPage() {
         title={`Contract #${contract.id} — Preview`}
         downloadFilename={`contract-${contract.id}.pdf`}
       />
+      {documentPreviewUrl && (
+        <PdfPreviewDialog
+          open={documentPreviewUrl != null}
+          onOpenChange={(open) => { if (!open) setDocumentPreviewUrl(null); }}
+          url={documentPreviewUrl}
+          title={`Contract #${contract.id} — Stored document`}
+          downloadFilename={`contract-${contract.id}-signed-document.pdf`}
+        />
+      )}
     </AppLayout>
   );
 }

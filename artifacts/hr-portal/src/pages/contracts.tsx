@@ -32,14 +32,16 @@ export default function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [, setLocation] = useLocation();
 
-  const { data: contracts = [], isLoading } = useGetContracts(
+  const { data: rawContracts = [], isLoading } = useGetContracts(
     { status: statusFilter !== "all" ? statusFilter : undefined },
     { query: { queryKey: getGetContractsQueryKey({ status: statusFilter !== "all" ? statusFilter : undefined }) } }
   );
+  const contracts = Array.isArray(rawContracts) ? rawContracts : [];
 
-  const { data: employees = [] } = useGetEmployees(undefined, {
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
     query: { queryKey: getGetEmployeesQueryKey() },
   });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   const empMap = useMemo(() => {
     const m: Record<number, string> = {};

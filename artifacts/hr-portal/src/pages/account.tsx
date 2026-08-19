@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Bell, Info, Mail, Clock } from "lucide-react";
+import { Bell, Info, Mail, Clock, UserCircle } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -253,6 +253,18 @@ export default function AccountPage() {
           <h1 className="text-2xl font-bold text-foreground">My Account</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage your account details.</p>
         </div>
+
+        <Card data-testid="card-logged-in-profile">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base"><UserCircle className="h-4 w-4" /> Signed-in profile</CardTitle>
+            <CardDescription>Your current portal identity and access level.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+            <div><p className="text-muted-foreground text-xs">Email</p><p className="font-medium truncate">{user?.email ?? "—"}</p></div>
+            <div><p className="text-muted-foreground text-xs">Role</p><p className="font-medium capitalize">{user?.role?.replace(/_/g, " ") ?? "—"}</p></div>
+            <div><p className="text-muted-foreground text-xs">User ID</p><p className="font-medium">{user?.userId ?? "—"}</p></div>
+          </CardContent>
+        </Card>
 
         {(showSavedJobPref || showStaleAppPref) && (
           <Card>

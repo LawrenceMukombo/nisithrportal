@@ -93,7 +93,7 @@ export async function sendSavedJobClosingEmail(to: string, candidateName: string
       ? "closes tomorrow"
       : `closes in ${daysLeft} days`;
   const subject = `PNG NISIT HR Portal — Saved job ${closingPhrase}: ${jobTitle}`;
-  const baseUrl = process.env.APP_BASE_URL ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
+  const baseUrl = process.env.APP_BASE_URL ?? "";
   const unsubToken = signUnsubscribeToken(userId, "saved-job-closing");
   const unsubscribeUrl = `${baseUrl}/api/auth/unsubscribe/saved-job-closing?token=${unsubToken}`;
   const text = `Dear ${candidateName},\n\nA job you saved, "${jobTitle}", ${closingPhrase} (${closingDate}). If you intend to apply, please submit your application before the closing date.\n\nView the vacancy: ${baseUrl}/jobs/${jobId}\n\nRegards,\nPNG NISIT HR Division\n\n—\nUnsubscribe from these alerts: ${unsubscribeUrl}`;

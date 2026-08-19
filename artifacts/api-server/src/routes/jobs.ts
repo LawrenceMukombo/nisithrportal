@@ -19,7 +19,7 @@ import { NISIT_AGENCY_ID } from "../lib/single-tenant";
 const router: IRouter = Router();
 
 const STAFF_ROLES = ["admin", "hr_officer", "manager"] as const;
-function isInternalStaff(user: { roleName?: string } | undefined | null): boolean {
+function isInternalStaff(user: { roleName?: string | null } | undefined | null): boolean {
   return user?.roleName != null && (STAFF_ROLES as readonly string[]).includes(user.roleName);
 }
 

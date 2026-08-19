@@ -36,6 +36,19 @@ import ResetRequestPage from "@/pages/reset-request";
 import ResetPasswordPage from "@/pages/reset-password";
 import UnsubscribedPage from "@/pages/unsubscribed";
 import PipelineSlaSettingsPage from "@/pages/pipeline-sla-settings";
+import OrgChartPage from "@/pages/org-chart";
+import LeaveManagementPage from "@/pages/leave";
+import AttendancePage from "@/pages/attendance";
+import OnboardingPage from "@/pages/onboarding";
+import OffboardingPage from "@/pages/offboarding";
+import PerformancePage from "@/pages/performance";
+import TrainingPage from "@/pages/training";
+import BenefitsPage from "@/pages/benefits";
+import HousingPage from "@/pages/housing";
+import DocumentsVaultPage from "@/pages/documents";
+import HRLettersPage from "@/pages/hr-letters";
+import ReportsPage from "@/pages/reports";
+import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +113,15 @@ function Router() {
       <Route path="/reset-request" component={ResetRequestPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/unsubscribed" component={UnsubscribedPage} />
+      <Route path="/dashboard">
+        {() => <ProtectedRoute component={DashboardPage} />}
+      </Route>
+      <Route path="/executive-dashboard">
+        {() => <ProtectedRoute component={ExecutiveDashboardPage} roles={["admin", "executive", "hr_officer"]} />}
+      </Route>
+      <Route path="/org-chart">
+        {() => <ProtectedRoute component={OrgChartPage} />}
+      </Route>
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">
         {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}
@@ -108,14 +130,11 @@ function Router() {
         {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/jobs/:id" component={JobDetailPage} />
-      <Route path="/dashboard">
-        {() => <ProtectedRoute component={DashboardPage} roles={["admin", "hr_officer", "hiring_manager", "executive"]} />}
+      <Route path="/candidates">
+        {() => <ProtectedRoute component={CandidatesPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/shortlisted">
         {() => <ProtectedRoute component={ShortlistedPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
-      </Route>
-      <Route path="/candidates">
-        {() => <ProtectedRoute component={CandidatesPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/candidates/:id">
         {() => <ProtectedRoute component={CandidateDetailPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
@@ -132,8 +151,17 @@ function Router() {
       <Route path="/employees/new">
         {() => <ProtectedRoute component={EmployeeFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
+      <Route path="/employees/edit/:id">
+        {() => <ProtectedRoute component={EmployeeFormPage} roles={["admin", "hr_officer"]} />}
+      </Route>
+      <Route path="/employees/:id/edit">
+        {() => <ProtectedRoute component={EmployeeFormPage} roles={["admin", "hr_officer"]} />}
+      </Route>
       <Route path="/employees/:id">
         {() => <ProtectedRoute component={EmployeeDetailPage} roles={["admin", "hr_officer"]} />}
+      </Route>
+      <Route path="/onboarding">
+        {() => <ProtectedRoute component={OnboardingPage} roles={["admin", "hr_officer", "hiring_manager"]} />}
       </Route>
       <Route path="/contracts">
         {() => <ProtectedRoute component={ContractsPage} roles={["admin", "hr_officer"]} />}
@@ -143,6 +171,36 @@ function Router() {
       </Route>
       <Route path="/contracts/:id">
         {() => <ProtectedRoute component={ContractDetailPage} roles={["admin", "hr_officer"]} />}
+      </Route>
+      <Route path="/offboarding">
+        {() => <ProtectedRoute component={OffboardingPage} roles={["admin", "hr_officer"]} />}
+      </Route>
+      <Route path="/leave">
+        {() => <ProtectedRoute component={LeaveManagementPage} />}
+      </Route>
+      <Route path="/attendance">
+        {() => <ProtectedRoute component={AttendancePage} />}
+      </Route>
+      <Route path="/documents">
+        {() => <ProtectedRoute component={DocumentsVaultPage} />}
+      </Route>
+      <Route path="/hr-letters">
+        {() => <ProtectedRoute component={HRLettersPage} />}
+      </Route>
+      <Route path="/performance">
+        {() => <ProtectedRoute component={PerformancePage} />}
+      </Route>
+      <Route path="/training">
+        {() => <ProtectedRoute component={TrainingPage} />}
+      </Route>
+      <Route path="/benefits">
+        {() => <ProtectedRoute component={BenefitsPage} />}
+      </Route>
+      <Route path="/housing">
+        {() => <ProtectedRoute component={HousingPage} />}
+      </Route>
+      <Route path="/reports">
+        {() => <ProtectedRoute component={ReportsPage} roles={["admin", "hr_officer", "executive"]} />}
       </Route>
       <Route path="/agencies">
         {() => <ProtectedRoute component={AgenciesPage} roles={["admin"]} />}
@@ -157,7 +215,7 @@ function Router() {
         {() => <ProtectedRoute component={MyApplicationsPage} roles={["applicant"]} />}
       </Route>
       <Route path="/account">
-        {() => <ProtectedRoute component={AccountPage} roles={["applicant", "admin", "hr_officer", "hiring_manager"]} />}
+        {() => <ProtectedRoute component={AccountPage} roles={["applicant", "admin", "hr_officer", "hiring_manager", "executive"]} />}
       </Route>
       <Route path="/track-application" component={TrackApplicationPage} />
       <Route path="/workflow">

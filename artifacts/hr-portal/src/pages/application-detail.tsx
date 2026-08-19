@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2, Eye, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Star, ClipboardEdit, MessageSquare, Loader2, User, MapPin, Briefcase, DollarSign, ShieldCheck, Award, HelpCircle, FileText, ExternalLink, FileDown, UserPlus, Clock, Mail, Upload, Trash2, Eye, ChevronDown, ChevronRight, CheckCircle2, UserCheck, Sparkles } from "lucide-react";
 import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
 import { getToken } from "@/lib/api-config";
 import {
@@ -722,6 +722,225 @@ export default function ApplicationDetailPage() {
             </Badge>
           )}
         </div>
+
+        {canUpdateStatus && (
+          <Card className="border-primary/30 bg-gradient-to-r from-primary/5 via-card to-card shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-primary" /> Workflow Stage Actions
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Current Stage: <strong className="text-foreground capitalize">{app.status?.replace("_", " ") || "Applied"}</strong> — Advance candidate or record stage decisions
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-xs font-mono capitalize border-primary/40 text-primary">
+                  Stage: {app.status || "applied"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {app.status === "applied" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "screening" } })}
+                      disabled={updateStatus.isPending}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      data-testid="btn-advance-screening"
+                    >
+                      <UserCheck className="h-4 w-4 mr-1.5" /> Move to CV Screening
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "interview" } })}
+                      disabled={updateStatus.isPending}
+                      data-testid="btn-advance-interview"
+                    >
+                      Fast-Track to Interview
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
+                      disabled={updateStatus.isPending}
+                      data-testid="btn-reject-app"
+                    >
+                      Reject Application
+                    </Button>
+                  </>
+                )}
+
+                {app.status === "screening" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "interview" } })}
+                      disabled={updateStatus.isPending}
+                      className="bg-purple-600 text-white hover:bg-purple-700"
+                      data-testid="btn-advance-interview"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-1.5" /> Invite for Interview
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "offer" } })}
+                      disabled={updateStatus.isPending}
+                    >
+                      Advance to Offer
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
+                      disabled={updateStatus.isPending}
+                    >
+                      Reject Candidate
+                    </Button>
+                  </>
+                )}
+
+                {app.status === "interview" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "offer" } })}
+                      disabled={updateStatus.isPending}
+                      className="bg-green-600 text-white hover:bg-green-700"
+                      data-testid="btn-advance-offer"
+                    >
+                      <Award className="h-4 w-4 mr-1.5" /> Extend Formal Offer
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "hired" } })}
+                      disabled={updateStatus.isPending}
+                    >
+                      Direct Hire
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
+                      disabled={updateStatus.isPending}
+                    >
+                      Interview Unsuccessful (Reject)
+                    </Button>
+                  </>
+                )}
+
+                {app.status === "offer" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "hired" } })}
+                      disabled={updateStatus.isPending}
+                      className="bg-teal-600 text-white hover:bg-teal-700"
+                      data-testid="btn-advance-hired"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" /> Offer Accepted (Mark as Hired)
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowOfferPreview(true)}
+                    >
+                      <Eye className="h-4 w-4 mr-1.5" /> Preview Offer Letter
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => requestSendOfferLetter()}
+                    >
+                      <Mail className="h-4 w-4 mr-1.5" /> Send Offer Letter
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "withdrawn" } })}
+                      disabled={updateStatus.isPending}
+                    >
+                      Candidate Declined / Withdrawn
+                    </Button>
+                  </>
+                )}
+
+                {app.status === "hired" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus.mutate({ id: app.id, data: { status: "onboarding" } })}
+                      disabled={updateStatus.isPending}
+                      className="bg-emerald-600 text-white hover:bg-emerald-700"
+                      data-testid="btn-advance-onboarding"
+                    >
+                      <Sparkles className="h-4 w-4 mr-1.5" /> Enrol in Onboarding
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-teal-600 text-teal-700 hover:bg-teal-50 dark:text-teal-400"
+                      onClick={() => {
+                        const qs = new URLSearchParams();
+                        if (candidate?.name)  qs.set("name",  candidate.name);
+                        if (candidate?.email) qs.set("email", candidate.email);
+                        if (candidate?.phone) qs.set("phone", candidate.phone ?? "");
+                        if (jobDetail?.departmentId) qs.set("departmentId", String(jobDetail.departmentId));
+                        qs.set("fromApp", String(app.id));
+                        setLocation(`/employees/new?${qs.toString()}`);
+                      }}
+                    >
+                      <UserPlus className="h-4 w-4 mr-1.5" /> Create Employee Master Record
+                    </Button>
+                  </>
+                )}
+
+                {app.status === "onboarding" && (
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => setLocation("/onboarding")}
+                      className="bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      <Sparkles className="h-4 w-4 mr-1.5" /> View Onboarding Checklist
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const qs = new URLSearchParams();
+                        if (candidate?.name)  qs.set("name",  candidate.name);
+                        if (candidate?.email) qs.set("email", candidate.email);
+                        if (candidate?.phone) qs.set("phone", candidate.phone ?? "");
+                        if (jobDetail?.departmentId) qs.set("departmentId", String(jobDetail.departmentId));
+                        qs.set("fromApp", String(app.id));
+                        setLocation(`/employees/new?${qs.toString()}`);
+                      }}
+                    >
+                      <UserPlus className="h-4 w-4 mr-1.5" /> View / Create Employee Record
+                    </Button>
+                  </>
+                )}
+
+                {(app.status === "rejected" || app.status === "withdrawn") && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateStatus.mutate({ id: app.id, data: { status: "applied" } })}
+                    disabled={updateStatus.isPending}
+                  >
+                    Re-open Application
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card data-testid="card-application-timeline">
           <CardHeader>

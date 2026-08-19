@@ -1,8 +1,8 @@
-import { eq, count, isNull, or, sql } from "drizzle-orm";
+import { and, eq, count, isNull, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable } from "@workspace/db";
+import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable, permissionsTable, rolePermissionsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { seedCompleteData } from "./seed-data";
+import { seedCompleteData, seedPrdReferenceData } from "./seed-data";
 
 const DEFAULT_ROLES = [
   { name: "admin", permissions: { all: true } },
@@ -10,6 +10,15 @@ const DEFAULT_ROLES = [
   { name: "hiring_manager", permissions: { applications: ["read", "review"], candidates: ["read"] } },
   { name: "executive", permissions: { dashboard: true, employees: ["read"], contracts: ["read"] } },
   { name: "applicant", permissions: { jobs: ["read"], applications: ["create", "read"] } },
+];
+
+const DEFAULT_PERMISSION_GRANTS = [
+  { role: "admin", resource: "documents", action: "read", scope: "organisation" },
+  { role: "admin", resource: "documents", action: "create", scope: "organisation" },
+  { role: "admin", resource: "documents", action: "delete", scope: "organisation" },
+  { role: "hr_officer", resource: "documents", action: "read", scope: "organisation" },
+  { role: "hr_officer", resource: "documents", action: "create", scope: "organisation" },
+  { role: "hr_officer", resource: "documents", action: "delete", scope: "organisation" },
 ];
 
 const NISIT_AGENCY_NAME = "PNG National Institute of Standards and Industrial Technology";
@@ -669,6 +678,24 @@ export async function seedInitialData(): Promise<void> {
       }
     }
 
+    // Seed normalised grants alongside the legacy JSON role permissions. The
+    // JSON column remains readable during migration, while enforcement moves to
+    // resource/action/scope grants.
+    for (const grant of DEFAULT_PERMISSION_GRANTS) {
+      const [role] = await db.select({ id: rolesTable.id }).from(rolesTable).where(eq(rolesTable.name, grant.role));
+      if (!role) continue;
+      const [permission] = await db.insert(permissionsTable)
+        .values({ resource: grant.resource, action: grant.action, description: `${grant.resource}.${grant.action}` })
+        .onConflictDoNothing()
+        .returning({ id: permissionsTable.id });
+      const permissionId = permission?.id ?? (await db.select({ id: permissionsTable.id }).from(permissionsTable)
+        .where(and(eq(permissionsTable.resource, grant.resource), eq(permissionsTable.action, grant.action))))[0]?.id;
+      if (!permissionId) continue;
+      await db.insert(rolePermissionsTable)
+        .values({ roleId: role.id, permissionId, scope: grant.scope })
+        .onConflictDoNothing();
+    }
+
     const agencies = await db.select().from(agenciesTable);
     if (agencies.length === 0) {
       const [agency] = await db.insert(agenciesTable).values({
@@ -697,6 +724,7 @@ export async function seedInitialData(): Promise<void> {
     await seedAdminUser();
     await seedJobVacancies();
     await seedCompleteData();
+    await seedPrdReferenceData();
   } catch (err) {
     logger.error(err, "Seed failed (non-fatal)");
   }

@@ -7,7 +7,7 @@ import { logger } from "./lib/logger";
 const app: Express = express();
 
 // Trust the first proxy hop so express-rate-limit reads the real client IP
-// from X-Forwarded-For rather than the Replit proxy address.
+// from X-Forwarded-For when behind a reverse proxy.
 app.set("trust proxy", 1);
 
 app.use(
@@ -29,7 +29,24 @@ app.use(
     },
   }),
 );
-app.use(cors());
+const configuredOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    // Browsers omit Origin for same-origin and non-browser requests.
+    if (!origin || configuredOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Origin is not allowed by CORS policy"));
+  },
+}));
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

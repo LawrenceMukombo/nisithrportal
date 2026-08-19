@@ -36,6 +36,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (payload) {
         setTokenState(stored);
         setUser({ userId: payload.userId, role: payload.roleName, agencyId: payload.agencyId, email: payload.email });
+        // A token can become invalid after a server restart, key rotation, or a
+        // logout-all action. Verify it once at startup so protected pages do not
+        // misleadingly render empty datasets under an expired session.
+        fetch("/api/auth/me", { headers: { Authorization: `Bearer ${stored}` } })
+          .then((response) => {
+            if (response.status === 401 || response.status === 403) {
+              clearToken();
+              setTokenState(null);
+              setUser(null);
+            }
+          })
+          .catch(() => {
+            // Keep the local session during a transient offline/server error.
+          });
+      } else {
+        clearToken();
       }
     }
     setIsLoading(false);
@@ -51,6 +67,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    const currentToken = getToken();
+    if (currentToken) {
+      fetch("/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentToken}`,
+        },
+      }).catch(() => {});
+    }
     clearToken();
     setTokenState(null);
     setUser(null);
@@ -70,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       "keydown",
       "touchstart",
       "scroll",
-      "visibilitychange",
     ];
 
     const clearTimer = () => {
@@ -99,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onTimeoutChanged = () => scheduleLogout();
 
     ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, onActivity, { passive: true }));
+    document.addEventListener("visibilitychange", onActivity, { passive: true });
     window.addEventListener("hr-portal:session-timeout-changed", onTimeoutChanged);
 
     scheduleLogout();
@@ -106,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearTimer();
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
+      document.removeEventListener("visibilitychange", onActivity);
       window.removeEventListener("hr-portal:session-timeout-changed", onTimeoutChanged);
     };
   }, [user, logout]);
@@ -126,4 +153,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
-

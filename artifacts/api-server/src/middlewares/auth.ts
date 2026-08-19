@@ -1,5 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? process.env.SESSION_SECRET;
@@ -21,6 +23,7 @@ export interface JwtPayload {
   roleId: number | null;
   agencyId: number | null;
   roleName: string | null;
+  tokenVersion: number;
 }
 
 declare global {
@@ -45,7 +48,7 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
   next();
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized: No token provided" });
@@ -55,6 +58,18 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   const token = authHeader.slice(7);
   try {
     const payload = jwt.verify(token, effectiveSecret) as JwtPayload;
+
+    // Check if user is active
+    const [userRecord] = await db
+      .select({ id: usersTable.id, status: usersTable.status, tokenVersion: usersTable.tokenVersion })
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.userId));
+
+    if (!userRecord || userRecord.status === "inactive" || payload.tokenVersion !== userRecord.tokenVersion) {
+      res.status(401).json({ error: "Unauthorized: Account is deactivated or does not exist" });
+      return;
+    }
+
     req.user = payload;
     next();
   } catch {
@@ -77,7 +92,7 @@ export function requireRole(...roles: string[]) {
 }
 
 export function generateToken(payload: JwtPayload): string {
-  return jwt.sign(payload, effectiveSecret, { expiresIn: "7d" });
+  return jwt.sign(payload, effectiveSecret, { expiresIn: process.env.JWT_EXPIRES_IN ?? "8h" });
 }
 
 export function parseIntParam(raw: string | string[]): number {

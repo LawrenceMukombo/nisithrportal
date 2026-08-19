@@ -685,7 +685,9 @@ export default function JobDetailPage() {
   });
 
   const job = rawJob as ExtJob | undefined;
-  const isPublished = job?.status === "published";
+  // The API exposes both legacy "open" and newer "published" public vacancies.
+  // Applicants must be able to apply to either status.
+  const isPublished = job?.status === "published" || job?.status === "open";
   const screeningQuestions = useScreeningQuestions(jobId, isPublished);
   const canViewPipeline = isAuthenticated && (isAdmin || isHR || isHiringManager);
 

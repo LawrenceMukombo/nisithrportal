@@ -20,6 +20,9 @@ import {
   agenciesTable,
   usersTable,
   auditLogTable,
+  employeesTable,
+  onboardingWorkflowsTable,
+  onboardingTasksTable,
 } from "@workspace/db";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -1160,6 +1163,103 @@ router.get("/applications/:id", authMiddleware, requireRole("admin", "hr_officer
   res.json({ ...application, statusHistory });
 });
 
+async function autoProvisionHiredEmployeeAndOnboarding(appId: number): Promise<void> {
+  try {
+    const [app] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, appId));
+    if (!app || !app.candidateId) return;
+
+    const [candidate] = await db.select().from(candidatesTable).where(eq(candidatesTable.id, app.candidateId));
+    const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, app.jobId));
+    if (!candidate || !job) return;
+
+    // Check if employee already exists for this email
+    let employeeId: number;
+    const [existingEmp] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(and(eq(employeesTable.email, candidate.email), eq(employeesTable.agencyId, job.agencyId)));
+
+    if (existingEmp) {
+      employeeId = existingEmp.id;
+    } else {
+      const empNum = `NISIT-EMP-${String(Date.now()).slice(-5)}`;
+      const startDateStr = new Date().toISOString().split("T")[0];
+      const [newEmp] = await db
+        .insert(employeesTable)
+        .values({
+          employeeNumber: empNum,
+          name: candidate.name,
+          email: candidate.email,
+          phone: candidate.phone ?? null,
+          gender: candidate.gender ?? null,
+          dateOfBirth: candidate.dateOfBirth ?? null,
+          nationalId: candidate.nationalId ?? null,
+          city: candidate.city ?? "Port Moresby",
+          province: candidate.province ?? "National Capital District",
+          departmentId: job.departmentId ?? null,
+          agencyId: job.agencyId,
+          gradeLevel: "Grade 12",
+          employmentType: job.employmentType ?? "permanent",
+          status: "active",
+          startDate: startDateStr,
+        })
+        .returning({ id: employeesTable.id });
+      employeeId = newEmp.id;
+
+      // Link candidate and user account if present
+      if (candidate.userId) {
+        await db.update(usersTable).set({ employeeId }).where(eq(usersTable.id, candidate.userId));
+      }
+    }
+
+    // Check if onboarding workflow already exists for this employee
+    const [existingWf] = await db
+      .select({ id: onboardingWorkflowsTable.id })
+      .from(onboardingWorkflowsTable)
+      .where(eq(onboardingWorkflowsTable.employeeId, employeeId));
+
+    if (!existingWf) {
+      const startDateStr = new Date().toISOString().split("T")[0];
+      const targetDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const [wf] = await db
+        .insert(onboardingWorkflowsTable)
+        .values({
+          employeeId,
+          candidateId: candidate.id,
+          startDate: startDateStr,
+          targetCompletionDate: targetDate,
+          status: "in_progress",
+          notes: `Automated onboarding generated upon hire for job "${job.title}".`,
+        })
+        .returning({ id: onboardingWorkflowsTable.id });
+
+      const DEFAULT_ONBOARDING_TASKS = [
+        { title: "Employee Master Profile Verification", category: "hr", assignedRole: "hr_officer", description: "Verify identity documents, bank details, and emergency contacts" },
+        { title: "Employment Contract & Code of Conduct Signing", category: "hr", assignedRole: "hr_officer", description: "Issue official NISIT appointment letter and signed contract" },
+        { title: "NISIT Active Directory & Email Account Provisioning", category: "it", assignedRole: "it_admin", description: "Create @nisit.gov.pg email and Microsoft 365 access" },
+        { title: "Workstation, Laptop & Access Card Issuance", category: "it", assignedRole: "it_admin", description: "Configure secure hardware and building security pass" },
+        { title: "Departmental Orientation & Workstation Setup", category: "manager", assignedRole: "hiring_manager", description: "Introduce to team and assign 90-day probation objectives" },
+        { title: "Nasfund Superannuation & Health Insurance Enrolment", category: "hr", assignedRole: "hr_officer", description: "Submit benefits paperwork to provider" },
+        { title: "Mandatory Public Service Ethics & Safety Induction", category: "employee", assignedRole: "employee", description: "Complete online compliance induction module" },
+      ];
+
+      await db.insert(onboardingTasksTable).values(
+        DEFAULT_ONBOARDING_TASKS.map((t, idx) => ({
+          workflowId: wf.id,
+          title: t.title,
+          description: t.description,
+          category: t.category,
+          assignedRole: t.assignedRole,
+          status: "pending",
+          orderIndex: idx,
+        }))
+      );
+    }
+  } catch (err) {
+    console.error("[applications] Failed to auto-provision employee & onboarding:", err);
+  }
+}
+
 router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   const params = UpdateApplicationStatusParams.safeParse({ id: parseIntParam(req.params.id) });
   if (!params.success) {
@@ -1205,6 +1305,11 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
 
     return updated;
   });
+
+  // Auto-provision Employee Master Record and Onboarding Checklist when marked hired
+  if (body.data.status === "hired") {
+    void autoProvisionHiredEmployeeAndOnboarding(application.id);
+  }
 
   // Trigger notification to applicant on status change
   if (body.data.status && body.data.status !== existing.status) {

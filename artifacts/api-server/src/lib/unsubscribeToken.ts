@@ -33,8 +33,6 @@ export function verifyUnsubscribeToken(token: string, purpose: UnsubscribePurpos
 function getBaseUrl(): string {
   const explicit = process.env.APP_BASE_URL;
   if (explicit) return explicit.replace(/\/$/, "");
-  const replit = process.env.REPLIT_DEV_DOMAIN;
-  if (replit) return `https://${replit}`;
   return "";
 }
 

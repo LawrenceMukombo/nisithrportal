@@ -5,8 +5,6 @@ import { db, usersTable, rolesTable, agenciesTable } from "@workspace/db";
 import { z } from "zod";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
-import { NISIT_AGENCY_ID } from "../lib/single-tenant";
-import { isStaffDomain, STAFF_ROLES } from "../lib/emailDomain";
 import { logger } from "../lib/logger";
 import { writeAuditLog } from "../lib/audit";
 import { createNotification } from "../lib/notificationService";
@@ -18,6 +16,8 @@ const CreateUserBody = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   roleId: z.number().int().positive(),
+  agencyId: z.number().int().positive().nullable().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
 });
 
 const UpdateUserBody = z.object({
@@ -33,8 +33,9 @@ const ResetPasswordBody = z.object({
 });
 
 router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
-  // Single-tenant mode: every new user is assigned to NISIT, regardless of caller scope.
-  const agencyId = NISIT_AGENCY_ID;
+  // Administrators may create accounts in any configured agency and deliberately
+  // override normal self-service email/role restrictions.
+  const agencyId = req.body.agencyId ?? getTenantAgencyId(req);
   const body = CreateUserBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
@@ -43,39 +44,7 @@ router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Pr
 
   const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
   const roleName = roles[0]?.name ?? null;
-
-  if (roleName && STAFF_ROLES.has(roleName) && !isStaffDomain(body.data.email)) {
-    logger.warn({ email: body.data.email, roleName, adminId: req.user?.userId }, "AUDIT domain-violation: non-gov email rejected for staff role on user create");
-    await writeAuditLog({
-      performedById: req.user?.userId ?? null,
-      performedByEmail: req.user?.email ?? null,
-      targetEmail: body.data.email,
-      actionType: "domain_violation",
-      outcome: "rejected",
-      details: { reason: "non_gov_email_for_staff_role", attemptedRole: roleName, context: "user_create" },
-      agencyId: agencyId ?? null,
-    });
-    res.status(400).json({
-      error: `Staff role "${roleName}" requires a government email domain (e.g. @dept.gov.pg). Please use a valid government email address.`,
-    });
-    return;
-  }
-  if (roleName === "applicant" && isStaffDomain(body.data.email)) {
-    logger.warn({ email: body.data.email, roleName, adminId: req.user?.userId }, "AUDIT domain-violation: gov email rejected for applicant role on user create");
-    await writeAuditLog({
-      performedById: req.user?.userId ?? null,
-      performedByEmail: req.user?.email ?? null,
-      targetEmail: body.data.email,
-      actionType: "domain_violation",
-      outcome: "rejected",
-      details: { reason: "gov_email_for_applicant_role", context: "user_create" },
-      agencyId: agencyId ?? null,
-    });
-    res.status(400).json({
-      error: "Government domain emails cannot be assigned the applicant role. Use a personal email address.",
-    });
-    return;
-  }
+  if (!roleName) { res.status(400).json({ error: "Selected role does not exist" }); return; }
 
   const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, body.data.email));
   if (existing.length > 0) {
@@ -90,8 +59,8 @@ router.post("/users", authMiddleware, requireRole("admin"), async (req, res): Pr
     email: body.data.email,
     passwordHash,
     roleId: body.data.roleId,
-    agencyId: agencyId ?? undefined,
-    status: "active",
+    agencyId: body.data.agencyId ?? agencyId ?? undefined,
+    status: body.data.status ?? "active",
   }).returning({
     id: usersTable.id,
     name: usersTable.name,
@@ -269,38 +238,7 @@ router.patch("/users/:id", authMiddleware, requireRole("admin"), async (req, res
   if (body.data.roleId != null) {
     const newRoles = await db.select().from(rolesTable).where(eq(rolesTable.id, body.data.roleId));
     newRoleName = newRoles[0]?.name ?? null;
-    if (newRoleName && STAFF_ROLES.has(newRoleName) && !isStaffDomain(emailToCheck)) {
-      logger.warn({ targetUserId: id, email: emailToCheck, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: non-gov email rejected for staff role on role update");
-      await writeAuditLog({
-        performedById: req.user?.userId ?? null,
-        performedByEmail: req.user?.email ?? null,
-        targetUserId: id,
-        targetEmail: emailToCheck,
-        actionType: "domain_violation",
-        outcome: "rejected",
-        details: { reason: "non_gov_email_for_staff_role", attemptedRole: newRoleName, context: "role_update" },
-        agencyId: agencyId ?? null,
-      });
-      res.status(400).json({
-        error: `Staff role "${newRoleName}" requires a government email domain. The email (${emailToCheck}) does not qualify. Update the email or choose a different role.`,
-      });
-      return;
-    }
-    if (newRoleName === "applicant" && isStaffDomain(emailToCheck)) {
-      logger.warn({ targetUserId: id, email: emailToCheck, newRoleName, adminId: req.user?.userId }, "AUDIT domain-violation: gov email rejected for applicant role on role update");
-      await writeAuditLog({
-        performedById: req.user?.userId ?? null,
-        performedByEmail: req.user?.email ?? null,
-        targetUserId: id,
-        targetEmail: emailToCheck,
-        actionType: "domain_violation",
-        outcome: "rejected",
-        details: { reason: "gov_email_for_applicant_role", context: "role_update" },
-        agencyId: agencyId ?? null,
-      });
-      res.status(400).json({ error: "Government domain emails cannot be assigned the applicant role." });
-      return;
-    }
+    if (!newRoleName) { res.status(400).json({ error: "Selected role does not exist" }); return; }
   }
 
   if (body.data.email != null && body.data.email !== existing.email) {
@@ -438,7 +376,12 @@ router.patch("/users/:id/password", authMiddleware, requireRole("admin"), async 
   }
 
   const passwordHash = await bcrypt.hash(body.data.password, 10);
-  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, id));
+  await db.update(usersTable).set({
+    passwordHash,
+    lastPasswordChangeAt: new Date(),
+    failedLoginAttempts: 0,
+    lockedUntil: null,
+  }).where(eq(usersTable.id, id));
 
   logger.info({ targetUserId: id, email: existing.email, adminId: req.user?.userId }, "AUDIT password-reset: admin reset user password");
   await writeAuditLog({
@@ -463,6 +406,41 @@ router.patch("/users/:id/password", authMiddleware, requireRole("admin"), async 
   }
 
   res.json({ ok: true });
+});
+
+router.patch("/users/:id/unlock", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  const id = parseIntParam(req.params.id);
+  if (id == null || isNaN(id)) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
+
+  const [existing] = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  await db
+    .update(usersTable)
+    .set({
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    })
+    .where(eq(usersTable.id, id));
+
+  await writeAuditLog({
+    performedById: req.user?.userId ?? null,
+    performedByEmail: req.user?.email ?? null,
+    targetUserId: id,
+    targetEmail: existing.email,
+    actionType: "account_unlocked",
+    outcome: "success",
+    agencyId: agencyId ?? null,
+  });
+
+  res.json({ success: true, message: "User account unlocked successfully" });
 });
 
 export default router;

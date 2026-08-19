@@ -19,6 +19,18 @@ import integrationsRouter from "./integrations";
 import pdfRouter from "./pdf";
 import auditLogRouter from "./audit-log";
 import savedJobsRouter from "./saved-jobs";
+import leaveRouter from "./leave";
+import attendanceRouter from "./attendance";
+import onboardingRouter from "./onboarding";
+import offboardingRouter from "./offboarding";
+import performanceRouter from "./performance";
+import trainingRouter from "./training";
+import benefitsRouter from "./benefits";
+import housingRouter from "./housing";
+import documentsRouter from "./documents";
+import orgChartRouter from "./org-chart";
+import reportsRouter from "./reports";
+import workflowsRouter from "./workflows";
 
 const router: IRouter = Router();
 
@@ -42,5 +54,17 @@ router.use(integrationsRouter);
 router.use(pdfRouter);
 router.use(auditLogRouter);
 router.use(savedJobsRouter);
+router.use(leaveRouter);
+router.use(attendanceRouter);
+router.use(onboardingRouter);
+router.use(offboardingRouter);
+router.use(performanceRouter);
+router.use(trainingRouter);
+router.use(benefitsRouter);
+router.use(housingRouter);
+router.use(documentsRouter);
+router.use(orgChartRouter);
+router.use(reportsRouter);
+router.use(workflowsRouter);
 
 export default router;

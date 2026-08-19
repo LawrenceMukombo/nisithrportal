@@ -25,6 +25,12 @@ import {
   candidateRefereesTable,
   employeesTable,
   contractsTable,
+  leaveTypesTable,
+  leaveBalancesTable,
+  trainingCoursesTable,
+  benefitsTable,
+  housingSchemesTable,
+  performanceCyclesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 
@@ -1023,5 +1029,100 @@ export async function seedCompleteData(): Promise<void> {
   logger.info({ count: EMPLOYEES_DEF.length }, "seedCompleteData: employees and contracts inserted");
   } // end else (employees not already seeded)
 
+  await seedPrdReferenceData();
   logger.info("seedCompleteData: complete data seed finished successfully");
+}
+
+export async function seedPrdReferenceData(): Promise<void> {
+  // ── Step 7: Leave Types ───────────────────────────────────────────────────
+  const existingLeaveTypes = await db.select({ c: countFn() }).from(leaveTypesTable);
+  if (Number(existingLeaveTypes[0]?.c ?? 0) === 0) {
+    const defaultTypes = [
+      { name: "Annual Leave", code: "ANNUAL", defaultDays: 15, carryOverMax: 5, isPaid: true, description: "Standard annual recreation leave for full-time staff" },
+      { name: "Sick Leave", code: "SICK", defaultDays: 10, carryOverMax: 10, isPaid: true, description: "Certified medical and illness leave" },
+      { name: "Maternity Leave", code: "MATERNITY", defaultDays: 60, carryOverMax: 0, isPaid: true, description: "Maternity leave for eligible female officers" },
+      { name: "Paternity Leave", code: "PATERNITY", defaultDays: 5, carryOverMax: 0, isPaid: true, description: "Spousal support and paternity leave" },
+      { name: "Compassionate / Bereavement Leave", code: "COMPASSIONATE", defaultDays: 5, carryOverMax: 0, isPaid: true, description: "Bereavement and family emergency leave" },
+      { name: "Study / Professional Development Leave", code: "STUDY", defaultDays: 10, carryOverMax: 0, isPaid: true, description: "Approved training and educational examination leave" },
+      { name: "Leave Without Pay", code: "UNPAID", defaultDays: 30, carryOverMax: 0, isPaid: false, description: "Approved unpaid leave of absence" },
+    ];
+    await db.insert(leaveTypesTable).values(defaultTypes);
+    logger.info({ count: defaultTypes.length }, "seedPrdReferenceData: leave types seeded");
+
+    // Initialize 2026 leave balances for all active employees
+    const allEmps = await db.select().from(employeesTable);
+    const allTypes = await db.select().from(leaveTypesTable);
+    const balanceRows = [];
+    for (const emp of allEmps) {
+      for (const lt of allTypes) {
+        balanceRows.push({
+          employeeId: emp.id,
+          leaveTypeId: lt.id,
+          year: 2026,
+          allocatedDays: String(lt.defaultDays),
+          usedDays: "0",
+          pendingDays: "0",
+        });
+      }
+    }
+    if (balanceRows.length > 0) {
+      await db.insert(leaveBalancesTable).values(balanceRows);
+      logger.info({ count: balanceRows.length }, "seedPrdReferenceData: employee leave balances seeded");
+    }
+  }
+
+  // ── Step 8: Training Courses ──────────────────────────────────────────────
+  const existingCourses = await db.select({ c: countFn() }).from(trainingCoursesTable);
+  if (Number(existingCourses[0]?.c ?? 0) === 0) {
+    const courses = [
+      { title: "ISO/IEC 17025 Laboratory Accreditation & Quality Management", category: "technical_standards", provider: "International Organization for Standardization (ISO)", durationHours: 24, validityMonths: 36, isMandatory: true, description: "General requirements for the competence of testing and calibration laboratories." },
+      { title: "PNG National Quality Policy & Standards Development", category: "technical_standards", provider: "NISIT Standards Division", durationHours: 16, validityMonths: 24, isMandatory: true, description: "Methodology for formulating PNG national standards aligned with international frameworks." },
+      { title: "Industrial Metrology & Legal Calibration Systems", category: "metrology", provider: "National Metrology Institute", durationHours: 20, validityMonths: 24, isMandatory: false, description: "Calibration of measurement instruments and verification procedures." },
+      { title: "Public Sector Leadership, Ethics & General Orders", category: "leadership", provider: "PNG Institute of Public Administration (PNGIPA)", durationHours: 16, validityMonths: 24, isMandatory: false, description: "Governance, ethics, and statutory administration under the Public Services (Management) Act." },
+      { title: "Information Security & Data Governance Essentials", category: "it_security", provider: "NISIT ICT Division", durationHours: 8, validityMonths: 12, isMandatory: true, description: "Cybersecurity hygiene, document classification, and government data protection." },
+    ];
+    await db.insert(trainingCoursesTable).values(courses);
+    logger.info({ count: courses.length }, "seedPrdReferenceData: training courses seeded");
+  }
+
+  // ── Step 9: Benefits Catalogue ─────────────────────────────────────────────
+  const existingBenefits = await db.select({ c: countFn() }).from(benefitsTable);
+  if (Number(existingBenefits[0]?.c ?? 0) === 0) {
+    const benefits = [
+      { name: "Nasfund Superannuation Fund", type: "superannuation", provider: "National Superannuation Fund (Nasfund)", defaultCoverage: "Mandatory statutory retirement savings (6% employee / 8.4% employer)", taxable: false },
+      { name: "Comprehensive Medical & Hospitalisation Cover", type: "health_insurance", provider: "Capital Insurance Group", defaultCoverage: "Full inpatient, outpatient, and optical coverage for employee and dependants", taxable: false },
+      { name: "Institutional Housing & Utilities Allowance", type: "housing_allowance", provider: "NISIT Corporate Services", defaultCoverage: "Fortnightly housing subsidy based on grade level and location", taxable: true },
+      { name: "Group 24/7 Life & Personal Accident Cover", type: "life_insurance", provider: "Pacific MMI Insurance", defaultCoverage: "3x annual salary death and disability benefit", taxable: false },
+    ];
+    await db.insert(benefitsTable).values(benefits);
+    logger.info({ count: benefits.length }, "seedPrdReferenceData: benefits catalogue seeded");
+  }
+
+  // ── Step 10: Housing Schemes ───────────────────────────────────────────────
+  const existingHousing = await db.select({ c: countFn() }).from(housingSchemesTable);
+  if (Number(existingHousing[0]?.c ?? 0) === 0) {
+    const schemes = [
+      { title: "NISIT Institutional Housing Rental Assistance", schemeType: "institutional_rental", eligibilityCriteria: "Permanent employees with minimum 12 months continuous service in Port Moresby or regional centres.", maxMonthlyAllowance: "2500.00", description: "Direct rental assistance subsidy paid to registered landlords for approved leases." },
+      { title: "First-Time Homeownership Land & Construction Grant", schemeType: "home_ownership_advance", eligibilityCriteria: "Permanent confirmed officers Grade 10 and above purchasing or constructing a primary residence in PNG.", maxMonthlyAllowance: "5000.00", description: "Guaranteed advance scheme in partnership with commercial lenders and NHC." },
+      { title: "Senior Executive Residential Accommodation Scheme", schemeType: "rental_subsidy", eligibilityCriteria: "Divisional General Managers, Directors, and Executive Leadership team.", maxMonthlyAllowance: "6000.00", description: "Full residential lease provision as per executive contract terms." },
+    ];
+    await db.insert(housingSchemesTable).values(schemes);
+    logger.info({ count: schemes.length }, "seedPrdReferenceData: housing schemes seeded");
+  }
+
+  // ── Step 11: Performance Cycle ─────────────────────────────────────────────
+  const existingCycles = await db.select({ c: countFn() }).from(performanceCyclesTable);
+  if (Number(existingCycles[0]?.c ?? 0) === 0) {
+    await db.insert(performanceCyclesTable).values({
+      title: "2026 NISIT Annual Performance & OKR Appraisal Cycle",
+      type: "annual",
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      status: "active",
+      description: "Organisation-wide annual performance evaluation, competency assessment, and strategic OKR review.",
+    });
+    logger.info("seedPrdReferenceData: performance cycle seeded");
+  }
+
+  logger.info("seedPrdReferenceData: PRD reference data seed finished");
 }

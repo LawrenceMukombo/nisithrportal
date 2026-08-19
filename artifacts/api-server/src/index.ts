@@ -5,6 +5,7 @@ import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
 import { verifySMTPConnection } from "./lib/email";
+import { escalateOverdueApprovals } from "./routes/workflows";
 
 const rawPort = process.env["PORT"];
 
@@ -23,6 +24,7 @@ if (Number.isNaN(port) || port <= 0) {
 const CONTRACT_EXPIRY_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 const RESET_TOKEN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // every 24 hours
 const SAVED_JOB_CLOSING_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
+const APPROVAL_ESCALATION_INTERVAL_MS = 60 * 60 * 1000; // every hour
 
 app.listen(port, (err) => {
   if (err) {
@@ -33,9 +35,9 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 
   // Verify SMTP connectivity on startup and warn about missing configuration.
-  const appBaseUrlSet = !!(process.env["APP_BASE_URL"] || process.env["REPLIT_DEV_DOMAIN"]);
+  const appBaseUrlSet = !!process.env["APP_BASE_URL"];
   if (!appBaseUrlSet) {
-    logger.warn("APP_BASE_URL and REPLIT_DEV_DOMAIN are both unset — password-reset links cannot be constructed. Set APP_BASE_URL to the production frontend origin.");
+    logger.warn("APP_BASE_URL is unset — password-reset links cannot be constructed. Set APP_BASE_URL to the production frontend origin.");
   }
   verifySMTPConnection().catch((e) =>
     logger.error(e, "Startup SMTP verification failed"),
@@ -90,4 +92,7 @@ app.listen(port, (err) => {
       logger.error(e, "Scheduled saved-job closing-soon check failed"),
     );
   }, SAVED_JOB_CLOSING_INTERVAL_MS);
+
+  escalateOverdueApprovals().catch((e) => logger.error(e, "Initial approval escalation failed"));
+  setInterval(() => escalateOverdueApprovals().catch((e) => logger.error(e, "Scheduled approval escalation failed")), APPROVAL_ESCALATION_INTERVAL_MS);
 });

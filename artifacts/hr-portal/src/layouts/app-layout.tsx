@@ -1,9 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
-  ChevronRight, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
+  ChevronRight, ChevronDown, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
+  Calendar, Timer, UserPlus, UserMinus, Target, GraduationCap, HeartHandshake, Home,
+  FolderLock, FileBadge, BarChart3, ShieldCheck,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { cn } from "@/lib/utils";
@@ -13,15 +15,29 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  badge?: string;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
 }
 
 function useNavItems() {
-  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager, isHrOfficer } = useRole();
+  const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager, isHrOfficer, isExecutive } = useRole();
 
   const items: NavItem[] = [];
 
   if (canViewDashboard) {
     items.push({ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard });
+  }
+
+  if (isAdmin || isExecutive || isHrOfficer) {
+    items.push({ label: "Executive Brief", href: "/executive-dashboard", icon: ShieldCheck });
+  }
+
+  if (canViewDashboard) {
+    items.push({ label: "Org Hierarchy", href: "/org-chart", icon: Building2 });
   }
 
   items.push({ label: "Job Vacancies", href: "/jobs", icon: Briefcase });
@@ -51,16 +67,29 @@ function useNavItems() {
 
   if (canManageEmployees) {
     items.push({ label: "Employees", href: "/employees", icon: UserCheck });
-  }
-
-  if (canManageContracts) {
+    items.push({ label: "Onboarding", href: "/onboarding", icon: UserPlus });
     items.push({ label: "Contracts", href: "/contracts", icon: ScrollText });
+    items.push({ label: "Offboarding", href: "/offboarding", icon: UserMinus });
   }
 
-  // Single-tenant mode: the platform is locked to PNG NISIT, so the
-  // agency-management nav entry is hidden.
+  // Employee Self-Service & Operations (for all internal staff)
+  if (!isApplicant) {
+    items.push({ label: "Leave & Absence", href: "/leave", icon: Calendar });
+    items.push({ label: "Attendance Clock", href: "/attendance", icon: Timer });
+    items.push({ label: "Document Vault", href: "/documents", icon: FolderLock });
+    items.push({ label: "HR Letters", href: "/hr-letters", icon: FileBadge });
+    items.push({ label: "Performance & OKRs", href: "/performance", icon: Target });
+    items.push({ label: "Training & Certs", href: "/training", icon: GraduationCap });
+    items.push({ label: "Staff Benefits", href: "/benefits", icon: HeartHandshake });
+    items.push({ label: "Housing Scheme", href: "/housing", icon: Home });
+  }
+
   if (canManageAgencies || isHrOfficer) {
     items.push({ label: "Departments", href: "/departments", icon: FolderKanban });
+  }
+
+  if (isAdmin || isHrOfficer || isExecutive) {
+    items.push({ label: "Standard Reports", href: "/reports", icon: BarChart3 });
   }
 
   if (isAdmin) {
@@ -96,6 +125,25 @@ function ThemeToggle() {
   );
 }
 
+function LiveWelcome({ email }: { email: string }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const firstName = email.split("@")[0].split(/[._-]/)[0];
+  const name = firstName ? `${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}` : "there";
+  return (
+    <div className="hidden lg:block text-right leading-tight" data-testid="live-welcome">
+      <p className="text-sm font-medium text-foreground">Welcome, {name}</p>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {now.toLocaleDateString("en-PG", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+        {" · "}{now.toLocaleTimeString("en-PG", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+      </p>
+    </div>
+  );
+}
+
 function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const [location] = useLocation();
   const active = location === item.href || location.startsWith(item.href + "/");
@@ -119,11 +167,40 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   );
 }
 
+function groupNavItems(items: NavItem[]): NavGroup[] {
+  const definitions: Array<[string, string[]]> = [
+    ["Overview", ["/dashboard", "/executive-dashboard", "/org-chart"]],
+    ["Recruitment", ["/jobs", "/applications", "/shortlisted", "/candidates", "/workflow"]],
+    ["People management", ["/employees", "/onboarding", "/contracts", "/offboarding"]],
+    ["Employee services", ["/leave", "/attendance", "/documents", "/hr-letters", "/performance", "/training", "/benefits", "/housing"]],
+    ["Administration", ["/departments", "/reports", "/users", "/integrations", "/settings/pipeline-sla"]],
+    ["My profile", ["/account", "/my-applications"]],
+  ];
+  return definitions.map(([label, hrefs]) => ({ label, items: items.filter((item) => hrefs.includes(item.href)) })).filter((group) => group.items.length > 0);
+}
+
+function NavSection({ group, collapsed, open, onToggle }: { group: NavGroup; collapsed: boolean; open: boolean; onToggle: () => void }) {
+  const [location] = useLocation();
+  const hasActiveItem = group.items.some((item) => location === item.href || location.startsWith(`${item.href}/`));
+  if (collapsed) return <>{group.items.map((item) => <NavLink key={item.href} item={item} collapsed />)}</>;
+  return (
+    <div className="mb-1">
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/45 hover:text-sidebar-foreground/80" aria-expanded={open}>
+        <span>{group.label}</span>
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
+      {(open || hasActiveItem) && <div className="space-y-0.5">{group.items.map((item) => <NavLink key={item.href} item={item} collapsed={false} />)}</div>}
+    </div>
+  );
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ Overview: true, Recruitment: true, "People management": true, "Employee services": false, Administration: false, "My profile": true });
   const { user, logout, role } = useAuth();
   const navItems = useNavItems();
+  const navGroups = groupNavItems(navItems);
 
   const roleLabel: Record<string, string> = {
     admin: "System Admin",
@@ -176,19 +253,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {navItems.map((item) => (
-          <NavLink key={item.href} item={item} collapsed={collapsed && !mobile} />
+        {navGroups.map((group) => (
+          <NavSection key={group.label} group={group} collapsed={collapsed && !mobile} open={openSections[group.label] ?? false} onToggle={() => setOpenSections((current) => ({ ...current, [group.label]: !current[group.label] }))} />
         ))}
       </nav>
 
       <div className="p-2 border-t border-sidebar-border space-y-1 shrink-0">
         {(!collapsed || mobile) && user && (
-          <div className="px-3 py-2">
-            <p className="text-sidebar-foreground text-sm font-medium truncate">
-              {roleLabel[user.role] ?? user.role}
-            </p>
-            <p className="text-sidebar-foreground/50 text-xs">ID: {user.userId}</p>
-          </div>
+          <Link href="/account">
+            <div className="px-3 py-2 rounded-md cursor-pointer hover:bg-sidebar-accent transition-colors" data-testid="button-sidebar-profile" title="View my profile">
+              <p className="text-sidebar-foreground text-sm font-medium truncate">{roleLabel[user.role] ?? user.role}</p>
+              <p className="text-sidebar-foreground/50 text-xs truncate">{user.email} · ID: {user.userId}</p>
+            </div>
+          </Link>
         )}
         <div className="flex items-center gap-1">
           <ThemeToggle />
@@ -245,7 +322,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Desktop top bar */}
-        <header className="hidden md:flex h-14 border-b border-border items-center px-6 gap-3 bg-card shrink-0 justify-end">
+        <header className="hidden md:flex h-14 border-b border-border items-center px-6 gap-4 bg-card shrink-0 justify-end">
+          {user && <LiveWelcome email={user.email} />}
           <NotificationBell />
         </header>
 

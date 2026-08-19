@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetUsers, useGetRoles, useUpdateUser, useCreateUser, useGetAgencies } from "@workspace/api-client-react";
+import { useGetUsers, useGetRoles, useUpdateUser, useGetAgencies } from "@workspace/api-client-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AppLayout } from "@/layouts/app-layout";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/use-auth";
 import { Users, Search, UserPlus, AlertTriangle, Shield, Key, User, Check, X, ClipboardList, RefreshCw } from "lucide-react";
 import type { UserWithRole, Role } from "@workspace/api-client-react";
-import { isStaffDomain, STAFF_ROLES, getStaffDomainsList } from "@/lib/emailDomain";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getToken } from "@/lib/api-config";
 import { DataTable } from "@/components/ui/data-table";
@@ -199,7 +198,7 @@ function EditablePermissionsMatrix({
     setSaving(true);
     try {
       const matrixPerms = matrixToPerms(matrix);
-      const knownKeys = new Set(RESOURCES.map((r) => r.key));
+      const knownKeys = new Set<string>(RESOURCES.map((r) => r.key));
       const preserved: PermMap = {};
       if (permissions) {
         for (const [k, v] of Object.entries(permissions)) {
@@ -343,7 +342,6 @@ function UserDetailSheet({
   onSaved: () => void;
 }) {
   const { toast } = useToast();
-  const { user: me } = useAuth();
   const updateUser = useUpdateUser();
 
   const [user, setUser] = useState<FullUser | null>(null);
@@ -365,7 +363,6 @@ function UserDetailSheet({
     return (fromRoles as { permissions?: PermMap } | undefined)?.permissions ?? null;
   }, [selectedRole, roles, roleId, user]);
 
-  const isSelf = me?.userId === userId;
 
   const fetchUser = useCallback(async (id: number) => {
     setLoading(true);
@@ -389,24 +386,7 @@ function UserDetailSheet({
     if (open && userId != null) fetchUser(userId);
   }, [open, userId, fetchUser]);
 
-  const emailChanged = email !== (user?.email ?? "");
-  const roleChanged = roleId !== (user?.roleId?.toString() ?? "");
-
-  const domainError = useMemo(() => {
-    if (!selectedRole || !email.trim()) return null;
-    if (!emailChanged && !roleChanged) return null;
-    if (STAFF_ROLES.has(selectedRole.name) && !isStaffDomain(email.trim()))
-      return `Role "${ROLE_LABELS[selectedRole.name] ?? selectedRole.name}" requires a government domain email.`;
-    if (selectedRole.name === "applicant" && isStaffDomain(email.trim()))
-      return "Government domain emails cannot be assigned the applicant role.";
-    return null;
-  }, [selectedRole, email, emailChanged, roleChanged]);
-
   const handleSaveProfile = async () => {
-    if (domainError) {
-      toast({ title: "Invalid assignment", description: domainError, variant: "destructive" });
-      return;
-    }
     setSavingProfile(true);
     try {
       const payload: Record<string, unknown> = {};
@@ -508,12 +488,6 @@ function UserDetailSheet({
               </TabsList>
 
               <TabsContent value="profile" className="space-y-4 pb-6">
-                {isSelf && (
-                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    You are editing your own account. Role changes are disabled.
-                  </div>
-                )}
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Full Name</label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
@@ -525,18 +499,11 @@ function UserDetailSheet({
                     onChange={(e) => setEmail(e.target.value)}
                     type="email"
                     placeholder="email@example.com"
-                    className={domainError ? "border-destructive focus-visible:ring-destructive" : ""}
                   />
-                  {domainError && (
-                    <p className="text-xs text-destructive flex items-start gap-1 mt-1">
-                      <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-                      {domainError}
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Role</label>
-                  <Select value={roleId} onValueChange={setRoleId} disabled={isSelf}>
+                  <Select value={roleId} onValueChange={setRoleId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
@@ -560,7 +527,7 @@ function UserDetailSheet({
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Account Status</label>
-                  <Select value={status} onValueChange={(v) => setStatus(v as "active" | "inactive")} disabled={isSelf}>
+                  <Select value={status} onValueChange={(v) => setStatus(v as "active" | "inactive")}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -569,7 +536,6 @@ function UserDetailSheet({
                       <SelectItem value="inactive">Inactive (Deactivated)</SelectItem>
                     </SelectContent>
                   </Select>
-                  {isSelf && <p className="text-xs text-muted-foreground">You cannot deactivate your own account.</p>}
                 </div>
                 <Separator />
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -582,7 +548,7 @@ function UserDetailSheet({
                   <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
                   <Button
                     onClick={handleSaveProfile}
-                    disabled={savingProfile || !!domainError}
+                    disabled={savingProfile}
                     className="flex-1"
                   >
                     {savingProfile ? "Saving…" : "Save Changes"}
@@ -647,10 +613,12 @@ function UserDetailSheet({
 
 function CreateUserDialog({
   roles,
+  agencies,
   open,
   onClose,
 }: {
   roles: Role[];
+  agencies: { id: number; name: string }[];
   open: boolean;
   onClose: () => void;
 }) {
@@ -659,55 +627,34 @@ function CreateUserDialog({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState("");
-
-  const createUser = useCreateUser();
-
-  const selectedRole = useMemo(() => roles.find((r) => r.id.toString() === roleId), [roles, roleId]);
-  const isStaffRole = selectedRole ? STAFF_ROLES.has(selectedRole.name) : false;
-  const emailIsStaff = email.trim() ? isStaffDomain(email.trim()) : null;
-  const staffDomains = getStaffDomainsList();
-  const domainError = useMemo(() => {
-    if (!email.trim() || !selectedRole) return null;
-    if (isStaffRole && emailIsStaff === false)
-      return `"${ROLE_LABELS[selectedRole.name] ?? selectedRole.name}" requires a government domain email (@${staffDomains.split(", ")[0]}). Please use your official work email.`;
-    if (!isStaffRole && emailIsStaff === true)
-      return `Government domain emails (@${staffDomains}) cannot be assigned to the "${ROLE_LABELS[selectedRole.name] ?? selectedRole.name}" role.`;
-    return null;
-  }, [email, selectedRole, isStaffRole, emailIsStaff, staffDomains]);
+  const [agencyId, setAgencyId] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const handleCreate = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !roleId) {
       toast({ title: "All fields are required", variant: "destructive" });
       return;
     }
-    if (domainError) {
-      toast({ title: "Invalid email domain", description: domainError, variant: "destructive" });
-      return;
-    }
+    setCreating(true);
     try {
-      await createUser.mutateAsync({
-        data: {
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          roleId: parseInt(roleId),
-        },
+      await apiFetch("/users", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), password, roleId: parseInt(roleId), agencyId: agencyId ? parseInt(agencyId) : null }),
       });
       toast({ title: "User created", description: `${name} has been added.` });
       onClose();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      toast({ title: "Failed to create user", description: msg ?? "Please try again.", variant: "destructive" });
+      toast({ title: "Failed to create user", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setCreating(false);
     }
   };
-
-  const staffRoles = roles.filter((r) => r.name !== "applicant");
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Invite Staff Member</DialogTitle>
+          <DialogTitle>Create User Account</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
@@ -720,19 +667,9 @@ function CreateUserDialog({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@agency.gov.pg"
+              placeholder="user@example.com"
               data-testid="input-create-user-email"
-              className={domainError ? "border-destructive focus-visible:ring-destructive" : ""}
             />
-            {isStaffRole && email.trim() && !domainError && (
-              <p className="text-xs text-green-700">Government domain email confirmed for staff role.</p>
-            )}
-            {domainError && (
-              <p className="text-xs text-destructive flex items-start gap-1 mt-1">
-                <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-                {domainError}
-              </p>
-            )}
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">Password</label>
@@ -745,7 +682,7 @@ function CreateUserDialog({
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                {staffRoles.map((r) => (
+                {roles.map((r) => (
                   <SelectItem key={r.id} value={r.id.toString()}>
                     {ROLE_LABELS[r.name] ?? r.name}
                   </SelectItem>
@@ -753,10 +690,20 @@ function CreateUserDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Agency (optional)</label>
+            <Select value={agencyId || "none"} onValueChange={(value) => setAgencyId(value === "none" ? "" : value)}>
+              <SelectTrigger><SelectValue placeholder="Select agency" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No agency</SelectItem>
+                {agencies.map((agency) => <SelectItem key={agency.id} value={String(agency.id)}>{agency.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
-            <Button onClick={handleCreate} disabled={createUser.isPending || !!domainError} className="flex-1">
-              {createUser.isPending ? "Creating..." : "Create User"}
+            <Button onClick={handleCreate} disabled={creating} className="flex-1">
+              {creating ? "Creating..." : "Create User"}
             </Button>
           </div>
         </div>
@@ -1169,7 +1116,7 @@ export default function UsersPage() {
                 {filtered.length} of {users.length} user{users.length !== 1 ? "s" : ""}
               </p>
               <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-create-user">
-                <UserPlus className="h-4 w-4 mr-1" /> Invite Staff
+                <UserPlus className="h-4 w-4 mr-1" /> Create User
               </Button>
             </div>
           )}
@@ -1259,6 +1206,7 @@ export default function UsersPage() {
 
       <CreateUserDialog
         roles={roles}
+        agencies={agencies}
         open={showCreate}
         onClose={() => { setShowCreate(false); refetch(); }}
       />

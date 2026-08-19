@@ -112,7 +112,7 @@ router.get("/users", authMiddleware, requireRole("admin"), async (_req, res): Pr
   res.json(result);
 });
 
-router.get("/users/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+router.get("/users/:id", authMiddleware, requireRole("admin", "hr_officer"), async (req, res): Promise<void> => {
   const id = parseIntParam(req.params.id);
   if (id == null || isNaN(id)) {
     res.status(400).json({ error: "Invalid user id" });

@@ -386,26 +386,40 @@ export default function DashboardPage() {
           <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openDrilldown("pipeline")}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="h-4 w-4 text-primary" />
+                <TrendingUp className="h-4 w-4 text-emerald-600" />
                 Recruitment Pipeline
               </CardTitle>
               <CardDescription>Applications by status</CardDescription>
             </CardHeader>
             <CardContent>
               {pipeline.isLoading ? (
-                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-56 w-full" />
               ) : pipeline.data && pipeline.data.length > 0 ? (
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={pipeline.data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="status" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart
+                    data={pipeline.data.map((d) => ({
+                      ...d,
+                      displayStatus: d.status ? d.status.charAt(0).toUpperCase() + d.status.slice(1) : "Unknown",
+                    }))}
+                    margin={{ top: 5, right: 10, left: -10, bottom: 25 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.4} />
+                    <XAxis dataKey="displayStatus" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        borderColor: "hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(val: number) => [`${val} Applications`, "Total"]}
+                    />
+                    <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Applications" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                <div className="h-56 flex items-center justify-center text-muted-foreground text-sm">
                   No pipeline data
                 </div>
               )}
@@ -415,35 +429,74 @@ export default function DashboardPage() {
           <Card className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openDrilldown("department_capacity")}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
                 Filled vs. Vacant by Department
               </CardTitle>
               <CardDescription>Workforce capacity per department</CardDescription>
             </CardHeader>
             <CardContent>
               {gaps.isLoading ? (
-                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-56 w-full" />
               ) : gaps.data && gaps.data.length > 0 ? (
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={230}>
                   <BarChart
                     data={gaps.data.map((g) => ({
-                      dept: g.departmentName?.slice(0, 12) ?? "Dept",
+                      dept: g.departmentName || "Dept",
+                      shortDept: (g.departmentName || "Dept").length > 14
+                        ? (g.departmentName || "Dept").slice(0, 12) + "…"
+                        : g.departmentName,
                       Filled: (g.totalPositions ?? 0) - (g.gapCount ?? 0),
                       Vacant: g.gapCount ?? 0,
+                      Total: g.totalPositions ?? 0,
                     }))}
-                    margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+                    margin={{ top: 5, right: 10, left: -10, bottom: 35 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="dept" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="Filled" stackId="a" fill="hsl(var(--primary))" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="Vacant" stackId="a" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.4} />
+                    <XAxis
+                      dataKey="shortDept"
+                      tick={{ fontSize: 10 }}
+                      angle={-20}
+                      textAnchor="end"
+                      interval={0}
+                      height={40}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        borderColor: "hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      labelFormatter={(_label, payload) => {
+                        if (payload && payload.length > 0) {
+                          return payload[0].payload.dept;
+                        }
+                        return _label;
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 12, paddingTop: "8px" }}
+                      iconType="circle"
+                    />
+                    <Bar
+                      dataKey="Filled"
+                      stackId="a"
+                      fill="#059669"
+                      name="Filled Positions"
+                      radius={[0, 0, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="Vacant"
+                      stackId="a"
+                      fill="#f59e0b"
+                      name="Vacant Positions"
+                      radius={[4, 4, 0, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                <div className="h-56 flex items-center justify-center text-muted-foreground text-sm">
                   No workforce data available
                 </div>
               )}

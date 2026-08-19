@@ -665,6 +665,64 @@ type ExtJob = {
   isFeatured?: boolean | null;
 };
 
+type ParsedSection = {
+  title: string;
+  items: string[];
+  paragraphs: string[];
+};
+
+function parseJobMarkdown(text: string): ParsedSection[] {
+  if (!text || !text.trim()) return [];
+  const lines = text.split("\n");
+  const sections: ParsedSection[] = [];
+  let currentSection: ParsedSection | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (line.startsWith("## ") || line.startsWith("# ") || line.startsWith("### ")) {
+      if (currentSection) sections.push(currentSection);
+      const title = line.replace(/^#+\s*/, "").trim();
+      currentSection = { title, items: [], paragraphs: [] };
+    } else if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
+      const item = line.replace(/^[-*•]\s*/, "").trim();
+      if (!currentSection) {
+        currentSection = { title: "Position Overview", items: [], paragraphs: [] };
+      }
+      currentSection.items.push(item);
+    } else {
+      if (!currentSection) {
+        currentSection = { title: "Position Overview", items: [], paragraphs: [] };
+      }
+      currentSection.paragraphs.push(line);
+    }
+  }
+
+  if (currentSection) sections.push(currentSection);
+  return sections;
+}
+
+function getSectionIcon(title: string) {
+  const lower = title.toLowerCase();
+  if (lower.includes("responsibilit") || lower.includes("duties") || lower.includes("accountabilit")) {
+    return <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />;
+  }
+  if (lower.includes("qualification") || lower.includes("education") || lower.includes("requirement")) {
+    return <GraduationCap className="h-4 w-4 text-primary shrink-0" />;
+  }
+  if (lower.includes("desirable") || lower.includes("attribute") || lower.includes("asset") || lower.includes("preferred")) {
+    return <Star className="h-4 w-4 text-amber-600 shrink-0" />;
+  }
+  if (lower.includes("overview") || lower.includes("about") || lower.includes("context") || lower.includes("introduction")) {
+    return <Building2 className="h-4 w-4 text-primary shrink-0" />;
+  }
+  if (lower.includes("competenc") || lower.includes("skill")) {
+    return <Sparkles className="h-4 w-4 text-primary shrink-0" />;
+  }
+  return <FileCheck className="h-4 w-4 text-primary shrink-0" />;
+}
+
 export default function JobDetailPage() {
   const [match, params] = useRoute("/jobs/:id");
   const [, setLocation] = useLocation();
@@ -685,8 +743,6 @@ export default function JobDetailPage() {
   });
 
   const job = rawJob as ExtJob | undefined;
-  // The API exposes both legacy "open" and newer "published" public vacancies.
-  // Applicants must be able to apply to either status.
   const isPublished = job?.status === "published" || job?.status === "open";
   const screeningQuestions = useScreeningQuestions(jobId, isPublished);
   const canViewPipeline = isAuthenticated && (isAdmin || isHR || isHiringManager);
@@ -702,8 +758,15 @@ export default function JobDetailPage() {
   );
 
   const showSalary = job?.salaryVisibility === "public" && (job.salaryMin || job.salaryMax);
-
   const isSaved = savedJobIds?.includes(jobId) ?? false;
+
+  const daysRemaining = job?.closingDate
+    ? Math.ceil((new Date(job.closingDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const parsedSections = useMemo(() => {
+    return job?.description ? parseJobMarkdown(job.description) : [];
+  }, [job?.description]);
 
   const handleSaveToggle = () => {
     if (!isAuthenticated) {
@@ -729,11 +792,11 @@ export default function JobDetailPage() {
     const result = await shareJob({
       url,
       title: job.title,
-      text: `Check out this job: ${job.title}`,
+      text: `Check out this vacancy at NISIT: ${job.title}`,
     });
     if (result === "copied") {
       setCopied(true);
-      toast({ title: "Link copied!" });
+      toast({ title: "Link copied to clipboard!" });
       setTimeout(() => setCopied(false), 2000);
     } else if (result === "error") {
       toast({ title: "Could not share link", variant: "destructive" });
@@ -743,8 +806,10 @@ export default function JobDetailPage() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="p-6 max-w-4xl mx-auto">
+        <div className="p-6 max-w-5xl mx-auto space-y-4">
+          <Skeleton className="h-8 w-48" />
           <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-48 w-full" />
         </div>
       </AppLayout>
     );
@@ -753,8 +818,11 @@ export default function JobDetailPage() {
   if (!job) {
     return (
       <AppLayout>
-        <div className="p-6 max-w-4xl mx-auto text-center py-20">
-          <p className="text-muted-foreground">Job not found.</p>
+        <div className="p-6 max-w-5xl mx-auto text-center py-20">
+          <p className="text-muted-foreground">Vacancy not found or has been withdrawn.</p>
+          <Button variant="outline" className="mt-4" onClick={() => setLocation("/jobs")}>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to Vacancies
+          </Button>
         </div>
       </AppLayout>
     );
@@ -762,262 +830,333 @@ export default function JobDetailPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 max-w-4xl mx-auto space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => setLocation("/jobs")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Jobs
-        </Button>
-
-        <div className="space-y-4">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                {job.isFeatured && (
-                  <Badge variant="secondary" className="gap-1 text-amber-700 bg-amber-50 border-amber-200">
-                    <Star className="h-3 w-3" /> Featured
-                  </Badge>
-                )}
-                <Badge variant={job.status === "published" ? "default" : "secondary"}>{job.status}</Badge>
-                {job.referenceNumber && (
-                  <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
-                    Ref: {job.referenceNumber}
-                  </span>
-                )}
-              </div>
-
-              <h1 className="text-2xl font-bold" data-testid="heading-job-title">{job.title}</h1>
-              {job.gradeBand && <p className="text-sm text-muted-foreground">{job.gradeBand}</p>}
-
-              {/* Key metadata chips */}
-              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-1">
-                {job.departmentId && (
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3.5 w-3.5" /> Dept #{job.departmentId}
-                  </span>
-                )}
-                {(job.province || job.location) && (
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {[job.officeSite, job.province || job.location, job.country !== "Papua New Guinea" ? job.country : null].filter(Boolean).join(", ")}
-                  </span>
-                )}
-                {job.employmentType && (
-                  <span className="flex items-center gap-1">
-                    <Briefcase className="h-3.5 w-3.5" /> {EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType}
-                  </span>
-                )}
-                {job.workArrangement && (
-                  <span className="flex items-center gap-1">
-                    <Monitor className="h-3.5 w-3.5" /> {WORK_ARRANGEMENT_LABELS[job.workArrangement] ?? job.workArrangement}
-                  </span>
-                )}
-                {job.contractDuration && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> {job.contractDuration}
-                  </span>
-                )}
-                {job.closingDate && (
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Closes {new Date(job.closingDate).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-
-              {/* Salary */}
-              {showSalary && (
-                <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-                  <DollarSign className="h-4 w-4" />
-                  {job.salaryCurrency ?? "PGK"} {(job.salaryMin ?? 0).toLocaleString()}
-                  {job.salaryMax ? ` – ${job.salaryMax.toLocaleString()}` : "+"} per annum
-                </div>
-              )}
-              {job.salaryVisibility === "internal" && (
-                <p className="text-sm text-muted-foreground italic">Salary on request</p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        {/* Navigation back */}
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/jobs")} data-testid="button-back">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to Vacancies
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 text-muted-foreground hover:text-primary"
+              onClick={handleShare}
+              title="Share vacancy link"
+              data-testid="button-share-job"
+            >
+              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Share2 className="h-4 w-4" />}
+            </Button>
+            {canBookmark && (
               <Button
                 size="icon"
-                variant="ghost"
-                className="h-9 w-9 text-muted-foreground hover:text-primary"
-                onClick={handleShare}
-                title="Share job"
-                data-testid="button-share-job"
+                variant="outline"
+                className={`h-8 w-8 ${isSaved ? "text-primary border-primary bg-primary/5" : "text-muted-foreground hover:text-primary"}`}
+                onClick={handleSaveToggle}
+                title={isSaved ? "Remove from saved" : "Bookmark this vacancy"}
+                data-testid="button-save-job"
+                disabled={saveJob.isPending || unsaveJob.isPending}
               >
-                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Share2 className="h-4 w-4" />}
+                {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
               </Button>
-              {canBookmark && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className={`h-9 w-9 ${isSaved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
-                  onClick={handleSaveToggle}
-                  title={isSaved ? "Remove from saved" : "Save job"}
-                  data-testid="button-save-job"
-                  disabled={saveJob.isPending || unsaveJob.isPending}
-                >
-                  {isSaved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-                </Button>
-              )}
-              {isPublished && existingApplication ? (
-                <Link href="/my-applications">
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="gap-2 text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-800"
-                    data-testid="button-already-applied"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Applied — View your application
-                  </Button>
-                </Link>
-              ) : isPublished ? (
-                <Button size="lg" onClick={() => setWizardOpen(true)} data-testid="button-apply-now">
-                  <Send className="h-4 w-4 mr-2" /> Apply Now
-                </Button>
-              ) : null}
-            </div>
+            )}
           </div>
+        </div>
 
-          {/* Draft resume banner */}
-          {isPublished && !existingApplication && (
-            <DraftBanner jobId={jobId} onResume={() => setWizardOpen(true)} />
-          )}
-
-          <Separator />
-
-          {/* Job Summary */}
-          {job.jobSummary && (
-            <Card>
-              <CardHeader><CardTitle className="text-base">About the Role</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed">{job.jobSummary}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Responsibilities */}
-          {job.responsibilities && job.responsibilities.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="text-base">Key Responsibilities</CardTitle></CardHeader>
-              <CardContent>
-                <ul className="space-y-1.5">
-                  {job.responsibilities.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-                      {r}
-                    </li>
-                  ))}
-                </ul>
-                {job.reportingLine && (
-                  <p className="text-sm text-muted-foreground mt-3 pt-3 border-t">
-                    <span className="font-medium text-foreground">Reporting Line: </span>
-                    {job.reportingLine}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Requirements */}
-          {(job.minEducation || job.yearsExperience || (job.technicalSkills && job.technicalSkills.length > 0) ||
-            (job.softSkills && job.softSkills.length > 0) || (job.certifications && job.certifications.length > 0) ||
-            job.languageRequirements) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4 text-primary" /> Requirements
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  {job.minEducation && (
-                    <div>
-                      <p className="font-medium text-foreground text-xs uppercase tracking-wide text-muted-foreground mb-1">Minimum Education</p>
-                      <p>{job.minEducation}</p>
-                    </div>
+        {/* ── WHO / UNICEF STYLE VACANCY HEADER BANNER ──────── */}
+        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="h-2 w-full bg-gradient-to-r from-primary via-amber-500 to-primary" />
+          <div className="p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+              <div className="space-y-3 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={isPublished ? "default" : "secondary"} className="uppercase font-semibold tracking-wide text-xs">
+                    {job.status === "published" || job.status === "open" ? "Active Vacancy" : job.status}
+                  </Badge>
+                  {job.isFeatured && (
+                    <Badge variant="outline" className="gap-1 text-amber-700 bg-amber-50 border-amber-300">
+                      <Star className="h-3 w-3 fill-amber-500 text-amber-500" /> Featured Position
+                    </Badge>
                   )}
-                  {job.yearsExperience != null && (
-                    <div>
-                      <p className="font-medium text-foreground text-xs uppercase tracking-wide text-muted-foreground mb-1">Experience Required</p>
-                      <p>{job.yearsExperience} year{job.yearsExperience !== 1 ? "s" : ""}</p>
-                    </div>
+                  {job.referenceNumber && (
+                    <span className="text-xs font-mono bg-muted text-muted-foreground px-2.5 py-1 rounded-md border border-border/60">
+                      Ref: {job.referenceNumber}
+                    </span>
                   )}
-                  {job.languageRequirements && (
-                    <div>
-                      <p className="font-medium text-foreground text-xs uppercase tracking-wide text-muted-foreground mb-1">Languages</p>
-                      <p>{job.languageRequirements}</p>
-                    </div>
+                  {daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= 7 && (
+                    <Badge variant="destructive" className="text-xs">
+                      Closes in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}
+                    </Badge>
                   )}
                 </div>
 
-                {job.technicalSkills && job.technicalSkills.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Technical Skills</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {job.technicalSkills.map(s => <Badge key={s} variant="secondary">{s}</Badge>)}
-                    </div>
-                  </div>
-                )}
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground" data-testid="heading-job-title">
+                  {job.title}
+                </h1>
 
-                {job.softSkills && job.softSkills.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Soft Skills</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {job.softSkills.map(s => <Badge key={s} variant="outline">{s}</Badge>)}
-                    </div>
-                  </div>
-                )}
-
-                {job.certifications && job.certifications.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Certifications / Licences</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {job.certifications.map(c => <Badge key={c} variant="outline" className="text-primary">{c}</Badge>)}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Full description */}
-          {job.description && job.description.trim() && job.description.trim() !== " " && (
-            <Card>
-              <CardHeader><CardTitle className="text-base">Additional Details</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-job-description">
-                  {job.description}
+                <p className="text-sm text-muted-foreground font-medium">
+                  Papua New Guinea National Institute of Standards and Industrial Technology (NISIT)
                 </p>
-              </CardContent>
-            </Card>
-          )}
+              </div>
 
-          {/* Required Documents */}
-          {job.requiredDocuments && job.requiredDocuments.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileCheck className="h-4 w-4 text-primary" /> Required Documents
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-1.5">
-                  {job.requiredDocuments.map((doc, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                      {doc}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
+              {/* Primary Call-to-action */}
+              <div className="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0 justify-start">
+                {isPublished && existingApplication ? (
+                  <Link href="/my-applications">
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full gap-2 text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 font-semibold"
+                      data-testid="button-already-applied"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      View Submitted Application
+                    </Button>
+                  </Link>
+                ) : isPublished ? (
+                  <Button size="lg" className="w-full font-semibold shadow-sm text-base px-6 h-11" onClick={() => setWizardOpen(true)} data-testid="button-apply-now">
+                    <Send className="h-4 w-4 mr-2" /> Apply for Position
+                  </Button>
+                ) : null}
+              </div>
+            </div>
 
-          {canViewPipeline && <ApplicationPipelineCard jobId={job.id} canManageJobs={canManageJobs} />}
+            {/* ── UN / WHO STYLE VACANCY QUICK FACTS GRID ──────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4 border-t border-border/80 text-xs">
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <MapPin className="h-3 w-3 text-primary" /> Duty Station
+                </span>
+                <span className="font-semibold text-foreground truncate block" title={job.province || job.location || "Port Moresby"}>
+                  {job.province || job.location || "Port Moresby, PNG"}
+                </span>
+              </div>
+
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <Building2 className="h-3 w-3 text-primary" /> Department
+                </span>
+                <span className="font-semibold text-foreground truncate block">
+                  {job.departmentId ? `Dept #${job.departmentId}` : "Standards & Metrology"}
+                </span>
+              </div>
+
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <Briefcase className="h-3 w-3 text-primary" /> Contract Modality
+                </span>
+                <span className="font-semibold text-foreground block">
+                  {job.employmentType ? (EMPLOYMENT_LABELS[job.employmentType] ?? job.employmentType) : "Full-time"}
+                </span>
+              </div>
+
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <GraduationCap className="h-3 w-3 text-primary" /> Grade / Band
+                </span>
+                <span className="font-semibold text-foreground block">
+                  {job.gradeBand || "Officer Grade"}
+                </span>
+              </div>
+
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 text-emerald-600" /> Remuneration
+                </span>
+                <span className="font-semibold text-emerald-700 dark:text-emerald-400 block truncate">
+                  {showSalary ? `${job.salaryCurrency ?? "PGK"} ${(job.salaryMin ?? 0).toLocaleString()} – ${(job.salaryMax ?? 0).toLocaleString()}` : "Public Service Scale"}
+                </span>
+              </div>
+
+              <div className="bg-muted/40 p-3 rounded-lg border border-border/40">
+                <span className="text-muted-foreground font-medium block mb-1 flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-amber-600" /> Closing Date
+                </span>
+                <span className="font-semibold text-foreground block">
+                  {job.closingDate ? new Date(job.closingDate).toLocaleDateString() : "Open until filled"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Draft resume banner */}
+        {isPublished && !existingApplication && (
+          <DraftBanner jobId={jobId} onResume={() => setWizardOpen(true)} />
+        )}
+
+        {/* ── PARSED STRUCTURED SECTIONS (WHO / UNICEF STYLE) ──── */}
+        {parsedSections.length > 0 ? (
+          <div className="space-y-6">
+            {parsedSections.map((section, idx) => (
+              <Card key={idx} className="shadow-xs border-border overflow-hidden">
+                <CardHeader className="bg-muted/30 border-b border-border/60 py-4 px-6">
+                  <CardTitle className="text-base font-bold flex items-center gap-2.5 text-foreground">
+                    {getSectionIcon(section.title)}
+                    {section.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  {section.paragraphs.map((p, pIdx) => (
+                    <p key={pIdx} className="text-sm text-foreground/90 leading-relaxed font-normal">
+                      {p}
+                    </p>
+                  ))}
+
+                  {section.items.length > 0 && (
+                    <ul className="space-y-2.5 pt-1">
+                      {section.items.map((item, iIdx) => (
+                        <li key={iIdx} className="flex items-start gap-3 text-sm text-foreground/90 leading-relaxed">
+                          <span className="h-1.5 w-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          /* Fallback when structured markdown is not present */
+          <div className="space-y-6">
+            {job.jobSummary && (
+              <Card className="shadow-xs">
+                <CardHeader className="bg-muted/30 border-b py-4 px-6">
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                    <Building2 className="h-4 w-4 text-primary" /> Position Overview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <p className="text-sm text-foreground/90 leading-relaxed">{job.jobSummary}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {job.description && (
+              <Card className="shadow-xs">
+                <CardHeader className="bg-muted/30 border-b py-4 px-6">
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                    <FileCheck className="h-4 w-4 text-primary" /> Key Responsibilities & Requirements
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{job.description}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* Requirements Badges (if configured in columns) */}
+        {(job.minEducation || job.yearsExperience || (job.technicalSkills && job.technicalSkills.length > 0) ||
+          (job.softSkills && job.softSkills.length > 0) || (job.certifications && job.certifications.length > 0) ||
+          job.languageRequirements) && (
+          <Card className="shadow-xs border-border">
+            <CardHeader className="bg-muted/30 border-b py-4 px-6">
+              <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                <GraduationCap className="h-4 w-4 text-primary" /> Minimum Eligibility & Competencies
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                {job.minEducation && (
+                  <div className="bg-muted/30 p-3.5 rounded-lg border border-border/60">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Education Level</p>
+                    <p className="font-medium text-foreground">{job.minEducation}</p>
+                  </div>
+                )}
+                {job.yearsExperience != null && (
+                  <div className="bg-muted/30 p-3.5 rounded-lg border border-border/60">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Professional Experience</p>
+                    <p className="font-medium text-foreground">{job.yearsExperience} Year{job.yearsExperience !== 1 ? "s" : ""}+ relevant practice</p>
+                  </div>
+                )}
+                {job.languageRequirements && (
+                  <div className="bg-muted/30 p-3.5 rounded-lg border border-border/60">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Working Languages</p>
+                    <p className="font-medium text-foreground">{job.languageRequirements}</p>
+                  </div>
+                )}
+              </div>
+
+              {job.technicalSkills && job.technicalSkills.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Technical Competencies</p>
+                  <div className="flex flex-wrap gap-2">
+                    {job.technicalSkills.map((s) => (
+                      <Badge key={s} variant="secondary" className="px-2.5 py-1 text-xs font-medium">
+                        {s}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {job.certifications && job.certifications.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Required Certifications & Accreditations</p>
+                  <div className="flex flex-wrap gap-2">
+                    {job.certifications.map((c) => (
+                      <Badge key={c} variant="outline" className="px-2.5 py-1 text-xs border-primary/40 text-primary font-medium">
+                        {c}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Required Documents */}
+        {job.requiredDocuments && job.requiredDocuments.length > 0 && (
+          <Card className="shadow-xs border-border">
+            <CardHeader className="bg-muted/30 border-b py-4 px-6">
+              <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                <FileCheck className="h-4 w-4 text-primary" /> Application Submission Documents
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <p className="text-xs text-muted-foreground mb-3">Applicants must prepare digital copies of the following documents in PDF format:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {job.requiredDocuments.map((doc, i) => (
+                  <div key={i} className="flex items-center gap-2.5 p-3 rounded-lg border border-border/80 bg-background text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span className="font-medium text-foreground">{doc}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── PUBLIC SERVICE & EQUAL OPPORTUNITY NOTICE (UN/WHO STYLE) ── */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-800/40 p-5 space-y-2 text-xs text-amber-900 dark:text-amber-200">
+          <p className="font-bold flex items-center gap-1.5 text-sm text-amber-950 dark:text-amber-100">
+            <Star className="h-4 w-4 text-amber-600 fill-amber-500" />
+            Papua New Guinea Public Service — Equal Opportunity & Integrity Notice
+          </p>
+          <p className="leading-relaxed text-muted-foreground/90 dark:text-amber-200/80">
+            The Papua New Guinea National Institute of Standards and Industrial Technology (NISIT) is committed to merit-based recruitment under the Public Service (Management) Act. All eligible Papua New Guinean citizens are encouraged to apply. NISIT does not charge fees at any stage of the recruitment process. Canvassing or interference will lead to automatic disqualification.
+          </p>
+        </div>
+
+        {/* Admin Application Pipeline Card */}
+        {canViewPipeline && <ApplicationPipelineCard jobId={job.id} canManageJobs={canManageJobs} />}
+
+        {/* Bottom Call to Action for Applicants */}
+        {isPublished && !existingApplication && (
+          <div className="p-6 rounded-xl bg-muted/40 border border-border text-center space-y-3">
+            <h3 className="text-lg font-bold text-foreground">Ready to submit your application?</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
+              Complete your online profile, upload required credentials, and respond to screening criteria before the deadline.
+            </p>
+            <Button size="lg" className="font-semibold shadow-sm px-8" onClick={() => setWizardOpen(true)} data-testid="button-apply-now-bottom">
+              <Send className="h-4 w-4 mr-2" /> Begin Application
+            </Button>
+          </div>
+        )}
 
         {/* Apply Wizard */}
         {!existingApplication && (

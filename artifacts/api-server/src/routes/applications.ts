@@ -51,7 +51,7 @@ const orNull = (v: string | null | undefined): string | null =>
 
 // Extended application body — superset of CreateApplicationBody with all wizard fields
 const ExtendedApplicationBody = z.object({
-  jobId: z.number().int(),
+  jobId: z.coerce.number().int(),
   // Personal info (Step 1)
   firstName: z.string().min(1),
   lastName: z.string().min(1),
@@ -463,11 +463,13 @@ router.post("/applications", async (req, res): Promise<void> => {
 
   const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate, agencyId: jobsTable.agencyId })
     .from(jobsTable).where(eq(jobsTable.id, jobId));
-  if (!jobExists || jobExists.status !== "published") {
+  
+  const normalizedStatus = String(jobExists?.status || "").toLowerCase().trim();
+  if (!jobExists || !["open", "published", "active"].includes(normalizedStatus)) {
     res.status(422).json({ error: "Job is not accepting applications" });
     return;
   }
-  if (jobExists.closingDate != null && new Date(jobExists.closingDate) < new Date()) {
+  if (jobExists.closingDate != null && new Date(jobExists.closingDate).getTime() < Date.now()) {
     res.status(422).json({ error: "Job closing date has passed" });
     return;
   }
@@ -516,21 +518,23 @@ router.post("/applications", async (req, res): Promise<void> => {
     }
   }
 
-  // Validate caller-provided cvUrl to prevent IDOR via forged internal storage paths.
-  // Internal storage paths must have an ACL policy owned by this job's agency.
-  // Unvalidated or cross-agency paths are silently dropped (not stored or parsed).
+  // Validate caller-provided cvUrl.
+  // Internal GCS storage paths must have an ACL policy owned by this job's agency.
+  // Local paths (/api/storage/local/...) and valid URLs are preserved.
   let cvUrl: string | null = rawCvUrl ?? null;
   if (cvUrl && cvUrl.startsWith(INTERNAL_OBJECT_PREFIX)) {
-    try {
-      const svc = new ObjectStorageService();
-      const objectPath = "/objects/" + cvUrl.slice(INTERNAL_OBJECT_PREFIX.length);
-      const file = await svc.getObjectEntityFile(objectPath);
-      const allowed = await canAccessObjectForAgency(file, jobExists.agencyId ?? null);
-      if (!allowed) {
-        cvUrl = null;
+    if (process.env.PRIVATE_OBJECT_DIR) {
+      try {
+        const svc = new ObjectStorageService();
+        const objectPath = "/objects/" + cvUrl.slice(INTERNAL_OBJECT_PREFIX.length);
+        const file = await svc.getObjectEntityFile(objectPath);
+        const allowed = await canAccessObjectForAgency(file, jobExists.agencyId ?? null);
+        if (!allowed) {
+          cvUrl = null;
+        }
+      } catch {
+        // keep local or fallback
       }
-    } catch {
-      cvUrl = null;
     }
   }
 

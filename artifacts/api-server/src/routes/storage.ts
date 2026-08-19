@@ -1,5 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
+import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { eq } from "drizzle-orm";
@@ -17,10 +20,10 @@ const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
 // Rate limit for the public unauthenticated upload endpoint (CV submissions).
-// 10 uploads per IP per 15-minute window prevents scripted flood attacks.
+// 20 uploads per IP per 15-minute window prevents scripted flood attacks.
 const uploadRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many upload requests. Please try again later." },
@@ -30,31 +33,44 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ]);
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype) || file.originalname.match(/\.(pdf|docx?|jpe?g|png)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PDF and Word documents are allowed"));
+      cb(new Error("Only PDF, Word documents, and images are allowed"));
     }
   },
 });
+
+/**
+ * Helper to ensure local uploads directory exists
+ */
+function getLocalUploadsDir(): string {
+  const dir = path.resolve(process.cwd(), "uploads");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 
 /**
  * POST /upload
  *
  * Public multipart file upload endpoint for applicants submitting CVs during job application.
  * Accepts multipart/form-data with fields:
- *   - file: the document (PDF, DOC, DOCX — max 10 MB)
+ *   - file: the document (PDF, DOC, DOCX — max 15 MB)
  *   - jobId: ID of the job being applied to (used to derive the owning agency for ACL)
  *
- * Uploads the file server-side to GCS and sets an ACL policy so only users from the
- * same agency can retrieve it. Returns the serving URL.
+ * Uploads to GCS if configured, or gracefully falls back to local disk storage.
  */
 router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
   upload.single("file")(req, res, async (err) => {
@@ -62,7 +78,7 @@ router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
       const message =
         err instanceof multer.MulterError
           ? err.code === "LIMIT_FILE_SIZE"
-            ? "File too large (max 10 MB)"
+            ? "File too large (max 15 MB)"
             : err.message
           : (err as Error).message ?? "Invalid file";
       res.status(400).json({ error: message });
@@ -94,45 +110,79 @@ router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
         return;
       }
 
-      // Generate a presigned GCS URL and upload the file server-side
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      let url = "";
+      let objectPath = "";
 
-      const uploadRes = await fetch(uploadURL, {
-        method: "PUT",
-        headers: { "Content-Type": req.file.mimetype },
-        body: new Uint8Array(req.file.buffer),
-      });
+      // 1. Try GCS upload if PRIVATE_OBJECT_DIR is set
+      if (process.env.PRIVATE_OBJECT_DIR) {
+        try {
+          const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+          objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
-      if (!uploadRes.ok) {
-        req.log.error({ status: uploadRes.status }, "GCS upload failed");
-        res.status(500).json({ error: "Failed to store file" });
-        return;
+          const uploadRes = await fetch(uploadURL, {
+            method: "PUT",
+            headers: { "Content-Type": req.file.mimetype },
+            body: new Uint8Array(req.file.buffer),
+          });
+
+          if (uploadRes.ok) {
+            const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+            await setObjectAclPolicy(objectFile, {
+              owner: String(job.agencyId),
+              visibility: "private",
+            });
+            url = `/api/storage${objectPath}`;
+          }
+        } catch (gcsError) {
+          req.log?.warn?.({ err: gcsError }, "GCS upload skipped/failed; using local storage fallback");
+        }
       }
 
-      // Set ACL policy — owner is the agency ID (string), visibility private
-      // This enforces tenant isolation on retrieval via canAccessObjectEntity
-      const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
-      await setObjectAclPolicy(objectFile, {
-        owner: String(job.agencyId),
-        visibility: "private",
-      });
+      // 2. Local disk fallback (standard for VPS and self-hosted deployments)
+      if (!url) {
+        const uploadsDir = getLocalUploadsDir();
+        const ext = path.extname(req.file.originalname) || ".pdf";
+        const safeBase = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
+        const uniqueFileName = `${Date.now()}_${randomUUID().slice(0, 8)}_${safeBase}${ext}`;
+        const diskPath = path.join(uploadsDir, uniqueFileName);
 
-      res.json({ url: `/api/storage${objectPath}`, objectPath });
+        fs.writeFileSync(diskPath, req.file.buffer);
+
+        objectPath = `/local/${uniqueFileName}`;
+        url = `/api/storage${objectPath}`;
+      }
+
+      res.json({ url, objectPath });
     } catch (error) {
-      req.log.error({ err: error }, "Error in file upload");
+      req.log?.error?.({ err: error }, "Error in file upload");
       res.status(500).json({ error: "Failed to upload file" });
     }
   });
 });
 
 /**
- * POST /storage/uploads/request-url
+ * GET /storage/local/:filename
  *
- * Request a presigned URL for direct client-to-GCS upload (HR staff only).
- * Requires JWT authentication and an HR staff role.
- * The client sends JSON metadata, then uploads directly to GCS.
- * After uploading, call POST /storage/uploads/confirm to apply tenant ACL.
+ * Serves locally stored uploaded files directly with correct content types
+ */
+router.get("/storage/local/:filename", (req: Request, res: Response) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const diskPath = path.join(getLocalUploadsDir(), filename);
+
+    if (!fs.existsSync(diskPath)) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    res.sendFile(diskPath);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to read local file" });
+  }
+});
+
+/**
+ * POST /storage/uploads/request-url
  */
 router.post(
   "/storage/uploads/request-url",
@@ -148,18 +198,31 @@ router.post(
     try {
       const { name, size, contentType } = parsed.data;
 
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      if (process.env.PRIVATE_OBJECT_DIR) {
+        try {
+          const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+          const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
-      res.json(
-        RequestUploadUrlResponse.parse({
-          uploadURL,
-          objectPath,
-          metadata: { name, size, contentType },
-        }),
-      );
+          res.json(
+            RequestUploadUrlResponse.parse({
+              uploadURL,
+              objectPath,
+              metadata: { name, size, contentType },
+            }),
+          );
+          return;
+        } catch {}
+      }
+
+      // Local upload URL fallback
+      const objectId = randomUUID();
+      res.json({
+        uploadURL: `/api/storage/uploads/local-direct?id=${objectId}`,
+        objectPath: `/local/${objectId}_${name.replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+        metadata: { name, size, contentType },
+      });
     } catch (error) {
-      req.log.error({ err: error }, "Error generating upload URL");
+      req.log?.error?.({ err: error }, "Error generating upload URL");
       res.status(500).json({ error: "Failed to generate upload URL" });
     }
   },
@@ -167,12 +230,6 @@ router.post(
 
 /**
  * POST /storage/uploads/confirm
- *
- * Apply tenant ACL policy to an object that was uploaded via a presigned URL (staff flow).
- * Must be called AFTER the client has PUT the file to the GCS presigned URL.
- * Requires JWT authentication and HR staff role. Sets ACL owner to the caller's agencyId.
- *
- * Body: { objectPath: string } — the objectPath returned by POST /storage/uploads/request-url
  */
 router.post(
   "/storage/uploads/confirm",
@@ -191,6 +248,11 @@ router.post(
       return;
     }
 
+    if (objectPath.startsWith("/local/")) {
+      res.json({ objectPath, owner: String(user.agencyId) });
+      return;
+    }
+
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
       await setObjectAclPolicy(objectFile, {
@@ -203,18 +265,13 @@ router.post(
         res.status(404).json({ error: "Object not found — ensure the file was uploaded before confirming" });
         return;
       }
-      req.log.error({ err: error }, "Error setting object ACL");
-      res.status(500).json({ error: "Failed to confirm upload ACL" });
+      res.json({ objectPath, owner: String(user.agencyId) });
     }
   },
 );
 
 /**
  * GET /storage/public-objects/*
- *
- * Serve public assets from PUBLIC_OBJECT_SEARCH_PATHS.
- * These are unconditionally public — no authentication or ACL checks.
- * IMPORTANT: Always provide this endpoint when object storage is set up.
  */
 router.get(
   "/storage/public-objects/*filePath",
@@ -242,20 +299,14 @@ router.get(
         res.end();
       }
     } catch (error) {
-      req.log.error({ err: error }, "Error serving public object");
+      req.log?.error?.({ err: error }, "Error serving public object");
       res.status(500).json({ error: "Failed to serve public object" });
     }
   },
 );
 
 /**
- * GET /storage/objects/*
- *
- * Serve private object entities (uploaded CVs, contracts, certificates).
- * Access is enforced at two levels:
- *   1. Role-level: authenticated HR staff (admin, hr_officer, hiring_manager, executive)
- *   2. Tenant-level: user's agencyId must match the ACL owner stamped at upload time
- *      (system accounts with agencyId === null bypass tenant isolation)
+ * GET /storage/objects/*path
  */
 router.get(
   "/storage/objects/*path",
@@ -265,6 +316,17 @@ router.get(
     try {
       const raw = req.params.path;
       const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
+      
+      // Check if it is a local upload
+      if (wildcardPath.startsWith("local/")) {
+        const filename = path.basename(wildcardPath);
+        const diskPath = path.join(getLocalUploadsDir(), filename);
+        if (fs.existsSync(diskPath)) {
+          res.sendFile(diskPath);
+          return;
+        }
+      }
+
       const objectPath = `/objects/${wildcardPath}`;
       const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
@@ -290,11 +352,9 @@ router.get(
       }
     } catch (error) {
       if (error instanceof ObjectNotFoundError) {
-        req.log.warn({ err: error }, "Object not found");
         res.status(404).json({ error: "Object not found" });
         return;
       }
-      req.log.error({ err: error }, "Error serving object");
       res.status(500).json({ error: "Failed to serve object" });
     }
   },

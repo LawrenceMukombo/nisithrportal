@@ -443,4 +443,57 @@ router.patch("/users/:id/unlock", authMiddleware, requireRole("admin"), async (r
   res.json({ success: true, message: "User account unlocked successfully" });
 });
 
+router.delete("/users/:id", authMiddleware, requireRole("admin"), async (req, res): Promise<void> => {
+  const agencyId = getTenantAgencyId(req);
+  const id = parseIntParam(req.params.id);
+  if (id == null || isNaN(id)) {
+    res.status(400).json({ error: "Invalid user id" });
+    return;
+  }
+
+  // Prevent self-deletion
+  if (req.user?.userId === id) {
+    res.status(400).json({ error: "You cannot delete your own account." });
+    return;
+  }
+
+  const [existing] = await db.select().from(usersTable).where(eq(usersTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  // Prevent deleting the last admin
+  if (existing.roleId != null) {
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, existing.roleId));
+    if (role?.name === "admin") {
+      const adminUsers = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .innerJoin(rolesTable, eq(usersTable.roleId, rolesTable.id))
+        .where(eq(rolesTable.name, "admin"));
+      if (adminUsers.length <= 1) {
+        res.status(400).json({ error: "Cannot delete the last administrator account." });
+        return;
+      }
+    }
+  }
+
+  await db.delete(usersTable).where(eq(usersTable.id, id));
+
+  await writeAuditLog({
+    performedById: req.user?.userId ?? null,
+    performedByEmail: req.user?.email ?? null,
+    targetUserId: id,
+    targetEmail: existing.email,
+    actionType: "user_delete",
+    outcome: "success",
+    details: { deletedName: existing.name, deletedEmail: existing.email },
+    agencyId: agencyId ?? null,
+  });
+
+  res.json({ success: true });
+});
+
 export default router;
+

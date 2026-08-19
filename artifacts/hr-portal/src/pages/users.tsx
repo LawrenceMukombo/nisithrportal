@@ -333,6 +333,7 @@ function UserDetailSheet({
   roles,
   agencies,
   onSaved,
+  onDelete,
 }: {
   userId: number | null;
   open: boolean;
@@ -340,6 +341,7 @@ function UserDetailSheet({
   roles: Role[];
   agencies: { id: number; name: string }[];
   onSaved: () => void;
+  onDelete?: (id: number) => void;
 }) {
   const { toast } = useToast();
   const updateUser = useUpdateUser();
@@ -355,6 +357,8 @@ function UserDetailSheet({
   const [newPassword, setNewPassword] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const selectedRole = useMemo(() => roles.find((r) => r.id.toString() === roleId), [roles, roleId]);
   const livePermissions = useMemo(() => {
@@ -435,6 +439,22 @@ function UserDetailSheet({
       toast({ title: "Failed to reset password", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!userId) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/users/${userId}`, { method: "DELETE" });
+      toast({ title: "User deleted", description: `${user?.name ?? "User"} has been permanently deleted.` });
+      setDeleteConfirmOpen(false);
+      onClose();
+      onDelete?.(userId);
+    } catch (err: unknown) {
+      toast({ title: "Delete failed", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -554,6 +574,35 @@ function UserDetailSheet({
                     {savingProfile ? "Saving…" : "Save Changes"}
                   </Button>
                 </div>
+                <Separator />
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-destructive">Danger Zone</p>
+                  <p className="text-xs text-muted-foreground">Permanently delete this user account. This action cannot be undone.</p>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    Delete User Account
+                  </Button>
+                </div>
+                <Dialog open={deleteConfirmOpen} onOpenChange={(v) => !v && !deleting && setDeleteConfirmOpen(false)}>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle>Delete user account?</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-muted-foreground">
+                      This will permanently delete <strong>{user.name}</strong> ({user.email}). All their data will be removed. This cannot be undone.
+                    </p>
+                    <div className="flex gap-2 pt-2">
+                      <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting} className="flex-1">Cancel</Button>
+                      <Button variant="destructive" onClick={handleDelete} disabled={deleting} className="flex-1">
+                        {deleting ? "Deleting…" : "Yes, Delete"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </TabsContent>
 
               <TabsContent value="security" className="space-y-4 pb-6">
@@ -971,11 +1020,24 @@ export default function UsersPage() {
   }, [users, search, roleFilter]);
 
   const handleBulkAction = useCallback(async (ids: number[], action: string) => {
-    const safeIds = (action === "deactivate" || action.startsWith("role_"))
+    const safeIds = (action === "deactivate" || action.startsWith("role_") || action === "delete")
       ? ids.filter((id) => id !== me?.userId)
       : ids;
     if (safeIds.length === 0) {
       toast({ title: "Cannot apply this action to your own account", variant: "destructive" });
+      return;
+    }
+    if (action === "delete") {
+      if (!window.confirm(`Permanently delete ${safeIds.length} user${safeIds.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+      let succeeded = 0;
+      for (const id of safeIds) {
+        try {
+          await apiFetch(`/users/${id}`, { method: "DELETE" });
+          succeeded++;
+        } catch { /* skip */ }
+      }
+      await refetch();
+      toast({ title: `${succeeded} user${succeeded !== 1 ? "s" : ""} deleted` });
       return;
     }
     if (action === "deactivate") {
@@ -1033,6 +1095,7 @@ export default function UsersPage() {
         label: `Change Role: ${ROLE_LABELS[r.name] ?? r.name}`,
         value: `role_${r.id}`,
       }))),
+    { label: "Delete Selected", value: "delete", variant: "destructive" },
   ];
 
   const columns: DataTableColumn<UserRow>[] = [
@@ -1202,6 +1265,7 @@ export default function UsersPage() {
         roles={roles}
         agencies={agencies}
         onSaved={() => refetch()}
+        onDelete={() => { setSelectedUserId(null); refetch(); }}
       />
 
       <CreateUserDialog

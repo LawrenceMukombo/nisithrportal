@@ -31,10 +31,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 const RESOURCES = [
   { key: "jobs", label: "Job Postings" },
-  { key: "applications", label: "Applications" },
+  { key: "applications", label: "Applications & Workflow" },
   { key: "candidates", label: "Candidates" },
   { key: "employees", label: "Employees" },
   { key: "contracts", label: "Contracts" },
+  { key: "documents", label: "Official Documents & HR Letters" },
   { key: "dashboard", label: "Dashboard / Analytics" },
   { key: "users", label: "User Management" },
 ] as const;
@@ -45,6 +46,8 @@ const ACTIONS = [
   { key: "update", label: "Edit" },
   { key: "delete", label: "Delete" },
   { key: "review", label: "Review" },
+  { key: "sign", label: "Digital Sign" },
+  { key: "stamp", label: "Official Stamp" },
 ] as const;
 
 type PermMap = Record<string, boolean | string[]>;
@@ -282,7 +285,7 @@ function EditablePermissionsMatrix({
             })}
             {isAdmin && (
               <tr className="border-t bg-amber-50">
-                <td colSpan={6} className="px-3 py-2 text-xs text-amber-700 font-medium">
+                <td colSpan={ACTIONS.length + 2} className="px-3 py-2 text-xs text-amber-700 font-medium">
                   System Admin has unrestricted access. These permissions are locked.
                 </td>
               </tr>

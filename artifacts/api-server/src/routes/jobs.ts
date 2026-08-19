@@ -39,10 +39,22 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
   conditions.push(eq(jobsTable.agencyId, NISIT_AGENCY_ID));
 
   if (!isAuthenticated || !isStaff) {
-    conditions.push(inArray(jobsTable.status, ["open", "published"]));
+    if (query.data.status != null) {
+      if (query.data.status === "open" || query.data.status === "published") {
+        conditions.push(inArray(jobsTable.status, ["open", "published"]));
+      } else {
+        conditions.push(eq(jobsTable.status, query.data.status));
+      }
+    } else {
+      conditions.push(inArray(jobsTable.status, ["open", "published"]));
+    }
     conditions.push(PUBLIC_TARGET_FILTER);
   } else if (query.data.status != null) {
-    conditions.push(eq(jobsTable.status, query.data.status));
+    if (query.data.status === "open" || query.data.status === "published") {
+      conditions.push(inArray(jobsTable.status, ["open", "published"]));
+    } else {
+      conditions.push(eq(jobsTable.status, query.data.status));
+    }
   }
 
   if (query.data.department_id != null) conditions.push(eq(jobsTable.departmentId, query.data.department_id));

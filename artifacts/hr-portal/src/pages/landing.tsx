@@ -305,10 +305,7 @@ export default function LandingPage() {
   const canBookmark = !isAuthenticated || isApplicant;
   const { data: savedJobIds } = useSavedJobIds(isApplicant);
 
-  const jobs = useGetJobs(
-    { status: "published" },
-    { query: { queryKey: getGetJobsQueryKey({ status: "published" }) } }
-  );
+  const jobs = useGetJobs();
 
   const depts = useGetDepartments(undefined, { query: { enabled: true, queryKey: getGetDepartmentsQueryKey() } });
   const deptsList = useMemo(() => (Array.isArray(depts.data) ? depts.data : []), [depts.data]);
@@ -328,6 +325,8 @@ export default function LandingPage() {
 
   const filtered = useMemo(() => {
     return jobsList.filter(j => {
+      // Exclude draft or closed jobs on public landing page
+      if (j.status && j.status !== "open" && j.status !== "published") return false;
       const matchSearch = !search || j.title.toLowerCase().includes(search.toLowerCase()) ||
         (j.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);
@@ -349,13 +348,13 @@ export default function LandingPage() {
       }
       return matchSearch && matchDept && matchWorkType && matchLocation && matchSalary;
     });
-  }, [jobs.data, search, deptFilter, workTypeFilter, locationFilter, salaryFilter]);
+  }, [jobsList, search, deptFilter, workTypeFilter, locationFilter, salaryFilter]);
 
   const hasFilters = search || deptFilter !== "all" || workTypeFilter !== "all" || locationFilter !== "all" || salaryFilter !== "all";
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card sticky top-0 z-50 backdrop-blur-sm">
+      <header className="border-b border-border bg-white dark:bg-zinc-900 sticky top-0 z-50 shadow-xs">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <NisitLogo asLink />
           <div className="flex items-center gap-3">

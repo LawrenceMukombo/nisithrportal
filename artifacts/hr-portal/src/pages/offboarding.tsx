@@ -242,8 +242,9 @@ export default function OffboardingPage() {
                   const isSelected = activeWorkflow?.id === wf.id;
                   const tasks = wf.tasks ?? [];
                   const totalTasks = tasks.length;
-                  const completedTasks = tasks.filter((t) => t.status === "completed").length;
+                  const completedTasks = tasks.filter((t) => t.status === "cleared").length;
                   const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                  const isCleared = wf.clearanceStatus === "cleared";
 
                   return (
                     <button
@@ -258,20 +259,20 @@ export default function OffboardingPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="font-semibold text-xs text-foreground">{wf.employeeName || `Employee #${wf.employeeId}`}</p>
-                          <p className="text-[11px] text-muted-foreground capitalize">Reason: {(wf.reason || "separation").replace("_", " ")}</p>
+                          <p className="text-[11px] text-muted-foreground capitalize">Type: {(wf.separationType || "separation").replace("_", " ")}</p>
                         </div>
                         <Badge
-                          variant={wf.status === "completed" ? "default" : "secondary"}
+                          variant={isCleared ? "default" : "secondary"}
                           className="text-[10px] uppercase font-semibold"
                         >
-                          {wf.status === "completed" ? "Cleared" : `${pct}% Done`}
+                          {isCleared ? "Cleared" : `${pct}% Done`}
                         </Badge>
                       </div>
 
                       <div className="mt-3 space-y-1.5">
                         <Progress value={pct} className="h-1.5" />
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                          <span>Date: {wf.separationDate || "Pending"}</span>
+                          <span>Date: {wf.lastWorkingDay || "Pending"}</span>
                           <span>{completedTasks} / {totalTasks} Cleared</span>
                         </div>
                       </div>
@@ -290,16 +291,16 @@ export default function OffboardingPage() {
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-base font-bold">{activeWorkflow.employeeName || `Employee #${activeWorkflow.employeeId}`}</CardTitle>
                         <Badge variant="outline" className="text-xs capitalize">
-                          {(activeWorkflow.reason || "separation").replace("_", " ")}
+                          {(activeWorkflow.separationType || "separation").replace("_", " ")}
                         </Badge>
                       </div>
                       <CardDescription className="text-xs mt-0.5">
-                        Separation Effective Date: {activeWorkflow.separationDate || "Pending"} • Designation: {activeWorkflow.employeePosition || "Officer"}
+                        Separation Effective Date: {activeWorkflow.lastWorkingDay || "Pending"} • Designation: {activeWorkflow.employeePosition || "Officer"}
                       </CardDescription>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {activeWorkflow.status === "completed" ? (
+                      {activeWorkflow.clearanceStatus === "cleared" ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Fully Cleared & Archived
                         </Badge>
@@ -325,7 +326,7 @@ export default function OffboardingPage() {
 
                   <div className="space-y-2.5">
                     {(activeWorkflow.tasks ?? []).map((task, idx) => {
-                      const isCompleted = task.status === "completed";
+                      const isCompleted = task.status === "cleared";
                       return (
                         <div
                           key={task.id}

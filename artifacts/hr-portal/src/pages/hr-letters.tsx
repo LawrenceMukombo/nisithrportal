@@ -86,8 +86,8 @@ interface AuthorizedSignatory {
 export default function HRLettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isAdmin, isHR, role } = useRole();
-  const { user } = useAuth();
+  const { isAdmin, isHR, isExecutive } = useRole();
+  const { user, role } = useAuth();
 
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -288,8 +288,8 @@ export default function HRLettersPage() {
   };
 
   // Determine if the current authenticated user has authority to sign the selected letter
-  const isExecutiveOrHrDirector = role === "executive" || role === "hr_manager";
-  const isAssignedSignatoryUser = selectedRequest?.signatoryUserId != null && selectedRequest.signatoryUserId === user?.id;
+  const isExecutiveOrHrDirector = isExecutive || isHR || role === "executive" || role === "hr_manager";
+  const isAssignedSignatoryUser = selectedRequest?.signatoryUserId != null && selectedRequest.signatoryUserId === user?.userId;
   const canSignCurrentDocument = isExecutiveOrHrDirector || isAssignedSignatoryUser;
 
   // Prepare signature data object for stamp block rendering

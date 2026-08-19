@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import { db, attendanceRecordsTable, employeesTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
+import { canManageEmployee, currentEmployeeId, hasSensitiveReadAccess } from "../lib/employee-access";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -18,6 +20,14 @@ router.get("/attendance", authMiddleware, async (req, res): Promise<void> => {
     if (dateParam) conditions.push(eq(attendanceRecordsTable.date, dateParam));
     if (startDateParam) conditions.push(gte(attendanceRecordsTable.date, startDateParam));
     if (endDateParam) conditions.push(lte(attendanceRecordsTable.date, endDateParam));
+    const ownEmployeeId = await currentEmployeeId(req);
+    if (hasSensitiveReadAccess(req)) {
+      const agencyId = getTenantAgencyId(req);
+      if (agencyId != null) conditions.push(eq(employeesTable.agencyId, agencyId));
+    } else {
+      if (!ownEmployeeId || (employeeIdParam && employeeIdParam !== ownEmployeeId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      conditions.push(eq(attendanceRecordsTable.employeeId, ownEmployeeId));
+    }
 
     const records = await db
       .select({
@@ -50,12 +60,10 @@ router.get("/attendance", authMiddleware, async (req, res): Promise<void> => {
 router.post("/attendance/clock-in", authMiddleware, async (req, res): Promise<void> => {
   try {
     const { employeeId, location, notes } = req.body;
-    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
-
-    if (!targetEmployeeId) {
-      const allEmps = await db.select().from(employeesTable).limit(1);
-      if (allEmps.length > 0) targetEmployeeId = allEmps[0].id;
-    }
+    const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
+    const ownEmployeeId = await currentEmployeeId(req);
+    const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
+    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot clock in for this employee" }); return; }
 
     if (!targetEmployeeId) {
       res.status(400).json({ error: "Employee profile required for clock-in" });
@@ -108,12 +116,10 @@ router.post("/attendance/clock-in", authMiddleware, async (req, res): Promise<vo
 router.post("/attendance/clock-out", authMiddleware, async (req, res): Promise<void> => {
   try {
     const { employeeId, notes } = req.body;
-    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
-
-    if (!targetEmployeeId) {
-      const allEmps = await db.select().from(employeesTable).limit(1);
-      if (allEmps.length > 0) targetEmployeeId = allEmps[0].id;
-    }
+    const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
+    const ownEmployeeId = await currentEmployeeId(req);
+    const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
+    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot clock out for this employee" }); return; }
 
     if (!targetEmployeeId) {
       res.status(400).json({ error: "Employee profile required" });
@@ -158,6 +164,7 @@ router.post("/attendance/manual", authMiddleware, requireRole("admin", "hr_manag
       res.status(400).json({ error: "Employee ID and date are required" });
       return;
     }
+    if (!await canManageEmployee(req, parseInt(employeeId))) { res.status(403).json({ error: "Forbidden: cannot create attendance for this employee" }); return; }
 
     const [record] = await db
       .insert(attendanceRecordsTable)

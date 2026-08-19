@@ -39,6 +39,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
+import { getAuthHeader } from "@/lib/api-config";
 
 interface PerformanceCycle {
   id: number;

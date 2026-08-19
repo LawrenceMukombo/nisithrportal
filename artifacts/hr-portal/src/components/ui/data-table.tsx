@@ -148,7 +148,10 @@ export function DataTable<T>({
       const parsed = JSON.parse(window.localStorage.getItem(widthsStorageKey) ?? "{}");
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const validKeys = new Set(columns.map((column) => column.key));
-        setColumnWidths(Object.fromEntries(Object.entries(parsed).filter(([key, value]) => validKeys.has(key) && typeof value === "number" && value >= 60)));
+        const cleanWidths = Object.fromEntries(
+          Object.entries(parsed).filter(([key, value]) => validKeys.has(key) && typeof value === "number" && value >= 60)
+        ) as Record<string, number>;
+        setColumnWidths(cleanWidths);
       }
     } catch { /* storage is optional */ }
   // Preferences intentionally load once per table identity, not on each column render.

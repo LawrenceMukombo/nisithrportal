@@ -261,7 +261,7 @@ export default function HousingPage() {
                         <Home className="w-5 h-5" />
                       </div>
                       <Badge variant="outline" className="text-[10px] uppercase">
-                        {s.schemeType.replace(/_/g, " ")}
+                        {(s.type || "scheme").replace(/_/g, " ")}
                       </Badge>
                     </div>
                     <CardTitle className="text-sm font-bold text-foreground mt-3">{s.title}</CardTitle>
@@ -272,7 +272,7 @@ export default function HousingPage() {
 
                   <CardContent className="p-5 pt-0 space-y-3 text-xs">
                     <div className="p-2.5 bg-muted/40 rounded-lg text-muted-foreground text-[11px]">
-                      <span className="font-semibold text-foreground">Eligibility:</span> {s.eligibilityCriteria}
+                      <span className="font-semibold text-foreground">Eligibility:</span> {s.description || "Permanent & Contract Public Service Staff"}
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-border/50 text-[11px]">

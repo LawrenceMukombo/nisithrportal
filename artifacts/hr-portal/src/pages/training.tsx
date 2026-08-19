@@ -295,7 +295,7 @@ export default function TrainingPage() {
                           <Clock className="w-3.5 h-3.5" /> {course.durationHours} Hours
                         </span>
                         <span className="flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5" /> Valid {course.validityMonths || 24} mos
+                          <ShieldCheck className="w-3.5 h-3.5" /> {course.certificationIssued ? "Certificate Issued" : "Attendance Badge"}
                         </span>
                       </div>
 

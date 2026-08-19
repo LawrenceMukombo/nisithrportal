@@ -3,6 +3,8 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { db, leaveTypesTable, leaveBalancesTable, leaveRequestsTable, employeesTable, usersTable, approvalInstancesTable } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
+import { canManageEmployee, currentEmployeeId, hasSensitiveReadAccess } from "../lib/employee-access";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -21,11 +23,9 @@ router.get("/leave/balances", authMiddleware, async (req, res): Promise<void> =>
   try {
     const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
     
-    let targetEmployeeId = employeeIdParam;
-    if (!targetEmployeeId) {
-      const allEmps = await db.select().from(employeesTable).limit(1);
-      if (allEmps.length > 0) targetEmployeeId = allEmps[0].id;
-    }
+    const ownEmployeeId = await currentEmployeeId(req);
+    const targetEmployeeId = employeeIdParam ?? ownEmployeeId ?? undefined;
+    if (employeeIdParam && employeeIdParam !== ownEmployeeId && !hasSensitiveReadAccess(req)) { res.status(403).json({ error: "Forbidden" }); return; }
 
     if (!targetEmployeeId) {
       res.json([]);
@@ -68,6 +68,14 @@ router.get("/leave/requests", authMiddleware, async (req, res): Promise<void> =>
     if (statusParam && statusParam !== "all") {
       conditions.push(eq(leaveRequestsTable.status, statusParam));
     }
+    const ownEmployeeId = await currentEmployeeId(req);
+    if (hasSensitiveReadAccess(req)) {
+      const agencyId = getTenantAgencyId(req);
+      if (agencyId != null) conditions.push(eq(employeesTable.agencyId, agencyId));
+    } else {
+      if (!ownEmployeeId || (employeeIdParam && employeeIdParam !== ownEmployeeId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      conditions.push(eq(leaveRequestsTable.employeeId, ownEmployeeId));
+    }
 
     const requests = await db
       .select({
@@ -103,7 +111,10 @@ router.get("/leave/requests", authMiddleware, async (req, res): Promise<void> =>
 router.post("/leave/requests", authMiddleware, async (req, res): Promise<void> => {
   try {
     const { employeeId, leaveTypeId, startDate, endDate, days, reason, attachmentUrl } = req.body;
-    const targetEmployeeId = employeeId ? parseInt(employeeId) : (req as any).user?.userId || 1;
+    const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
+    const ownEmployeeId = await currentEmployeeId(req);
+    const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
+    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot submit leave for this employee" }); return; }
 
     if (!leaveTypeId || !startDate || !endDate) {
       res.status(400).json({ error: "Leave type, start date, and end date are required" });
@@ -171,6 +182,7 @@ router.patch("/leave/requests/:id/status", authMiddleware, requireRole("admin", 
     }
 
     const request = existing[0];
+    if (!await canManageEmployee(req, request.employeeId)) { res.status(404).json({ error: "Leave request not found" }); return; }
     const [approval] = await db.select().from(approvalInstancesTable)
       .where(and(eq(approvalInstancesTable.entityType, "leave_request"), eq(approvalInstancesTable.entityId, requestId)));
     if (approval?.status === "rejected" && status === "approved") {

@@ -55,7 +55,7 @@ function ApplicantDashboardView() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     Promise.all([
       fetch("/api/applications/my", { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch("/api/saved-jobs", { headers }).then(r => r.ok ? r.json() : []).catch(() => []),
@@ -301,7 +301,7 @@ export default function DashboardPage() {
     setDrilldownLoading(true);
     setDrilldownError(null);
     setDrilldownData(null);
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const loadFallbackRecords = async (): Promise<DrilldownResponse> => {
       const read = async (url: string) => {
         const response = await fetch(url, { headers, signal: controller.signal });
@@ -465,10 +465,9 @@ export default function DashboardPage() {
             ) : expiries.data && expiries.data.length > 0 ? (
               <DataTable
                 columns={expiryColumns}
-                data={expiries.data}
-                searchKey="employeeName"
+                rows={expiries.data}
+                getRowId={(r) => r.id}
                 searchPlaceholder="Filter expiring contracts..."
-                pageSize={5}
                 exportFilename="contract-expiries"
               />
             ) : (

@@ -20,8 +20,7 @@ import { canReadEmployee, hasSensitiveReadAccess } from "../lib/employee-access"
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-// Rate limit for the public unauthenticated upload endpoint (CV submissions).
-// 20 uploads per IP per 15-minute window prevents scripted flood attacks.
+// Defense in depth for authenticated applicant uploads.
 const uploadRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -44,7 +43,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (_req, file, cb) => {
-    if (ALLOWED_MIME_TYPES.has(file.mimetype) || file.originalname.match(/\.(pdf|docx?|jpe?g|png)$/i)) {
+    const extensionAllowed = /\.(pdf|docx?|jpe?g|png|webp)$/i.test(file.originalname);
+    if (ALLOWED_MIME_TYPES.has(file.mimetype) && extensionAllowed) {
       cb(null, true);
     } else {
       cb(new Error("Only PDF, Word documents, and images are allowed"));
@@ -66,14 +66,14 @@ function getLocalUploadsDir(): string {
 /**
  * POST /upload
  *
- * Public multipart file upload endpoint for applicants submitting CVs during job application.
+ * Authenticated multipart file upload endpoint for applicants submitting CVs.
  * Accepts multipart/form-data with fields:
  *   - file: the document (PDF, DOC, DOCX — max 15 MB)
  *   - jobId: ID of the job being applied to (used to derive the owning agency for ACL)
  *
  * Uploads to GCS if configured, or gracefully falls back to local disk storage.
  */
-router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
+router.post("/upload", authMiddleware, uploadRateLimit, (req: Request, res: Response) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
       const message =

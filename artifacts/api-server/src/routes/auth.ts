@@ -17,6 +17,12 @@ import { CLOSING_SOON_DAY_OPTIONS } from "./saved-jobs";
 
 const router: IRouter = Router();
 
+// Reset tokens are bearer credentials. Persist only a one-way digest so a
+// database export cannot be used to reset an account.
+function hashResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 const resetRateLimit = rateLimit({
   windowMs: 15 * 60_000,
   max: 5,
@@ -565,7 +571,7 @@ router.post("/auth/reset-request", resetRateLimit, async (req, res): Promise<voi
 
       await db.insert(passwordResetTokensTable).values({
         userId: user.id,
-        token,
+        token: hashResetToken(token),
         expiresAt,
       });
 
@@ -592,12 +598,13 @@ router.get("/auth/verify-reset-token", async (req, res): Promise<void> => {
   }
 
   const now = new Date();
+  const tokenHash = hashResetToken(token);
   const records = await db
     .select({ id: passwordResetTokensTable.id })
     .from(passwordResetTokensTable)
     .where(
       and(
-        eq(passwordResetTokensTable.token, token),
+        eq(passwordResetTokensTable.token, tokenHash),
         eq(passwordResetTokensTable.used, false),
         gt(passwordResetTokensTable.expiresAt, now),
       ),
@@ -624,12 +631,13 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   }
 
   const now = new Date();
+  const tokenHash = hashResetToken(token);
   const records = await db
     .select()
     .from(passwordResetTokensTable)
     .where(
       and(
-        eq(passwordResetTokensTable.token, token),
+        eq(passwordResetTokensTable.token, tokenHash),
         eq(passwordResetTokensTable.used, false),
         gt(passwordResetTokensTable.expiresAt, now),
       ),

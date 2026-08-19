@@ -1,4 +1,6 @@
 import { eq, and, isNull, desc } from "drizzle-orm";
+import dns from "node:dns/promises";
+import net from "node:net";
 import { db, integrationConfigsTable } from "@workspace/db";
 
 // ─── Connector catalog types (UI discovery) ────────────────────────────────────
@@ -374,6 +376,40 @@ export interface ExecuteIntegrationResult {
   durationMs: number;
 }
 
+function isPrivateAddress(address: string): boolean {
+  if (net.isIP(address) === 4) {
+    const [a, b] = address.split(".").map(Number);
+    return a === 10 || a === 127 || a === 0 ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  const normalized = address.toLowerCase();
+  return normalized === "::1" || normalized === "::" ||
+    normalized.startsWith("fc") || normalized.startsWith("fd") ||
+    normalized.startsWith("fe8") || normalized.startsWith("fe9") ||
+    normalized.startsWith("fea") || normalized.startsWith("feb");
+}
+
+/** Reject local/private endpoints before connector requests can leave the API. */
+async function validateIntegrationUrl(value: string): Promise<string | null> {
+  let url: URL;
+  try { url = new URL(value); } catch { return "Endpoint URL is invalid"; }
+  if (url.protocol !== "https:") return "Only HTTPS integration endpoints are permitted";
+  if (url.username || url.password || url.port === "22" || url.port === "2375") return "Endpoint URL is not permitted";
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) return "Private integration endpoints are not permitted";
+
+  const allowedHosts = (process.env.INTEGRATION_ALLOWED_HOSTS ?? "").split(",").map(h => h.trim().toLowerCase()).filter(Boolean);
+  if (allowedHosts.length && !allowedHosts.some(host => hostname === host || hostname.endsWith(`.${host}`))) {
+    return "Endpoint host is not on the integration allowlist";
+  }
+  try {
+    const addresses = net.isIP(hostname) ? [{ address: hostname }] : await dns.lookup(hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) return "Private integration endpoints are not permitted";
+  } catch { return "Endpoint host could not be resolved"; }
+  return null;
+}
+
 export async function executeIntegration(
   config: ExecutableIntegrationConfig,
   inputData: Record<string, unknown>,
@@ -383,6 +419,8 @@ export async function executeIntegration(
   if (!config.url) {
     return { success: false, status: 0, error: "Endpoint URL is not configured", durationMs: 0 };
   }
+  const urlError = await validateIntegrationUrl(config.url);
+  if (urlError) return { success: false, status: 0, error: urlError, durationMs: Date.now() - start };
 
   const mappedPayload = applyMapping(inputData, config.mapping);
   const authHeaders = buildAuthHeaders(config.authType, config.credential, config.authHeaderName);

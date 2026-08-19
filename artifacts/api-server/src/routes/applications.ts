@@ -441,7 +441,7 @@ router.delete("/applications/draft/:jobId", authMiddleware, async (req, res): Pr
   res.json({ deleted: true });
 });
 
-router.post("/applications", async (req, res): Promise<void> => {
+router.post("/applications", authMiddleware, async (req, res): Promise<void> => {
   // Try the extended body first; fall back to basic body for backward compat
   const extended = ExtendedApplicationBody.safeParse(req.body);
   const basic = extended.success ? null : CreateApplicationBody.safeParse(req.body);
@@ -460,6 +460,14 @@ router.post("/applications", async (req, res): Promise<void> => {
   const candidateName = extended.success
     ? `${extended.data.firstName} ${extended.data.lastName}`.trim()
     : (data as { candidateName?: string }).candidateName ?? candidateEmail;
+
+  // Candidate identity must come from the authenticated account, never from a
+  // caller-supplied email address. This prevents account/candidate takeover.
+  const authenticatedEmail = req.user?.email?.trim().toLowerCase();
+  if (!authenticatedEmail || candidateEmail.trim().toLowerCase() !== authenticatedEmail) {
+    res.status(403).json({ error: "You can only submit an application using your signed-in email address." });
+    return;
+  }
 
   const [jobExists] = await db.select({ id: jobsTable.id, status: jobsTable.status, closingDate: jobsTable.closingDate, agencyId: jobsTable.agencyId })
     .from(jobsTable).where(eq(jobsTable.id, jobId));
@@ -545,6 +553,7 @@ router.post("/applications", async (req, res): Promise<void> => {
     [candidate] = await db.insert(candidatesTable).values({
       name: candidateName,
       email: candidateEmail,
+      userId: req.user!.userId,
       phone: candidatePhone ?? null,
       cvUrl: cvUrl ?? null,
       // Extended personal fields from wizard
@@ -564,6 +573,10 @@ router.post("/applications", async (req, res): Promise<void> => {
       } : {}),
     }).returning();
   } else {
+    if (candidate.userId != null && candidate.userId !== req.user!.userId) {
+      res.status(403).json({ error: "This candidate profile belongs to a different account." });
+      return;
+    }
     // Update candidate record with the latest info for repeat applicants
     const updates: Record<string, unknown> = {};
     if (cvUrl) updates.cvUrl = cvUrl;
@@ -585,6 +598,12 @@ router.post("/applications", async (req, res): Promise<void> => {
     if (Object.keys(updates).length > 0) {
       [candidate] = await db.update(candidatesTable)
         .set(updates)
+        .where(eq(candidatesTable.id, candidate.id))
+        .returning();
+    }
+    if (candidate.userId == null) {
+      [candidate] = await db.update(candidatesTable)
+        .set({ userId: req.user!.userId })
         .where(eq(candidatesTable.id, candidate.id))
         .returning();
     }
@@ -797,8 +816,8 @@ router.post("/applications", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/applications/track", async (req, res): Promise<void> => {
-  const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+router.get("/applications/track", authMiddleware, async (req, res): Promise<void> => {
+  const email = req.user?.email?.trim().toLowerCase() ?? "";
   const refId = parseInt(typeof req.query.ref === "string" ? req.query.ref : "", 10);
 
   if (!email || isNaN(refId)) {

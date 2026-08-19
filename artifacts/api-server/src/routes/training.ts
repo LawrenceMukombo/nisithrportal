@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, trainingCoursesTable, trainingEnrollmentsTable, employeesTable } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
+import { canManageEmployee, canReadEmployee, currentEmployeeId, hasSensitiveReadAccess } from "../lib/employee-access";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -48,11 +50,18 @@ router.post("/training/courses", authMiddleware, requireRole("admin", "hr_manage
 // GET /api/training/enrollments - List enrollments
 router.get("/training/enrollments", authMiddleware, async (req, res): Promise<void> => {
   try {
-    const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
+    const requestedEmployeeId = req.query.employee_id ? Number.parseInt(req.query.employee_id as string, 10) : undefined;
+    if (requestedEmployeeId !== undefined && !Number.isInteger(requestedEmployeeId)) { res.status(400).json({ error: "Invalid employee ID" }); return; }
+    const ownEmployeeId = await currentEmployeeId(req);
+    const employeeIdParam = requestedEmployeeId ?? (hasSensitiveReadAccess(req) ? undefined : ownEmployeeId ?? undefined);
+    if (requestedEmployeeId !== undefined && !await canReadEmployee(req, requestedEmployeeId)) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (!hasSensitiveReadAccess(req) && !employeeIdParam) { res.status(403).json({ error: "No employee profile is linked to this account" }); return; }
     const courseIdParam = req.query.course_id ? parseInt(req.query.course_id as string) : undefined;
 
     const conditions = [];
     if (employeeIdParam) conditions.push(eq(trainingEnrollmentsTable.employeeId, employeeIdParam));
+    const tenantId = getTenantAgencyId(req);
+    if (hasSensitiveReadAccess(req) && tenantId != null) conditions.push(eq(employeesTable.agencyId, tenantId));
     if (courseIdParam) conditions.push(eq(trainingEnrollmentsTable.courseId, courseIdParam));
 
     const enrollments = await db
@@ -99,20 +108,13 @@ router.post(["/training/enroll", "/training/enrollments"], authMiddleware, async
     if (employeeId) {
       targetEmployeeId = parseInt(String(employeeId), 10);
     } else {
-      // Find employee record by logged in user email
-      const user = req.user;
-      if (user?.email) {
-        const [empByEmail] = await db
-          .select({ id: employeesTable.id })
-          .from(employeesTable)
-          .where(eq(employeesTable.email, user.email));
-        if (empByEmail) targetEmployeeId = empByEmail.id;
-      }
-      if (!targetEmployeeId) {
-        const [firstEmp] = await db.select({ id: employeesTable.id }).from(employeesTable).limit(1);
-        targetEmployeeId = firstEmp?.id ?? 1;
-      }
+      targetEmployeeId = await currentEmployeeId(req);
     }
+    if (!targetEmployeeId || !Number.isInteger(targetEmployeeId)) { res.status(403).json({ error: "No employee profile is linked to this account" }); return; }
+    const allowed = hasSensitiveReadAccess(req)
+      ? await canManageEmployee(req, targetEmployeeId)
+      : (await currentEmployeeId(req)) === targetEmployeeId && await canReadEmployee(req, targetEmployeeId);
+    if (!allowed) { res.status(403).json({ error: "Forbidden" }); return; }
 
     const [enrollment] = await db
       .insert(trainingEnrollmentsTable)
@@ -136,6 +138,9 @@ router.patch("/training/enrollments/:id", authMiddleware, requireRole("admin", "
     const enrollmentId = parseInt(req.params.id as string);
     const { status, score, certificateNumber, certificateUrl, expiryDate, notes } = req.body;
 
+    const [existing] = await db.select({ employeeId: trainingEnrollmentsTable.employeeId }).from(trainingEnrollmentsTable).where(eq(trainingEnrollmentsTable.id, enrollmentId));
+    if (!existing) { res.status(404).json({ error: "Enrollment not found" }); return; }
+    if (!await canManageEmployee(req, existing.employeeId)) { res.status(403).json({ error: "Forbidden" }); return; }
     const [updated] = await db
       .update(trainingEnrollmentsTable)
       .set({

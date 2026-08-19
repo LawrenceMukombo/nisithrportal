@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, benefitsTable, benefitEnrollmentsTable, employeesTable } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
+import { canManageEmployee, canReadEmployee, currentEmployeeId, hasSensitiveReadAccess } from "../lib/employee-access";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -46,9 +48,22 @@ router.post("/benefits", authMiddleware, requireRole("admin", "hr_manager", "hr_
 // GET /api/benefits/enrollments - List enrollments
 router.get("/benefits/enrollments", authMiddleware, async (req, res): Promise<void> => {
   try {
-    const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
+    const requestedEmployeeId = req.query.employee_id ? Number.parseInt(req.query.employee_id as string, 10) : undefined;
+    if (requestedEmployeeId !== undefined && !Number.isInteger(requestedEmployeeId)) {
+      res.status(400).json({ error: "Invalid employee ID" }); return;
+    }
+    const ownEmployeeId = await currentEmployeeId(req);
+    const employeeIdParam = requestedEmployeeId ?? (hasSensitiveReadAccess(req) ? undefined : ownEmployeeId ?? undefined);
+    if (requestedEmployeeId !== undefined && !await canReadEmployee(req, requestedEmployeeId)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    if (!hasSensitiveReadAccess(req) && !employeeIdParam) {
+      res.status(403).json({ error: "No employee profile is linked to this account" }); return;
+    }
     const conditions = [];
     if (employeeIdParam) conditions.push(eq(benefitEnrollmentsTable.employeeId, employeeIdParam));
+    const tenantId = getTenantAgencyId(req);
+    if (hasSensitiveReadAccess(req) && tenantId != null) conditions.push(eq(employeesTable.agencyId, tenantId));
 
     const enrollments = await db
       .select({
@@ -85,12 +100,19 @@ router.post("/benefits/enrollments", authMiddleware, async (req, res): Promise<v
   try {
     const { employeeId, benefitId, coverageDetails, coverageLevel, policyNumber, beneficiaryName, beneficiaryRelationship, effectiveDate, employeeContribution, employerContribution } = req.body;
 
-    const targetEmployeeId = employeeId ? parseInt(employeeId) : (req as any).user?.userId || 1;
+    const requestedEmployeeId = employeeId ? Number.parseInt(String(employeeId), 10) : null;
+    if (employeeId && !Number.isInteger(requestedEmployeeId)) { res.status(400).json({ error: "Invalid employee ID" }); return; }
+    const targetEmployeeId = requestedEmployeeId ?? await currentEmployeeId(req);
 
     if (!benefitId) {
       res.status(400).json({ error: "Benefit ID is required" });
       return;
     }
+    if (!targetEmployeeId) { res.status(403).json({ error: "No employee profile is linked to this account" }); return; }
+    const allowed = hasSensitiveReadAccess(req)
+      ? await canManageEmployee(req, targetEmployeeId)
+      : (await currentEmployeeId(req)) === targetEmployeeId && await canReadEmployee(req, targetEmployeeId);
+    if (!allowed) { res.status(403).json({ error: "Forbidden" }); return; }
 
     const [enrollment] = await db
       .insert(benefitEnrollmentsTable)

@@ -16,6 +16,7 @@ import {
   jobsTable,
 } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -27,14 +28,16 @@ function toCsv(rows: Record<string, unknown>[]): string {
 }
 
 // GET /api/reports/overview - High-level executive and HR overview KPIs
-router.get("/reports/overview", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/reports/overview", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "executive"), async (req, res): Promise<void> => {
   try {
-    const totalEmployees = await db.select({ count: sql<number>`count(*)` }).from(employeesTable).where(eq(employeesTable.status, "active"));
-    const totalJobs = await db.select({ count: sql<number>`count(*)` }).from(jobsTable).where(eq(jobsTable.status, "open"));
-    const totalApplications = await db.select({ count: sql<number>`count(*)` }).from(applicationsTable);
-    const pendingLeave = await db.select({ count: sql<number>`count(*)` }).from(leaveRequestsTable).where(eq(leaveRequestsTable.status, "pending"));
-    const pendingHousing = await db.select({ count: sql<number>`count(*)` }).from(housingApplicationsTable).where(eq(housingApplicationsTable.status, "submitted"));
-    const trainingCompletions = await db.select({ count: sql<number>`count(*)` }).from(trainingEnrollmentsTable).where(eq(trainingEnrollmentsTable.status, "completed"));
+    const agencyId = getTenantAgencyId(req);
+    const employeeScope = agencyId == null ? eq(employeesTable.status, "active") : and(eq(employeesTable.status, "active"), eq(employeesTable.agencyId, agencyId));
+    const totalEmployees = await db.select({ count: sql<number>`count(*)` }).from(employeesTable).where(employeeScope);
+    const totalJobs = await db.select({ count: sql<number>`count(*)` }).from(jobsTable).where(agencyId == null ? eq(jobsTable.status, "open") : and(eq(jobsTable.status, "open"), eq(jobsTable.agencyId, agencyId)));
+    const totalApplications = await db.select({ count: sql<number>`count(*)` }).from(applicationsTable).innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id)).where(agencyId == null ? undefined : eq(jobsTable.agencyId, agencyId));
+    const pendingLeave = await db.select({ count: sql<number>`count(*)` }).from(leaveRequestsTable).innerJoin(employeesTable, eq(leaveRequestsTable.employeeId, employeesTable.id)).where(agencyId == null ? eq(leaveRequestsTable.status, "pending") : and(eq(leaveRequestsTable.status, "pending"), eq(employeesTable.agencyId, agencyId)));
+    const pendingHousing = await db.select({ count: sql<number>`count(*)` }).from(housingApplicationsTable).innerJoin(employeesTable, eq(housingApplicationsTable.employeeId, employeesTable.id)).where(agencyId == null ? eq(housingApplicationsTable.status, "submitted") : and(eq(housingApplicationsTable.status, "submitted"), eq(employeesTable.agencyId, agencyId)));
+    const trainingCompletions = await db.select({ count: sql<number>`count(*)` }).from(trainingEnrollmentsTable).innerJoin(employeesTable, eq(trainingEnrollmentsTable.employeeId, employeesTable.id)).where(agencyId == null ? eq(trainingEnrollmentsTable.status, "completed") : and(eq(trainingEnrollmentsTable.status, "completed"), eq(employeesTable.agencyId, agencyId)));
 
     // Department breakdown
     const deptDistribution = await db
@@ -45,7 +48,7 @@ router.get("/reports/overview", authMiddleware, async (_req, res): Promise<void>
       })
       .from(employeesTable)
       .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
-      .where(eq(employeesTable.status, "active"))
+      .where(employeeScope)
       .groupBy(employeesTable.departmentId, departmentsTable.name);
 
     res.json({
@@ -66,8 +69,9 @@ router.get("/reports/overview", authMiddleware, async (_req, res): Promise<void>
 });
 
 // GET /api/reports/contracts - Contract lifecycle, probation, and expiry alerts
-router.get("/reports/contracts", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/reports/contracts", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "executive"), async (req, res): Promise<void> => {
   try {
+    const agencyId = getTenantAgencyId(req);
     const contracts = await db
       .select({
         id: contractsTable.id,
@@ -85,6 +89,7 @@ router.get("/reports/contracts", authMiddleware, async (_req, res): Promise<void
       .leftJoin(employeesTable, eq(contractsTable.employeeId, employeesTable.id))
       .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
       .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId))
       .orderBy(contractsTable.endDate);
 
     const now = new Date();
@@ -109,8 +114,9 @@ router.get("/reports/contracts", authMiddleware, async (_req, res): Promise<void
 });
 
 // GET /api/reports/leave - Leave utilisation report
-router.get("/reports/leave", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/reports/leave", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "executive"), async (req, res): Promise<void> => {
   try {
+    const agencyId = getTenantAgencyId(req);
     const utilisation = await db
       .select({
         leaveTypeId: leaveRequestsTable.leaveTypeId,
@@ -121,6 +127,8 @@ router.get("/reports/leave", authMiddleware, async (_req, res): Promise<void> =>
       })
       .from(leaveRequestsTable)
       .leftJoin(leaveTypesTable, eq(leaveRequestsTable.leaveTypeId, leaveTypesTable.id))
+      .innerJoin(employeesTable, eq(leaveRequestsTable.employeeId, employeesTable.id))
+      .where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId))
       .groupBy(leaveRequestsTable.leaveTypeId, leaveTypesTable.name, leaveRequestsTable.status);
 
     res.json(utilisation);
@@ -130,14 +138,17 @@ router.get("/reports/leave", authMiddleware, async (_req, res): Promise<void> =>
 });
 
 // GET /api/reports/attendance - Attendance punctuality & attendance summary
-router.get("/reports/attendance", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/reports/attendance", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "executive"), async (req, res): Promise<void> => {
   try {
+    const agencyId = getTenantAgencyId(req);
     const summary = await db
       .select({
         status: attendanceRecordsTable.status,
         count: sql<number>`count(*)`,
       })
       .from(attendanceRecordsTable)
+      .innerJoin(employeesTable, eq(attendanceRecordsTable.employeeId, employeesTable.id))
+      .where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId))
       .groupBy(attendanceRecordsTable.status);
 
     res.json(summary);
@@ -148,16 +159,17 @@ router.get("/reports/attendance", authMiddleware, async (_req, res): Promise<voi
 
 // Controlled export endpoint: only named reports are exported; users cannot
 // submit arbitrary filters or SQL against operational tables.
-router.get("/reports/:report/export", authMiddleware, requireRole("admin", "hr_officer", "executive"), async (req, res): Promise<void> => {
+router.get("/reports/:report/export", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "executive"), async (req, res): Promise<void> => {
   try {
     const report = req.params.report;
+    const agencyId = getTenantAgencyId(req);
     let rows: Record<string, unknown>[];
     if (report === "contracts") {
-      rows = await db.select({ id: contractsTable.id, employeeId: contractsTable.employeeId, status: contractsTable.status, endDate: contractsTable.endDate }).from(contractsTable) as Record<string, unknown>[];
+      rows = await db.select({ id: contractsTable.id, employeeId: contractsTable.employeeId, status: contractsTable.status, endDate: contractsTable.endDate }).from(contractsTable).innerJoin(employeesTable, eq(contractsTable.employeeId, employeesTable.id)).where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId)) as Record<string, unknown>[];
     } else if (report === "leave") {
-      rows = await db.select({ id: leaveRequestsTable.id, employeeId: leaveRequestsTable.employeeId, status: leaveRequestsTable.status, startDate: leaveRequestsTable.startDate, endDate: leaveRequestsTable.endDate, days: leaveRequestsTable.days }).from(leaveRequestsTable) as Record<string, unknown>[];
+      rows = await db.select({ id: leaveRequestsTable.id, employeeId: leaveRequestsTable.employeeId, status: leaveRequestsTable.status, startDate: leaveRequestsTable.startDate, endDate: leaveRequestsTable.endDate, days: leaveRequestsTable.days }).from(leaveRequestsTable).innerJoin(employeesTable, eq(leaveRequestsTable.employeeId, employeesTable.id)).where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId)) as Record<string, unknown>[];
     } else if (report === "attendance") {
-      rows = await db.select({ id: attendanceRecordsTable.id, employeeId: attendanceRecordsTable.employeeId, date: attendanceRecordsTable.date, status: attendanceRecordsTable.status, lateMinutes: attendanceRecordsTable.lateMinutes }).from(attendanceRecordsTable) as Record<string, unknown>[];
+      rows = await db.select({ id: attendanceRecordsTable.id, employeeId: attendanceRecordsTable.employeeId, date: attendanceRecordsTable.date, status: attendanceRecordsTable.status, lateMinutes: attendanceRecordsTable.lateMinutes }).from(attendanceRecordsTable).innerJoin(employeesTable, eq(attendanceRecordsTable.employeeId, employeesTable.id)).where(agencyId == null ? undefined : eq(employeesTable.agencyId, agencyId)) as Record<string, unknown>[];
     } else { res.status(404).json({ error: "Supported reports are contracts, leave and attendance" }); return; }
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${report}-${new Date().toISOString().slice(0, 10)}.csv"`);

@@ -62,7 +62,7 @@ interface EmployeeDoc {
 export default function DocumentsVaultPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isAdmin, isHR } = useRole();
+  const { isAdmin, isHR, canSignDocuments } = useRole();
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -287,9 +287,10 @@ export default function DocumentsVaultPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10 flex items-center gap-1"
+                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10 flex items-center gap-1 disabled:opacity-40"
+                            disabled={!canSignDocuments}
                             onClick={() => setSignDocTarget(doc)}
-                            title="Digitally Sign & Stamp"
+                            title={canSignDocuments ? "Digitally Sign & Stamp" : "Requires Document Signing Authority"}
                           >
                             <PenTool className="w-3.5 h-3.5" /> Sign
                           </Button>

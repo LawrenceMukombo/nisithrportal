@@ -6,19 +6,48 @@ import { seedCompleteData, seedPrdReferenceData } from "./seed-data";
 
 const DEFAULT_ROLES = [
   { name: "admin", permissions: { all: true } },
-  { name: "hr_officer", permissions: { jobs: true, applications: true, candidates: true, employees: true, contracts: true } },
-  { name: "hiring_manager", permissions: { applications: ["read", "review"], candidates: ["read"] } },
-  { name: "executive", permissions: { dashboard: true, employees: ["read"], contracts: ["read"] } },
+  { name: "hr_officer", permissions: { jobs: true, applications: true, candidates: true, employees: true, contracts: true, documents: ["read", "create", "delete", "sign", "stamp"] } },
+  { name: "hiring_manager", permissions: { applications: ["read", "review", "screen", "interview", "shortlist"], candidates: ["read"] } },
+  { name: "executive", permissions: { dashboard: true, employees: ["read"], contracts: ["read"], documents: ["read", "sign", "stamp"], applications: ["read", "hire"] } },
   { name: "applicant", permissions: { jobs: ["read"], applications: ["create", "read"] } },
 ];
 
 const DEFAULT_PERMISSION_GRANTS = [
+  // Document management, digital signing, and official statutory stamping
+  { role: "admin", resource: "documents", action: "sign", scope: "organisation" },
+  { role: "admin", resource: "documents", action: "stamp", scope: "organisation" },
   { role: "admin", resource: "documents", action: "read", scope: "organisation" },
   { role: "admin", resource: "documents", action: "create", scope: "organisation" },
   { role: "admin", resource: "documents", action: "delete", scope: "organisation" },
+
+  { role: "hr_officer", resource: "documents", action: "sign", scope: "organisation" },
+  { role: "hr_officer", resource: "documents", action: "stamp", scope: "organisation" },
   { role: "hr_officer", resource: "documents", action: "read", scope: "organisation" },
   { role: "hr_officer", resource: "documents", action: "create", scope: "organisation" },
   { role: "hr_officer", resource: "documents", action: "delete", scope: "organisation" },
+
+  { role: "executive", resource: "documents", action: "sign", scope: "organisation" },
+  { role: "executive", resource: "documents", action: "stamp", scope: "organisation" },
+  { role: "executive", resource: "documents", action: "read", scope: "organisation" },
+
+  // Job application recruitment workflow accountability
+  { role: "admin", resource: "applications", action: "screen", scope: "organisation" },
+  { role: "admin", resource: "applications", action: "shortlist", scope: "organisation" },
+  { role: "admin", resource: "applications", action: "interview", scope: "organisation" },
+  { role: "admin", resource: "applications", action: "offer", scope: "organisation" },
+  { role: "admin", resource: "applications", action: "hire", scope: "organisation" },
+
+  { role: "hr_officer", resource: "applications", action: "screen", scope: "organisation" },
+  { role: "hr_officer", resource: "applications", action: "shortlist", scope: "organisation" },
+  { role: "hr_officer", resource: "applications", action: "interview", scope: "organisation" },
+  { role: "hr_officer", resource: "applications", action: "offer", scope: "organisation" },
+  { role: "hr_officer", resource: "applications", action: "hire", scope: "organisation" },
+
+  { role: "hiring_manager", resource: "applications", action: "screen", scope: "department" },
+  { role: "hiring_manager", resource: "applications", action: "shortlist", scope: "department" },
+  { role: "hiring_manager", resource: "applications", action: "interview", scope: "department" },
+
+  { role: "executive", resource: "applications", action: "hire", scope: "organisation" },
 ];
 
 const NISIT_AGENCY_NAME = "PNG National Institute of Standards and Industrial Technology";

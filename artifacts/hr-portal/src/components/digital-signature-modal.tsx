@@ -25,6 +25,7 @@ import {
   Fingerprint,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth, useRole } from "@/contexts/use-auth";
 
 export interface DigitalSignatureData {
   signatureImage: string; // Data URL
@@ -49,20 +50,33 @@ export function DigitalSignatureModal({
   open,
   onOpenChange,
   documentTitle,
-  defaultSignerName = "Authorised HR Officer",
-  defaultSignerTitle = "Executive Director & Registrar",
+  defaultSignerName,
+  defaultSignerTitle,
   onConfirmSignature,
 }: DigitalSignatureModalProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { canSignDocuments, canStampDocuments, isAdmin, isExecutive, isHrOfficer } = useRole();
+
+  const roleTitleMap: Record<string, string> = {
+    admin: "System Administrator & Registrar",
+    hr_officer: "Senior HR Officer / Delegate",
+    executive: "Executive Director & Registrar",
+    hiring_manager: "Divisional Manager / Delegate",
+  };
+
+  const initialSignerName = defaultSignerName || user?.name || "Authorised HR Officer";
+  const initialSignerTitle = defaultSignerTitle || (user?.role ? roleTitleMap[user.role] : undefined) || "Authorised Officer";
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"draw" | "type" | "stamp">("draw");
-  const [signerName, setSignerName] = useState(defaultSignerName);
-  const [signerTitle, setSignerTitle] = useState(defaultSignerTitle);
+  const [signerName, setSignerName] = useState(initialSignerName);
+  const [signerTitle, setSignerTitle] = useState(initialSignerTitle);
   const [fontStyle, setFontStyle] = useState<"cursive" | "serif" | "formal">("cursive");
-  const [withOfficialStamp, setWithOfficialStamp] = useState(true);
+  const [withOfficialStamp, setWithOfficialStamp] = useState(canStampDocuments);
 
   // Initialize Canvas
   useEffect(() => {
@@ -313,7 +327,7 @@ export function DigitalSignatureModal({
           </Tabs>
 
           {/* Official Stamp Toggle */}
-          <div className="border rounded-lg p-3 bg-gradient-to-r from-blue-50/50 via-slate-50 to-amber-50/40 dark:from-slate-900 flex items-center justify-between">
+          <div className={`border rounded-lg p-3 bg-gradient-to-r from-blue-50/50 via-slate-50 to-amber-50/40 dark:from-slate-900 flex items-center justify-between ${!canStampDocuments ? "opacity-60" : ""}`}>
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20">
                 <Stamp className="h-4 w-4" />
@@ -324,6 +338,11 @@ export function DigitalSignatureModal({
                   <Badge variant="outline" className="text-[9px] bg-amber-100 text-amber-800 border-amber-300">
                     PNG Statutory Seal
                   </Badge>
+                  {!canStampDocuments && (
+                    <Badge variant="secondary" className="text-[9px] text-muted-foreground">
+                      Restricted to Registrar/Executive
+                    </Badge>
+                  )}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
                   Embeds verified NISIT circular crest seal and cryptographic verification tracking code.
@@ -333,21 +352,35 @@ export function DigitalSignatureModal({
             <input
               type="checkbox"
               id="stampToggle"
-              className="h-4 w-4 rounded text-primary focus:ring-primary cursor-pointer"
-              checked={withOfficialStamp}
+              disabled={!canStampDocuments}
+              className="h-4 w-4 rounded text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
+              checked={canStampDocuments && withOfficialStamp}
               onChange={(e) => setWithOfficialStamp(e.target.checked)}
             />
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleApplySignature} className="bg-primary shadow-sm">
-            <CheckCircle2 className="h-4 w-4 mr-1.5" />
-            Apply Digital Signature &amp; Stamp
-          </Button>
+        <DialogFooter className="gap-2 sm:gap-0 flex items-center justify-between w-full">
+          <div>
+            {!canSignDocuments && (
+              <p className="text-xs text-destructive font-medium">
+                Signing delegation required (Director / HR Officer / Registrar)
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplySignature}
+              disabled={!canSignDocuments}
+              className="bg-primary shadow-sm"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1.5" />
+              Apply Digital Signature &amp; Stamp
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

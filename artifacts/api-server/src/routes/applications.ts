@@ -1304,6 +1304,18 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
     res.status(400).json({ error: body.error.message });
     return;
   }
+
+  // Enforce role capability for critical workflow transitions
+  const userRole = req.user?.roleName;
+  if (body.data.status === "offer" && !["admin", "hr_officer"].includes(userRole ?? "")) {
+    res.status(403).json({ error: "Forbidden: Issuing employment offers requires HR Officer or Administrator authority." });
+    return;
+  }
+  if (body.data.status === "hired" && !["admin", "hr_officer", "executive"].includes(userRole ?? "")) {
+    res.status(403).json({ error: "Forbidden: Final hiring authorization requires Executive, HR Officer, or Administrator authority." });
+    return;
+  }
+
   // Wrap update + history insert in a transaction so they are atomic.
   // `status` in the history table represents the destination (to-status).
   const application = await db.transaction(async (tx) => {
@@ -1328,6 +1340,29 @@ router.patch("/applications/:id/status", authMiddleware, requireRole("admin", "h
 
     return updated;
   });
+
+  // Record audit log for workflow accountability
+  if (body.data.status !== existing.status) {
+    const [cand] = await db.select({ email: candidatesTable.email, userId: candidatesTable.userId })
+      .from(candidatesTable).where(eq(candidatesTable.id, existing.candidateId));
+    void writeAuditLog({
+      performedById: req.user?.userId ?? null,
+      performedByEmail: req.user?.email ?? null,
+      targetUserId: cand?.userId ?? null,
+      targetEmail: cand?.email ?? null,
+      actionType: "status_change",
+      outcome: "success",
+      details: {
+        applicationId: application.id,
+        fromStatus: existing.status,
+        toStatus: body.data.status,
+        note: body.data.notes ?? null,
+        score: body.data.score ?? null,
+        jobId: existing.jobId,
+      },
+      agencyId: agencyId ?? null,
+    });
+  }
 
   // Auto-provision Employee Master Record and Onboarding Checklist when marked hired
   if (body.data.status === "hired") {

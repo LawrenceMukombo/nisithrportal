@@ -270,7 +270,16 @@ export default function ApplicationDetailPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isHiringManager, isAdmin, isHR } = useRole();
+  const {
+    isHiringManager,
+    isAdmin,
+    isHR,
+    canScreenApplications,
+    canShortlistApplications,
+    canInterviewCandidates,
+    canIssueOffers,
+    canHireCandidates,
+  } = useRole();
   const appId = match ? parseInt(params!.id) : 0;
   const [screeningAnswers, setScreeningAnswers] = useState<ScreeningAnswer[]>([]);
   const [appDocuments, setAppDocuments] = useState<AppDocument[]>([]);
@@ -747,7 +756,7 @@ export default function ApplicationDetailPage() {
                     <Button
                       size="sm"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "screening" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canScreenApplications || updateStatus.isPending}
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                       data-testid="btn-advance-screening"
                     >
@@ -757,7 +766,7 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "interview" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canInterviewCandidates || updateStatus.isPending}
                       data-testid="btn-advance-interview"
                     >
                       Fast-Track to Interview
@@ -766,7 +775,7 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="destructive"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canScreenApplications || updateStatus.isPending}
                       data-testid="btn-reject-app"
                     >
                       Reject Application
@@ -779,7 +788,7 @@ export default function ApplicationDetailPage() {
                     <Button
                       size="sm"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "interview" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canInterviewCandidates || updateStatus.isPending}
                       className="bg-purple-600 text-white hover:bg-purple-700"
                       data-testid="btn-advance-interview"
                     >
@@ -789,7 +798,8 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "offer" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canIssueOffers || updateStatus.isPending}
+                      title={!canIssueOffers ? "Requires HR Officer or Admin authority" : undefined}
                     >
                       Advance to Offer
                     </Button>
@@ -797,7 +807,7 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="destructive"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canScreenApplications || updateStatus.isPending}
                     >
                       Reject Candidate
                     </Button>
@@ -809,9 +819,10 @@ export default function ApplicationDetailPage() {
                     <Button
                       size="sm"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "offer" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canIssueOffers || updateStatus.isPending}
                       className="bg-green-600 text-white hover:bg-green-700"
                       data-testid="btn-advance-offer"
+                      title={!canIssueOffers ? "Requires HR Officer or Admin authority" : undefined}
                     >
                       <Award className="h-4 w-4 mr-1.5" /> Extend Formal Offer
                     </Button>
@@ -819,7 +830,8 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "hired" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canHireCandidates || updateStatus.isPending}
+                      title={!canHireCandidates ? "Requires Executive or HR Officer authority" : undefined}
                     >
                       Direct Hire
                     </Button>
@@ -827,7 +839,7 @@ export default function ApplicationDetailPage() {
                       size="sm"
                       variant="destructive"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "rejected" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canInterviewCandidates || updateStatus.isPending}
                     >
                       Interview Unsuccessful (Reject)
                     </Button>
@@ -839,9 +851,10 @@ export default function ApplicationDetailPage() {
                     <Button
                       size="sm"
                       onClick={() => updateStatus.mutate({ id: app.id, data: { status: "hired" } })}
-                      disabled={updateStatus.isPending}
+                      disabled={!canHireCandidates || updateStatus.isPending}
                       className="bg-teal-600 text-white hover:bg-teal-700"
                       data-testid="btn-advance-hired"
+                      title={!canHireCandidates ? "Requires Executive or HR Officer authority" : undefined}
                     >
                       <CheckCircle2 className="h-4 w-4 mr-1.5" /> Offer Accepted (Mark as Hired)
                     </Button>

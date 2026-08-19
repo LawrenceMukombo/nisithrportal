@@ -32,6 +32,7 @@ import orgChartRouter from "./org-chart";
 import reportsRouter from "./reports";
 import workflowsRouter from "./workflows";
 import wikiRouter from "./wiki";
+import messagesRouter from "./messages";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(orgChartRouter);
 router.use(reportsRouter);
 router.use(workflowsRouter);
 router.use(wikiRouter);
+router.use(messagesRouter);
 
 export default router;

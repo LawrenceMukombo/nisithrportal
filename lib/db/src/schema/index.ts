@@ -27,3 +27,4 @@ export * from "./benefits_housing";
 export * from "./documents_letters";
 export * from "./grades";
 export * from "./wiki";
+export * from "./messages";

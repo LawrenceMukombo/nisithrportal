@@ -1,14 +1,16 @@
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Briefcase, Users, FileText, UserCheck,
   ScrollText, Building2, FolderKanban, Settings, LogOut,
   ChevronRight, ChevronDown, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
   Calendar, Timer, UserPlus, UserMinus, Target, GraduationCap, HeartHandshake, Home,
-  FolderLock, FileBadge, BarChart3, ShieldCheck, BookOpen,
+  FolderLock, FileBadge, BarChart3, ShieldCheck, BookOpen, MessageSquare,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { cn } from "@/lib/utils";
+import { getToken } from "@/lib/api-config";
 import { NotificationBell } from "@/components/notification-bell";
 
 interface NavItem {
@@ -26,6 +28,19 @@ interface NavGroup {
 function useNavItems() {
   const { canViewCandidates, canManageJobs, canManageEmployees, canManageContracts, canManageAgencies, canViewDashboard, isApplicant, isAdmin, isHiringManager, isHrOfficer, isExecutive } = useRole();
 
+  const { data: unreadData } = useQuery<{ unreadTotal: number }>({
+    queryKey: ["/api/messages/unread-total"],
+    queryFn: async () => {
+      const token = getToken();
+      if (!token) return { unreadTotal: 0 };
+      const res = await fetch("/api/messages/unread-total", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return { unreadTotal: 0 };
+      return res.json();
+    },
+    refetchInterval: 12000,
+  });
+
+  const unreadMessagesCount = unreadData?.unreadTotal || 0;
   const items: NavItem[] = [];
 
   if (canViewDashboard) {
@@ -38,6 +53,15 @@ function useNavItems() {
 
   if (canViewDashboard) {
     items.push({ label: "Org Hierarchy", href: "/org-chart", icon: Building2 });
+  }
+
+  if (!isApplicant) {
+    items.push({
+      label: "Messages",
+      href: "/messages",
+      icon: MessageSquare,
+      badge: unreadMessagesCount > 0 ? String(unreadMessagesCount) : undefined,
+    });
   }
 
   items.push({ label: "Job Vacancies", href: "/jobs", icon: Briefcase });
@@ -161,14 +185,21 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
       <span
         data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
         className={cn(
-          "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
+          "flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
           active
             ? "bg-sidebar-primary text-sidebar-primary-foreground"
             : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
         )}
       >
-        <Icon className="h-4 w-4 shrink-0" />
-        {!collapsed && <span>{item.label}</span>}
+        <div className="flex items-center gap-3 min-w-0">
+          <Icon className="h-4 w-4 shrink-0" />
+          {!collapsed && <span className="truncate">{item.label}</span>}
+        </div>
+        {!collapsed && item.badge && (
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shrink-0">
+            {item.badge}
+          </span>
+        )}
       </span>
     </Link>
   );
@@ -176,7 +207,7 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 
 function groupNavItems(items: NavItem[]): NavGroup[] {
   const definitions: Array<[string, string[]]> = [
-    ["Overview", ["/dashboard", "/executive-dashboard", "/org-chart"]],
+    ["Overview", ["/dashboard", "/executive-dashboard", "/org-chart", "/messages"]],
     ["Recruitment", ["/jobs", "/applications", "/shortlisted", "/candidates", "/workflow"]],
     ["People management", ["/employees", "/onboarding", "/contracts", "/offboarding"]],
     ["Employee services", ["/leave", "/attendance", "/documents", "/hr-letters", "/performance", "/training", "/benefits", "/housing"]],

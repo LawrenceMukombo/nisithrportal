@@ -50,6 +50,7 @@ import HRLettersPage from "@/pages/hr-letters";
 import ReportsPage from "@/pages/reports";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import HelpGuidePage from "@/pages/help-guide";
+import MessagesPage from "@/pages/messages";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -202,6 +203,9 @@ function Router() {
       </Route>
       <Route path="/housing">
         {() => <ProtectedRoute component={HousingPage} />}
+      </Route>
+      <Route path="/messages/:id?">
+        {() => <ProtectedRoute component={MessagesPage} />}
       </Route>
       <Route path="/reports">
         {() => <ProtectedRoute component={ReportsPage} roles={["admin", "hr_officer", "executive"]} />}

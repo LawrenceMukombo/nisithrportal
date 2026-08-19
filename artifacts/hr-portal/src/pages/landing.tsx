@@ -301,9 +301,8 @@ export default function LandingPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
-  const { isApplicant } = useRole();
-  const canBookmark = !isAuthenticated || isApplicant;
-  const { data: savedJobIds } = useSavedJobIds(isApplicant);
+  const canBookmark = true;
+  const { data: savedJobIds } = useSavedJobIds(isAuthenticated);
 
   const jobs = useGetJobs();
 

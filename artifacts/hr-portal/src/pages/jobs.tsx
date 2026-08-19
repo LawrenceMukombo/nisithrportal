@@ -271,8 +271,8 @@ export default function JobsPage() {
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const { canManageJobs, isApplicant } = useRole();
   const { agencyId, isAuthenticated } = useAuth();
-  const canBookmark = !isAuthenticated || isApplicant;
-  const { data: savedJobIds } = useSavedJobIds(isApplicant);
+  const canBookmark = true;
+  const { data: savedJobIds } = useSavedJobIds(isAuthenticated);
 
   function handleSort(key: SortKey) {
     if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }

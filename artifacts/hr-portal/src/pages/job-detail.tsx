@@ -734,8 +734,8 @@ export default function JobDetailPage() {
   const { toast } = useToast();
   const saveJob = useSaveJob();
   const unsaveJob = useUnsaveJob();
-  const canBookmark = !isAuthenticated || isApplicant;
-  const { data: savedJobIds } = useSavedJobIds(isAuthenticated && isApplicant);
+  const canBookmark = true;
+  const { data: savedJobIds } = useSavedJobIds(isAuthenticated);
 
   const jobId = match ? parseInt(params!.id) : 0;
   const { data: rawJob, isLoading } = useGetJob(jobId, {

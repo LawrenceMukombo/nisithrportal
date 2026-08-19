@@ -179,7 +179,7 @@ export async function triggerSavedJobClosingNotifications(): Promise<void> {
   }
 }
 
-router.get("/saved-jobs", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.get("/saved-jobs", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -206,7 +206,7 @@ router.get("/saved-jobs", authMiddleware, requireRole("applicant"), async (req, 
   res.json(rows);
 });
 
-router.get("/saved-jobs/ids", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.get("/saved-jobs/ids", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -229,7 +229,7 @@ router.get("/saved-jobs/ids", authMiddleware, requireRole("applicant"), async (r
   res.json(rows.map((r) => r.jobId));
 });
 
-router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.post("/saved-jobs/:jobId", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
@@ -307,7 +307,7 @@ router.post("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), asyn
   res.status(201).json({ saved: true });
 });
 
-router.delete("/saved-jobs/:jobId", authMiddleware, requireRole("applicant"), async (req, res): Promise<void> => {
+router.delete("/saved-jobs/:jobId", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.user?.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 

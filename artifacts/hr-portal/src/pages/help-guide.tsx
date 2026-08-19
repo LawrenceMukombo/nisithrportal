@@ -19,6 +19,17 @@ import {
   FileDown,
   Calendar,
   Clock,
+  CheckCircle2,
+  Sparkles,
+  Layers,
+  Tag,
+  ChevronRight,
+  Info,
+  ShieldAlert,
+  ListOrdered,
+  Rocket,
+  Wrench,
+  ShieldCheck,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Button } from "@/components/ui/button";
@@ -30,6 +41,267 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  // Regex tokens: **bold**, *italic*, `code`, and plain text
+  const parts: React.ReactNode[] = [];
+  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      parts.push(
+        <strong key={match.index} className="font-bold text-foreground">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith("*") && token.endsWith("*")) {
+      parts.push(
+        <em key={match.index} className="italic text-foreground/90">
+          {token.slice(1, -1)}
+        </em>
+      );
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      parts.push(
+        <code
+          key={match.index}
+          className="px-1.5 py-0.5 rounded bg-muted text-primary text-xs font-mono border border-border/70"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts;
+}
+
+function WikiContentRenderer({ content }: { content: string }) {
+  if (!content) return null;
+
+  // Split into lines to normalize structured content
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: React.ReactNode[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+
+    if (!line) {
+      i++;
+      continue;
+    }
+
+    // 1. Version tag (e.g. "Version 1.2.0 (Current Release)" or "# Version ...")
+    if (/^#*\s*Version\s+\d+\.\d+/i.test(line)) {
+      blocks.push(
+        <div
+          key={`ver-${i}`}
+          className="flex items-center gap-3 p-4 rounded-xl bg-primary/10 border border-primary/25 shadow-xs my-4"
+        >
+          <div className="p-2 rounded-lg bg-primary text-primary-foreground">
+            <Rocket className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-foreground">
+                {line.replace(/^#*\s*/, "")}
+              </span>
+              <Badge className="bg-primary text-primary-foreground text-[10px] uppercase font-bold tracking-wider">
+                Production Release
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Statutory Human Resources &amp; Institutional Governance System
+            </p>
+          </div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // 2. Feature / Issue Section Headers (e.g. "🚀 Major Features & Enhancements", "🛠 Resolved Issues")
+    if (line.includes("🚀") || line.includes("Major Features") || line.includes("🛠") || line.includes("Resolved Issues") || line.includes("🛡") || line.includes("Governance")) {
+      const isFeature = line.includes("🚀") || line.includes("Major Features");
+      const isFix = line.includes("🛠") || line.includes("Resolved Issues");
+      
+      blocks.push(
+        <div
+          key={`sec-header-${i}`}
+          className={`flex items-center gap-2.5 p-3 rounded-lg border my-4 ${
+            isFeature
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300"
+              : isFix
+              ? "bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300"
+              : "bg-muted/60 border-border text-foreground"
+          }`}
+        >
+          {isFeature ? (
+            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          ) : isFix ? (
+            <Wrench className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          ) : (
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+          )}
+          <span className="font-bold text-sm">{renderInlineMarkdown(line)}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // 3. Level 2 Headers ("## Section")
+    if (line.startsWith("## ")) {
+      const title = line.replace("## ", "");
+      blocks.push(
+        <div key={`h2-${i}`} className="mt-8 mb-3 pb-2 border-b border-border/80 flex items-center gap-2">
+          <div className="w-1.5 h-5 rounded-full bg-primary" />
+          <h3 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+            {renderInlineMarkdown(title)}
+          </h3>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // 4. Level 3 Headers ("### Subheader")
+    if (line.startsWith("### ")) {
+      const title = line.replace("### ", "");
+      blocks.push(
+        <h4 key={`h3-${i}`} className="text-sm sm:text-base font-bold text-foreground mt-5 mb-2 flex items-center gap-1.5">
+          <ChevronRight className="w-4 h-4 text-primary" />
+          {renderInlineMarkdown(title)}
+        </h4>
+      );
+      i++;
+      continue;
+    }
+
+    // 5. Numbered Steps / Lists (Lines starting with "1. ", "2. " or consecutive numbered blocks)
+    if (/^\d+\.\s+/.test(line)) {
+      const stepItems: { num: string; text: string; subItems: string[] }[] = [];
+
+      while (i < lines.length && (/^\d+\.\s+/.test(lines[i].trim()) || /^\s+[-*]\s+/.test(lines[i]) || /^\s+\d+\.\s+/.test(lines[i]))) {
+        const cur = lines[i].trim();
+        if (/^\d+\.\s+/.test(cur)) {
+          const numMatch = cur.match(/^(\d+)\.\s+(.*)$/);
+          if (numMatch) {
+            stepItems.push({
+              num: numMatch[1],
+              text: numMatch[2],
+              subItems: [],
+            });
+          }
+        } else if (/^[-*]\s+/.test(cur) && stepItems.length > 0) {
+          stepItems[stepItems.length - 1].subItems.push(cur.replace(/^[-*]\s+/, ""));
+        } else if (cur) {
+          // If there's an attached paragraph in this step
+          if (stepItems.length > 0) {
+            stepItems[stepItems.length - 1].text += " " + cur;
+          }
+        }
+        i++;
+      }
+
+      blocks.push(
+        <div key={`steps-${i}`} className="space-y-3 my-4">
+          {stepItems.map((step, idx) => (
+            <div
+              key={idx}
+              className="flex items-start gap-3.5 p-3.5 rounded-xl border border-border/80 bg-card hover:border-primary/40 transition-all shadow-2xs"
+            >
+              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 text-primary font-bold text-xs shrink-0 mt-0.5">
+                {step.num}
+              </div>
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="text-xs sm:text-sm text-foreground leading-relaxed">
+                  {renderInlineMarkdown(step.text)}
+                </div>
+                {step.subItems.length > 0 && (
+                  <ul className="space-y-1.5 pl-2 border-l-2 border-primary/20 mt-2">
+                    {step.subItems.map((sub, sIdx) => (
+                      <li key={sIdx} className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary/60 mt-1.5 shrink-0" />
+                        <span>{renderInlineMarkdown(sub)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+      continue;
+    }
+
+    // 6. Unordered Bullet Lists ("- " or "* ")
+    if (/^[-*]\s+/.test(line)) {
+      const bullets: string[] = [];
+      while (i < lines.length && (/^[-*]\s+/.test(lines[i].trim()) || /^\s+[-*]\s+/.test(lines[i]))) {
+        const cur = lines[i].trim();
+        if (/^[-*]\s+/.test(cur)) {
+          bullets.push(cur.replace(/^[-*]\s+/, ""));
+        }
+        i++;
+      }
+
+      blocks.push(
+        <ul key={`bullets-${i}`} className="space-y-2 my-3 pl-1">
+          {bullets.map((bullet, bIdx) => (
+            <li
+              key={bIdx}
+              className="flex items-start gap-2.5 p-2 rounded-lg bg-muted/20 border border-border/40 text-xs sm:text-sm text-foreground leading-relaxed"
+            >
+              <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0 shadow-xs" />
+              <div className="flex-1">{renderInlineMarkdown(bullet)}</div>
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // 7. Callouts / Notes ("> ...")
+    if (line.startsWith(">")) {
+      const calloutText = line.replace(/^>\s*/, "");
+      blocks.push(
+        <div
+          key={`callout-${i}`}
+          className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs sm:text-sm my-3 shadow-2xs"
+        >
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">{renderInlineMarkdown(calloutText)}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // 8. Regular Paragraphs
+    blocks.push(
+      <p key={`p-${i}`} className="text-xs sm:text-sm text-muted-foreground leading-relaxed my-2">
+        {renderInlineMarkdown(line)}
+      </p>
+    );
+    i++;
+  }
+
+  return <div className="space-y-2 font-sans">{blocks}</div>;
+}
 
 type Attachment = { name: string; url: string; type?: "file" | "image" };
 type Article = {
@@ -475,53 +747,9 @@ export default function HelpGuidePage() {
                     </div>
                   </div>
 
-                  <div className="prose prose-slate max-w-none text-sm leading-relaxed text-foreground space-y-4">
-                    {selected.content.split("\n\n").map((block, idx) => {
-                      const trimmed = block.trim();
-                      if (trimmed.startsWith("## ")) {
-                        return (
-                          <h3 key={idx} className="text-lg font-bold text-foreground border-b pb-1.5 mt-6 mb-3">
-                            {trimmed.replace("## ", "")}
-                          </h3>
-                        );
-                      }
-                      if (trimmed.startsWith("### ")) {
-                        return (
-                          <h4 key={idx} className="text-base font-semibold text-foreground mt-4 mb-2">
-                            {trimmed.replace("### ", "")}
-                          </h4>
-                        );
-                      }
-                      if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-                        const items = trimmed.split("\n").filter(Boolean);
-                        return (
-                          <ul key={idx} className="list-disc pl-5 space-y-1 my-2">
-                            {items.map((it, iIdx) => (
-                              <li key={iIdx} className="text-muted-foreground">
-                                {it.replace(/^[-*]\s+/, "")}
-                              </li>
-                            ))}
-                          </ul>
-                        );
-                      }
-                      if (/^\d+\.\s+/.test(trimmed)) {
-                        const items = trimmed.split("\n").filter(Boolean);
-                        return (
-                          <ol key={idx} className="list-decimal pl-5 space-y-1.5 my-2">
-                            {items.map((it, iIdx) => (
-                              <li key={iIdx} className="text-muted-foreground">
-                                {it.replace(/^\d+\.\s+/, "")}
-                              </li>
-                            ))}
-                          </ol>
-                        );
-                      }
-                      return (
-                        <p key={idx} className="text-muted-foreground leading-6">
-                          {trimmed}
-                        </p>
-                      );
-                    })}
+                  {/* Rich Formatted Wiki Article Body */}
+                  <div className="mt-6">
+                    <WikiContentRenderer content={selected.content} />
                   </div>
 
                   {selected.attachments?.length > 0 && (

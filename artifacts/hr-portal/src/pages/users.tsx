@@ -652,7 +652,7 @@ function CreateUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md w-full overflow-hidden">
         <DialogHeader>
           <DialogTitle>Create User Account</DialogTitle>
         </DialogHeader>

@@ -276,7 +276,9 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   } catch (err: any) {
     logger.error(err, "Login internal error occurred");
     console.error("DETAILED LOGIN ERROR:", err);
-    res.status(500).json({ error: "Internal server error: " + (err?.message || "Unknown error") });
+    // Do not reveal database, provider or configuration details to a login
+    // caller. Full diagnostics remain in structured server logs.
+    res.status(500).json({ error: "Unable to sign in at this time. Please try again later." });
   }
 });
 

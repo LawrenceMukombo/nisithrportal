@@ -4,6 +4,7 @@ import { db, employeeDocumentsTable, employeeDocumentVersionsTable, hrLetterRequ
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { getGrantedScopes } from "../middlewares/authorization";
 import { getTenantAgencyId } from "../middlewares/tenant";
+import { canManageEmployee, currentEmployeeId, hasHrAccess } from "../lib/employee-access";
 
 const router: IRouter = Router();
 
@@ -147,7 +148,7 @@ router.delete("/documents/:id", authMiddleware, async (req, res): Promise<void> 
 });
 
 // GET /api/hr-letters - List HR letter requests
-router.get("/hr-letters", authMiddleware, async (req, res): Promise<void> => {
+router.get("/hr-letters", authMiddleware, requireRole("admin", "hr_manager", "hr_officer"), async (req, res): Promise<void> => {
   try {
     const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
     const conditions = [];
@@ -183,15 +184,38 @@ router.post("/hr-letters/request", authMiddleware, async (req, res): Promise<voi
   try {
     const { employeeId, letterType, addressee, purpose } = req.body;
 
-    if (!employeeId || !letterType || !addressee || !purpose) {
-      res.status(400).json({ error: "All fields are required" });
+    if (!letterType || !addressee || !purpose) {
+      res.status(400).json({ error: "Letter type, addressee, and purpose are required" });
+      return;
+    }
+
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    const ownEmployeeId = await currentEmployeeId(req);
+
+    if (!targetEmployeeId) {
+      targetEmployeeId = ownEmployeeId ?? undefined;
+    }
+
+    if (!targetEmployeeId) {
+      const [firstEmp] = await db.select({ id: employeesTable.id }).from(employeesTable).limit(1);
+      targetEmployeeId = firstEmp?.id;
+    }
+
+    if (!targetEmployeeId) {
+      res.status(400).json({ error: "No employee record found to issue letter for" });
+      return;
+    }
+
+    const isHrOrAdmin = hasHrAccess(req) || req.user?.roleName === "admin" || req.user?.roleName === "hr_officer";
+    if (!isHrOrAdmin && targetEmployeeId !== ownEmployeeId) {
+      res.status(403).json({ error: "Forbidden: cannot request a letter for this employee" });
       return;
     }
 
     const [letterReq] = await db
       .insert(hrLetterRequestsTable)
       .values({
-        employeeId: parseInt(employeeId),
+        employeeId: targetEmployeeId,
         letterType,
         addressee,
         purpose,
@@ -200,8 +224,8 @@ router.post("/hr-letters/request", authMiddleware, async (req, res): Promise<voi
       .returning();
 
     res.status(201).json(letterReq);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to request HR letter" });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to request HR letter" });
   }
 });
 
@@ -214,6 +238,16 @@ router.post("/hr-letters/generate", authMiddleware, requireRole("admin", "hr_man
     if (requestId) {
       const existing = await db.select().from(hrLetterRequestsTable).where(eq(hrLetterRequestsTable.id, parseInt(requestId))).limit(1);
       if (existing.length > 0) targetEmpId = existing[0].employeeId;
+    }
+
+    if (!targetEmpId) {
+      const ownEmp = await currentEmployeeId(req);
+      targetEmpId = ownEmp ?? undefined;
+    }
+
+    if (!targetEmpId) {
+      const [firstEmp] = await db.select({ id: employeesTable.id }).from(employeesTable).limit(1);
+      targetEmpId = firstEmp?.id;
     }
 
     if (!targetEmpId) {

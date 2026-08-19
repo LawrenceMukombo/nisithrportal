@@ -10,11 +10,12 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from "@workspace/api-zod";
-import { db } from "@workspace/db";
+import { db, applicationsTable, applicationDocumentsTable, candidatesTable, employeeDocumentsTable, employeesTable, contractsTable } from "@workspace/db";
 import { jobsTable } from "@workspace/db/schema";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { setObjectAclPolicy, canAccessObjectForAgency } from "../lib/objectAcl";
 import { authMiddleware, requireRole } from "../middlewares/auth";
+import { canReadEmployee, hasSensitiveReadAccess } from "../lib/employee-access";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -165,7 +166,7 @@ router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
  *
  * Serves locally stored uploaded files directly with correct content types
  */
-router.get("/storage/local/:filename", (req: Request, res: Response) => {
+router.get("/storage/local/:filename", authMiddleware, async (req: Request, res: Response) => {
   try {
     const rawFilename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
     const filename = path.basename(rawFilename ?? "");
@@ -173,6 +174,29 @@ router.get("/storage/local/:filename", (req: Request, res: Response) => {
 
     if (!fs.existsSync(diskPath)) {
       res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    // A storage filename is not a permission. Resolve it to a protected HR record
+    // and deny access unless the caller can read that record.
+    const storageUrl = `/api/storage/local/${filename}`;
+    const [applicationDocument] = await db.select({ candidateUserId: candidatesTable.userId, agencyId: jobsTable.agencyId })
+      .from(applicationDocumentsTable)
+      .innerJoin(applicationsTable, eq(applicationDocumentsTable.applicationId, applicationsTable.id))
+      .innerJoin(candidatesTable, eq(applicationsTable.candidateId, candidatesTable.id))
+      .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+      .where(eq(applicationDocumentsTable.url, storageUrl)).limit(1);
+    const [employeeDocument] = await db.select({ employeeId: employeeDocumentsTable.employeeId })
+      .from(employeeDocumentsTable).where(eq(employeeDocumentsTable.fileUrl, storageUrl)).limit(1);
+    const [contract] = await db.select({ employeeId: contractsTable.employeeId, agencyId: employeesTable.agencyId })
+      .from(contractsTable).innerJoin(employeesTable, eq(contractsTable.employeeId, employeesTable.id))
+      .where(eq(contractsTable.documentUrl, storageUrl)).limit(1);
+    const user = req.user!;
+    const applicantOwnsDocument = applicationDocument?.candidateUserId === user.userId;
+    const staffCanReadApplication = hasSensitiveReadAccess(req) && !!applicationDocument && (user.agencyId == null || applicationDocument.agencyId === user.agencyId);
+    const staffCanReadContract = hasSensitiveReadAccess(req) && !!contract && (user.agencyId == null || contract.agencyId === user.agencyId);
+    if (!applicantOwnsDocument && !staffCanReadApplication && !(employeeDocument && await canReadEmployee(req, employeeDocument.employeeId)) && !staffCanReadContract && !(contract && await canReadEmployee(req, contract.employeeId))) {
+      res.status(403).json({ error: "Forbidden: no access to this document" });
       return;
     }
 

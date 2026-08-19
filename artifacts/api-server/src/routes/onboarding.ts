@@ -3,6 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, onboardingWorkflowsTable, onboardingTasksTable, onboardingTemplatesTable, onboardingTemplateTasksTable, employeesTable, usersTable, candidatesTable, positionsTable, rolesTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -36,7 +37,7 @@ router.post("/onboarding/templates", authMiddleware, requireRole("admin", "hr_ma
 });
 
 // GET /api/onboarding - List onboarding workflows
-router.get("/onboarding", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/onboarding", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager", "executive"), async (req, res): Promise<void> => {
   try {
     const workflows = await db
       .select({
@@ -54,6 +55,7 @@ router.get("/onboarding", authMiddleware, async (_req, res): Promise<void> => {
       .from(onboardingWorkflowsTable)
       .leftJoin(employeesTable, eq(onboardingWorkflowsTable.employeeId, employeesTable.id))
       .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(getTenantAgencyId(req) == null ? undefined : eq(employeesTable.agencyId, getTenantAgencyId(req)!))
       .orderBy(desc(onboardingWorkflowsTable.createdAt));
 
     // Fetch tasks for each workflow

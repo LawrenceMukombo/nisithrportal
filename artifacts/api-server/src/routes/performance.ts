@@ -3,6 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, performanceCyclesTable, performanceReviewsTable, goalsTable, employeesTable, positionsTable, usersTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -44,7 +45,7 @@ router.post("/performance/cycles", authMiddleware, requireRole("admin", "hr_mana
 });
 
 // GET /api/performance/reviews - List reviews
-router.get("/performance/reviews", authMiddleware, async (req, res): Promise<void> => {
+router.get("/performance/reviews", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager", "executive"), async (req, res): Promise<void> => {
   try {
     const cycleIdParam = req.query.cycle_id ? parseInt(req.query.cycle_id as string) : undefined;
     const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
@@ -52,6 +53,8 @@ router.get("/performance/reviews", authMiddleware, async (req, res): Promise<voi
     const conditions = [];
     if (cycleIdParam) conditions.push(eq(performanceReviewsTable.cycleId, cycleIdParam));
     if (employeeIdParam) conditions.push(eq(performanceReviewsTable.employeeId, employeeIdParam));
+    const tenantAgencyId = getTenantAgencyId(req);
+    if (tenantAgencyId != null) conditions.push(eq(employeesTable.agencyId, tenantAgencyId));
 
     const reviews = await db
       .select({
@@ -115,11 +118,13 @@ router.post("/performance/reviews", authMiddleware, requireRole("admin", "hr_man
 });
 
 // PATCH /api/performance/reviews/:id - Update review scores / feedback
-router.patch("/performance/reviews/:id", authMiddleware, async (req, res): Promise<void> => {
+router.patch("/performance/reviews/:id", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   try {
     const reviewId = parseInt(String(req.params.id), 10);
     const { status, selfScore, managerScore, finalRating, selfFeedback, managerFeedback, strengths, developmentAreas, goalsSummary } = req.body;
 
+    const [existing] = await db.select({ employeeId: performanceReviewsTable.employeeId, agencyId: employeesTable.agencyId }).from(performanceReviewsTable).innerJoin(employeesTable, eq(performanceReviewsTable.employeeId, employeesTable.id)).where(eq(performanceReviewsTable.id, reviewId));
+    if (!existing || (getTenantAgencyId(req) != null && existing.agencyId !== getTenantAgencyId(req))) { res.status(404).json({ error: "Review not found" }); return; }
     const [updated] = await db
       .update(performanceReviewsTable)
       .set({
@@ -145,7 +150,7 @@ router.patch("/performance/reviews/:id", authMiddleware, async (req, res): Promi
 });
 
 // GET /api/performance/goals - List employee goals / OKRs
-router.get("/performance/goals", authMiddleware, async (req, res): Promise<void> => {
+router.get("/performance/goals", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager", "executive"), async (req, res): Promise<void> => {
   try {
     const employeeIdParam = req.query.employee_id ? parseInt(req.query.employee_id as string) : undefined;
     const cycleIdParam = req.query.cycle_id ? parseInt(req.query.cycle_id as string) : undefined;
@@ -153,6 +158,8 @@ router.get("/performance/goals", authMiddleware, async (req, res): Promise<void>
     const conditions = [];
     if (employeeIdParam) conditions.push(eq(goalsTable.employeeId, employeeIdParam));
     if (cycleIdParam) conditions.push(eq(goalsTable.cycleId, cycleIdParam));
+    const tenantAgencyId = getTenantAgencyId(req);
+    if (tenantAgencyId != null) conditions.push(eq(employeesTable.agencyId, tenantAgencyId));
 
     const goals = await db
       .select({
@@ -185,7 +192,7 @@ router.get("/performance/goals", authMiddleware, async (req, res): Promise<void>
 });
 
 // POST /api/performance/goals - Create new goal / OKR
-router.post("/performance/goals", authMiddleware, async (req, res): Promise<void> => {
+router.post("/performance/goals", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   try {
     const { employeeId, cycleId, title, description, category, targetDate, weightage, metrics, targetValue, currentValue, unit, dueDate } = req.body;
 
@@ -229,10 +236,12 @@ router.post("/performance/goals", authMiddleware, async (req, res): Promise<void
 });
 
 // PATCH /api/performance/goals/:id - Update goal progress
-router.patch("/performance/goals/:id", authMiddleware, async (req, res): Promise<void> => {
+router.patch("/performance/goals/:id", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager"), async (req, res): Promise<void> => {
   try {
     const goalId = parseInt(String(req.params.id), 10);
     const { progressPercentage, status, description, metrics } = req.body;
+    const [existing] = await db.select({ agencyId: employeesTable.agencyId }).from(goalsTable).innerJoin(employeesTable, eq(goalsTable.employeeId, employeesTable.id)).where(eq(goalsTable.id, goalId));
+    if (!existing || (getTenantAgencyId(req) != null && existing.agencyId !== getTenantAgencyId(req))) { res.status(404).json({ error: "Goal not found" }); return; }
 
     const [updated] = await db
       .update(goalsTable)

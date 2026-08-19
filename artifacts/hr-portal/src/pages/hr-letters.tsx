@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   FileBadge,
@@ -63,16 +63,38 @@ export default function HRLettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAdmin, isHR } = useRole();
+  const { user } = useAuth();
 
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [signatureData, setSignatureData] = useState<DigitalSignatureData | null>(null);
 
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [letterType, setLetterType] = useState("employment_confirmation");
   const [addressee, setAddressee] = useState("Bank of South Pacific (BSP) Credit Assessment");
   const [purpose, setPurpose] = useState("Mortgage / Home loan assessment and employment verification");
 
   const [activePreview, setActivePreview] = useState<string | null>(null);
+
+  // Fetch Employees List
+  const { data: employees = [] } = useQuery<Array<{ id: number; name: string; email?: string; positionTitle?: string; departmentName?: string }>>({
+    queryKey: ["/api/employees"],
+    queryFn: async () => {
+      const res = await fetch("/api/employees", {
+        headers: { ...getAuthHeader() },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  // Auto select matching employee or first employee
+  useEffect(() => {
+    if (!selectedEmployeeId && employees.length > 0) {
+      const matched = employees.find((e) => e.email?.toLowerCase() === user?.email?.toLowerCase());
+      setSelectedEmployeeId(String(matched ? matched.id : employees[0].id));
+    }
+  }, [employees, user, selectedEmployeeId]);
 
   // Fetch Requests
   const { data: requests = [], isLoading } = useQuery<LetterRequest[]>({
@@ -97,17 +119,21 @@ export default function HRLettersPage() {
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to submit request");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to submit request");
+      }
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/hr-letters"] });
       toast({ title: "Letter Requested", description: "HR Corporate Services will review and issue your official document." });
       setIsRequestOpen(false);
+      const empId = selectedEmployeeId ? parseInt(selectedEmployeeId) : (employees[0]?.id || 1);
       // Auto generate instant draft
       generateMutation.mutate({
         requestId: data.id,
-        employeeId: 1,
+        employeeId: empId,
         letterType,
         addressee,
         purpose,
@@ -129,7 +155,10 @@ export default function HRLettersPage() {
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to generate letter");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to generate letter");
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -137,12 +166,16 @@ export default function HRLettersPage() {
       setActivePreview(data.letterContent);
       toast({ title: "Letter Generated", description: "Official NISIT HR letter is ready for printing/export." });
     },
+    onError: (err: any) => {
+      toast({ title: "Letter Generation Error", description: err.message, variant: "destructive" });
+    },
   });
 
   const handleRequestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const empId = selectedEmployeeId ? parseInt(selectedEmployeeId) : (employees[0]?.id || 1);
     requestMutation.mutate({
-      employeeId: 1,
+      employeeId: empId,
       letterType,
       addressee,
       purpose,
@@ -347,6 +380,24 @@ export default function HRLettersPage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                {(isAdmin || isHR) && employees.length > 0 && (
+                  <div>
+                    <label className="font-medium text-foreground block mb-1">Employee / Staff Member *</label>
+                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                      <SelectTrigger data-testid="select-letter-employee">
+                        <SelectValue placeholder="Select Employee" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-56">
+                        {employees.map((emp) => (
+                          <SelectItem key={emp.id} value={String(emp.id)}>
+                            {emp.name} {emp.positionTitle ? `(${emp.positionTitle})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Letter Type *</label>
                   <Select value={letterType} onValueChange={setLetterType}>

@@ -34,6 +34,7 @@ node_modules
 /libpeerconnection.log
 npm-debug.log
 yarn-error.log
+*.log
 testem.log
 /typings
 
@@ -47,3 +48,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Sensitive local HR material and runtime configuration
+.env
+.env.*
+!.env.example
+artifacts/api-server/uploads/

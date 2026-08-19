@@ -4,6 +4,7 @@ import { db, employeesTable, departmentsTable, positionsTable, employeePositionH
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { writeAuditLog } from "../lib/audit";
+import { canReadEmployee } from "../lib/employee-access";
 
 const router: IRouter = Router();
 
@@ -233,6 +234,10 @@ router.get("/employees/:id", authMiddleware, async (req, res): Promise<void> => 
       res.status(404).json({ error: "Employee not found" });
       return;
     }
+    if (!await canReadEmployee(req, id)) {
+      res.status(403).json({ error: "Forbidden: no access to this employee record" });
+      return;
+    }
 
     // Lookup supervisor info if assigned
     let supervisor = null;
@@ -255,6 +260,10 @@ router.get("/employees/:id/history", authMiddleware, async (req, res): Promise<v
     const id = parseIntParam(req.params.id);
     if (!id || isNaN(id)) {
       res.status(400).json({ error: "Invalid employee id" });
+      return;
+    }
+    if (!await canReadEmployee(req, id)) {
+      res.status(403).json({ error: "Forbidden: no access to this employee history" });
       return;
     }
 

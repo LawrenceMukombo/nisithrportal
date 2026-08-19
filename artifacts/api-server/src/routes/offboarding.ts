@@ -4,6 +4,7 @@ import { db, offboardingWorkflowsTable, offboardingTasksTable, employeesTable, p
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { writeAuditLog } from "../lib/audit";
 import { createApproval } from "./workflows";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -32,7 +33,7 @@ async function canUpdateTask(userId: number, assignedToUserId: number | null): P
 }
 
 // GET /api/offboarding - List offboarding workflows
-router.get("/offboarding", authMiddleware, async (_req, res): Promise<void> => {
+router.get("/offboarding", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager", "executive"), async (req, res): Promise<void> => {
   try {
     const workflows = await db
       .select({
@@ -52,6 +53,7 @@ router.get("/offboarding", authMiddleware, async (_req, res): Promise<void> => {
       .from(offboardingWorkflowsTable)
       .leftJoin(employeesTable, eq(offboardingWorkflowsTable.employeeId, employeesTable.id))
       .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(getTenantAgencyId(req) == null ? undefined : eq(employeesTable.agencyId, getTenantAgencyId(req)!))
       .orderBy(desc(offboardingWorkflowsTable.createdAt));
 
     const workflowsWithTasks = await Promise.all(

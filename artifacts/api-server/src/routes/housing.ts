@@ -3,6 +3,8 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, housingSchemesTable, housingApplicationsTable, employeesTable, positionsTable } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
+import { currentEmployeeId, hasSensitiveReadAccess, canManageEmployee } from "../lib/employee-access";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -52,6 +54,14 @@ router.get("/housing/applications", authMiddleware, async (req, res): Promise<vo
     const conditions = [];
     if (employeeIdParam) conditions.push(eq(housingApplicationsTable.employeeId, employeeIdParam));
     if (statusParam && statusParam !== "all") conditions.push(eq(housingApplicationsTable.status, statusParam));
+    if (hasSensitiveReadAccess(req)) {
+      const agencyId = getTenantAgencyId(req);
+      if (agencyId != null) conditions.push(eq(employeesTable.agencyId, agencyId));
+    } else {
+      const ownEmployeeId = await currentEmployeeId(req);
+      if (!ownEmployeeId || (employeeIdParam && employeeIdParam !== ownEmployeeId)) { res.status(403).json({ error: "Forbidden" }); return; }
+      conditions.push(eq(housingApplicationsTable.employeeId, ownEmployeeId));
+    }
 
     const applications = await db
       .select({
@@ -90,7 +100,10 @@ router.get("/housing/applications", authMiddleware, async (req, res): Promise<vo
 router.post("/housing/applications", authMiddleware, async (req, res): Promise<void> => {
   try {
     const { employeeId, schemeId, propertyAddress, landlordName, monthlyRentRequested, leasePeriodMonths } = req.body;
-    const targetEmployeeId = employeeId ? parseInt(employeeId) : (req as any).user?.userId || 1;
+    const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
+    const ownEmployeeId = await currentEmployeeId(req);
+    const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
+    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot submit for this employee" }); return; }
 
     if (!propertyAddress) {
       res.status(400).json({ error: "Property address is required" });
@@ -124,6 +137,8 @@ router.patch("/housing/applications/:id/status", authMiddleware, requireRole("ad
   try {
     const appId = parseInt(req.params.id as string);
     const { status, reviewComments, approvedAmount } = req.body;
+    const [existing] = await db.select({ employeeId: housingApplicationsTable.employeeId }).from(housingApplicationsTable).where(eq(housingApplicationsTable.id, appId));
+    if (!existing || !await canManageEmployee(req, existing.employeeId)) { res.status(404).json({ error: "Housing application not found" }); return; }
 
     const [updated] = await db
       .update(housingApplicationsTable)

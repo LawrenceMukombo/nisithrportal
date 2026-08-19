@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, approvalActionsTable, approvalInstancesTable, workflowDefinitionsTable, leaveRequestsTable, housingApplicationsTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { notifyAdmins } from "../lib/notificationService";
+import { getTenantAgencyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 const DEFAULT_STEPS = [{ role: "hiring_manager", label: "Manager approval" }, { role: "hr_officer", label: "HR review" }];
@@ -32,9 +33,11 @@ router.post("/workflow-definitions", authMiddleware, requireRole("admin"), async
   const [definition] = await db.insert(workflowDefinitionsTable).values({ entityType, name, steps, agencyId: req.user!.agencyId }).returning();
   res.status(201).json(definition);
 });
-router.get("/approvals", authMiddleware, async (req, res) => {
+router.get("/approvals", authMiddleware, requireRole("admin", "hr_manager", "hr_officer", "hiring_manager", "executive"), async (req, res) => {
   const entityType = typeof req.query.entity_type === "string" ? req.query.entity_type : undefined;
-  const rows = await db.select().from(approvalInstancesTable).where(entityType ? eq(approvalInstancesTable.entityType, entityType) : undefined).orderBy(desc(approvalInstancesTable.createdAt));
+  const tenantAgencyId = getTenantAgencyId(req);
+  const conditions = [entityType ? eq(approvalInstancesTable.entityType, entityType) : undefined, tenantAgencyId != null ? eq(approvalInstancesTable.agencyId, tenantAgencyId) : undefined].filter(Boolean);
+  const rows = await db.select().from(approvalInstancesTable).where(conditions.length ? and(...conditions as any) : undefined).orderBy(desc(approvalInstancesTable.createdAt));
   res.json(rows);
 });
 router.post("/approvals/:id/actions", authMiddleware, requireRole("admin", "hr_officer", "hiring_manager", "executive"), async (req, res) => {
@@ -42,6 +45,8 @@ router.post("/approvals/:id/actions", authMiddleware, requireRole("admin", "hr_o
   if (!Number.isInteger(id) || !["approve", "reject", "delegate"].includes(action)) { res.status(400).json({ error: "Valid action is approve, reject, or delegate" }); return; }
   const [instance] = await db.select().from(approvalInstancesTable).where(eq(approvalInstancesTable.id, id));
   if (!instance || instance.status !== "pending") { res.status(404).json({ error: "Pending approval not found" }); return; }
+  if (getTenantAgencyId(req) != null && instance.agencyId !== getTenantAgencyId(req)) { res.status(404).json({ error: "Pending approval not found" }); return; }
+  if (instance.assignedToUserId != null && instance.assignedToUserId !== req.user!.userId && req.user!.roleName !== "admin") { res.status(403).json({ error: "Forbidden: approval is assigned to another user" }); return; }
   if (action === "delegate" && (!Number.isInteger(delegateToUserId) || delegateToUserId <= 0)) { res.status(400).json({ error: "delegateToUserId is required for delegation" }); return; }
   await db.insert(approvalActionsTable).values({ instanceId: id, step: instance.currentStep, action, actorId: req.user!.userId, comment: comment ?? null });
   if (action === "delegate") {
@@ -50,6 +55,8 @@ router.post("/approvals/:id/actions", authMiddleware, requireRole("admin", "hr_o
   }
   const definition = instance.definitionId ? (await db.select().from(workflowDefinitionsTable).where(eq(workflowDefinitionsTable.id, instance.definitionId)))[0] : null;
   const steps = Array.isArray(definition?.steps) && definition.steps.length ? definition.steps : DEFAULT_STEPS;
+  const activeStep = steps[instance.currentStep - 1] as { role?: string } | undefined;
+  if (instance.assignedToUserId == null && req.user!.roleName !== "admin" && activeStep?.role && activeStep.role !== req.user!.roleName) { res.status(403).json({ error: "Forbidden: you are not the approver for this step" }); return; }
   const finished = action === "reject" || instance.currentStep >= steps.length;
   const [updated] = await db.update(approvalInstancesTable).set({ status: action === "reject" ? "rejected" : finished ? "approved" : "pending", currentStep: finished ? instance.currentStep : instance.currentStep + 1, completedAt: finished ? new Date() : null }).where(eq(approvalInstancesTable.id, id)).returning();
   if (finished && instance.entityType === "leave_request") {

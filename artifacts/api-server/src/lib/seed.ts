@@ -32,14 +32,14 @@ async function seedWikiArticles(): Promise<void> {
       title: "PNG NISIT HR Portal: System Overview & Architecture",
       slug: "system-overview",
       category: "Getting Started",
-      summary: "High-level overview of the PNG National Institute of Standards and Industrial Technology (NISIT) Enterprise Human Resource Information System.",
+      summary: "High-level overview of the PNG National Institute of Standards and Industrial Technology (NISIT) Human Resource Information System.",
       published: true,
       content: `## 1. System Overview
 The PNG NISIT HR Portal is a unified, digital Human Resource Information System (HRIS) designed to streamline statutory workforce planning, talent acquisition, employee service delivery, establishment control, and executive reporting.
 
 ### Core Architectural Pillars
 - **Public Recruitment & Applicant Portal**: Fast, accessible job application workflow with automated CV parsing, screening question scoring, and draft persistence.
-- **Enterprise Talent Pipeline**: Multi-stage review workflow (Applied → Screening → Assessment → Interview → Offer → Hired → Onboarding) with cross-functional panel evaluations.
+- **Talent Pipeline**: Multi-stage review workflow (Applied → Screening → Assessment → Interview → Offer → Hired → Onboarding) with cross-functional panel evaluations.
 - **Statutory Organizational Hierarchy**: Real-time interactive establishment structure builder, Director General / CEO configuration, and division staff allocations.
 - **Employee Lifecycle Management**: Complete staff records, digital personnel files, grade level tracking, and emergency contacts.
 - **Employee Self-Service (ESS)**: Leave requests, attendance timesheets, training nominations, and benefits enrollments.
@@ -140,7 +140,7 @@ The PNG NISIT HR Portal is a unified, digital Human Resource Information System 
       published: true,
       content: `## 1. Employee Directory
 1. Navigate to **Employees** under People Management.
-2. The enterprise directory provides sortable, searchable staff records with active status indicators, department tags, and grade level classifications.
+2. The employee directory provides sortable, searchable staff records with active status indicators, department tags, and grade level classifications.
 3. Filter by department, status (Active, On Leave, Probation, Suspended, Separated), or search by staff name / employee number.
 
 ## 2. Maintaining Employee Profiles
@@ -282,15 +282,15 @@ The PNG NISIT HR Portal is a unified, digital Human Resource Information System 
    - Dynamic Director General / CEO position editor for real-time leadership apex updates.
    - Live establishment metrics tracking total headcount, filled positions, vacancies, and approved ceilings.
 
-2. **Enterprise Shortlisting & Candidate Review Hub**:
+2. **Shortlisting & Candidate Review Hub**:
    - Upgraded candidate pipeline supporting multi-stage transitions (Screening, Assessment, Interview, Offer).
    - Candidate dossiers showing AI match score, contact info, and certified documents.
    - Real-time search and filter tabs across candidate names, job titles, and review stages.
 
-3. **Enterprise Help & User Guide Wiki**:
+3. **Help & User Guide Wiki**:
    - Comprehensive living documentation covering all 14 HRIS operational modules.
    - Searchable knowledge base with category filters and printable article views.
-   - Official downloadable Word handbooks (Enterprise End-to-End Manual, Staff User Guide, Applicant Guide).
+   - Official downloadable Word handbooks (End-to-End Manual, Staff User Guide, Applicant Guide).
 
 4. **Real-Time Role Resolution & Dynamic RBAC**:
    - Instant permission synchronization when user roles are updated in the admin panel.

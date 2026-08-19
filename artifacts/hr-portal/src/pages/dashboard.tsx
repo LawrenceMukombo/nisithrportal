@@ -363,7 +363,7 @@ export default function DashboardPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground" data-testid="heading-dashboard">Executive Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Enterprise workforce, capacity, and recruitment metrics</p>
+          <p className="text-muted-foreground text-sm mt-1">Statutory workforce, capacity, and recruitment metrics</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

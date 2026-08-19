@@ -329,9 +329,9 @@ const emptyArticle = {
 
 const OFFICIAL_MANUALS = [
   {
-    title: "NISIT HR Portal: Enterprise End-to-End Handbook",
-    filename: "NISIT-HR-Portal-Enterprise-End-to-End-Handbook.docx",
-    url: "/NISIT-HR-Portal-Enterprise-End-to-End-Handbook.docx",
+    title: "NISIT HR Portal: End-to-End Handbook",
+    filename: "NISIT-HR-Portal-End-to-End-Handbook.docx",
+    url: "/NISIT-HR-Portal-End-to-End-Handbook.docx",
     description: "Complete statutory reference manual covering recruitment, establishment control, leave, performance, and RBAC governance.",
     badge: "Official Handbook",
     icon: FileText,
@@ -500,7 +500,7 @@ export default function HelpGuidePage() {
                 <BookOpen className="h-6 w-6" />
               </div>
               <h1 className="text-2xl font-bold tracking-tight" data-testid="heading-help-guide">
-                Help &amp; Enterprise User Guide
+                Help &amp; User Guide
               </h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1">

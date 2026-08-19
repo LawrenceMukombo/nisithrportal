@@ -1107,7 +1107,9 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
         }
       } catch { /* parse errors are non-blocking */ }
       finally { setParsing(false); }
-    } catch { toast({ title: "Upload failed", variant: "destructive" }); }
+    } catch (error) {
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
     finally { setUploading(p => ({ ...p, cv: false })); }
   };
 
@@ -1119,7 +1121,9 @@ function Step6Documents({ form, jobId, toast }: { form: ReturnType<typeof useFor
       const url = await uploadFile(file, jobId);
       appendDoc({ documentType: pendingDocType, url, fileName: file.name });
       toast({ title: "Document uploaded" });
-    } catch { toast({ title: "Upload failed", variant: "destructive" }); }
+    } catch (error) {
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
     finally { setUploading(p => ({ ...p, [key]: false })); }
   };
 

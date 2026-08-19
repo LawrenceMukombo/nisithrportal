@@ -127,6 +127,13 @@
       "when": 1787443200000,
       "tag": "0017_onboarding_templates_and_offboarding_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787539200000,
+      "tag": "0018_wiki_articles",
+      "breakpoints": true
     }
   ]
 }

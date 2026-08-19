@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
+import { NISIT_AGENCY_ID } from "../lib/single-tenant";
 
 export function getTenantAgencyId(req: Request): number | null {
-  return req.user?.agencyId ?? null;
+  return req.user?.agencyId ?? NISIT_AGENCY_ID;
 }
 
 export function assertTenantAccess(res: Response, resourceAgencyId: number | null, userAgencyId: number | null): boolean {

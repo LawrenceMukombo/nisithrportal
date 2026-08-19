@@ -320,12 +320,18 @@ router.get("/auth/me", authMiddleware, async (req, res): Promise<void> => {
     return;
   }
   const user = users[0];
+  let roleName = req.user?.roleName ?? null;
+  if (!roleName && user.roleId) {
+    const [role] = await db.select({ name: rolesTable.name }).from(rolesTable).where(eq(rolesTable.id, user.roleId));
+    roleName = role?.name ?? null;
+  }
   res.json({
     id: user.id,
     name: user.name,
     email: user.email,
     roleId: user.roleId,
-    agencyId: user.agencyId,
+    roleName,
+    agencyId: user.agencyId ?? req.user?.agencyId ?? 1,
     status: user.status,
     closingSoonDays: user.closingSoonDays,
     createdAt: user.createdAt.toISOString(),

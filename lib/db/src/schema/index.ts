@@ -26,3 +26,4 @@ export * from "./training_certification";
 export * from "./benefits_housing";
 export * from "./documents_letters";
 export * from "./grades";
+export * from "./wiki";

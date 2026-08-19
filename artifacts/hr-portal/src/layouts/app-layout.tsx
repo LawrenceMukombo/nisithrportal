@@ -5,7 +5,7 @@ import {
   ScrollText, Building2, FolderKanban, Settings, LogOut,
   ChevronRight, ChevronDown, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
   Calendar, Timer, UserPlus, UserMinus, Target, GraduationCap, HeartHandshake, Home,
-  FolderLock, FileBadge, BarChart3, ShieldCheck,
+  FolderLock, FileBadge, BarChart3, ShieldCheck, BookOpen,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,7 @@ function useNavItems() {
   } else if (isAdmin || isHrOfficer || isHiringManager) {
     items.push({ label: "My Account", href: "/account", icon: UserCog });
   }
+  items.push({ label: "Help & User Guide", href: "/help", icon: BookOpen });
 
   if (canManageJobs) {
     items.push({ label: "Applications", href: "/applications", icon: FileText });
@@ -125,21 +126,27 @@ function ThemeToggle() {
   );
 }
 
-function LiveWelcome({ email }: { email: string }) {
+function LiveWelcome({ name, email }: { name?: string; email: string }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const firstName = email.split("@")[0].split(/[._-]/)[0];
-  const name = firstName ? `${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}` : "there";
+  const fallbackName = email.split("@")[0].split(/[._-]/)[0];
+  const displayName = name?.trim() || (fallbackName ? `${fallbackName.charAt(0).toUpperCase()}${fallbackName.slice(1)}` : "there");
   return (
-    <div className="hidden lg:block text-right leading-tight" data-testid="live-welcome">
-      <p className="text-sm font-medium text-foreground">Welcome, {name}</p>
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        {now.toLocaleDateString("en-PG", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
-        {" · "}{now.toLocaleTimeString("en-PG", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-      </p>
+    <div className="hidden lg:flex items-center gap-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-1.5" data-testid="live-welcome">
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary" aria-hidden="true">
+        {displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+      </div>
+      <div className="min-w-0 text-left leading-tight">
+        <p className="text-sm font-semibold text-foreground truncate">Welcome back, {displayName}</p>
+        <p className="text-[11px] text-muted-foreground truncate">{email}</p>
+      </div>
+      <div className="border-l border-border pl-3 text-right tabular-nums">
+        <p className="text-xs font-medium text-foreground" aria-live="polite">{now.toLocaleTimeString("en-PG", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>
+        <p className="text-[11px] text-muted-foreground">{now.toLocaleDateString("en-PG", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</p>
+      </div>
     </div>
   );
 }
@@ -174,7 +181,7 @@ function groupNavItems(items: NavItem[]): NavGroup[] {
     ["People management", ["/employees", "/onboarding", "/contracts", "/offboarding"]],
     ["Employee services", ["/leave", "/attendance", "/documents", "/hr-letters", "/performance", "/training", "/benefits", "/housing"]],
     ["Administration", ["/departments", "/reports", "/users", "/integrations", "/settings/pipeline-sla"]],
-    ["My profile", ["/account", "/my-applications"]],
+    ["My profile", ["/account", "/my-applications", "/help"]],
   ];
   return definitions.map(([label, hrefs]) => ({ label, items: items.filter((item) => hrefs.includes(item.href)) })).filter((group) => group.items.length > 0);
 }
@@ -323,7 +330,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Desktop top bar */}
         <header className="hidden md:flex h-14 border-b border-border items-center px-6 gap-4 bg-card shrink-0 justify-end">
-          {user && <LiveWelcome email={user.email} />}
+          {user && <LiveWelcome name={user.name} email={user.email} />}
           <NotificationBell />
         </header>
 

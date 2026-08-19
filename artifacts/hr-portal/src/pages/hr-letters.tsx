@@ -11,6 +11,9 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  PenTool,
+  Stamp,
+  Award,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +40,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
+import {
+  DigitalSignatureModal,
+  DocumentOfficialStampBlock,
+  type DigitalSignatureData,
+} from "@/components/digital-signature-modal";
 
 interface LetterRequest {
   id: number;
@@ -57,6 +65,9 @@ export default function HRLettersPage() {
   const { isAdmin, isHR } = useRole();
 
   const [isRequestOpen, setIsRequestOpen] = useState(false);
+  const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+  const [signatureData, setSignatureData] = useState<DigitalSignatureData | null>(null);
+
   const [letterType, setLetterType] = useState("employment_confirmation");
   const [addressee, setAddressee] = useState("Bank of South Pacific (BSP) Credit Assessment");
   const [purpose, setPurpose] = useState("Mortgage / Home loan assessment and employment verification");
@@ -231,19 +242,29 @@ export default function HRLettersPage() {
           <div className="lg:col-span-2">
             <Card className="shadow-md border-primary/20 min-h-[500px] flex flex-col justify-between">
               <CardHeader className="p-5 border-b border-border/60 bg-muted/20">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-5 h-5 text-primary" />
                     <div>
                       <CardTitle className="text-sm font-bold">Official Document Preview</CardTitle>
                       <CardDescription className="text-xs">
-                        Standard statutory format with NISIT executive signatory block
+                        Standard statutory format with official NISIT emblem, seal, and digital signature
                       </CardDescription>
                     </div>
                   </div>
 
                   {activePreview && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant={signatureData ? "secondary" : "default"}
+                        onClick={() => setIsSignModalOpen(true)}
+                        className="text-xs"
+                        data-testid="btn-sign-letter"
+                      >
+                        <PenTool className="w-3.5 h-3.5 mr-1" />
+                        {signatureData ? "Signed & Stamped" : "Digitally Sign & Stamp"}
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -252,8 +273,8 @@ export default function HRLettersPage() {
                       >
                         <Copy className="w-3.5 h-3.5 mr-1" /> Copy
                       </Button>
-                      <Button size="sm" onClick={() => window.print()} className="text-xs">
-                        <Printer className="w-3.5 h-3.5 mr-1" /> Print Official PDF
+                      <Button size="sm" onClick={() => window.print()} className="text-xs" data-testid="btn-print-letter">
+                        <Printer className="w-3.5 h-3.5 mr-1" /> Print / Export PDF
                       </Button>
                     </div>
                   )}
@@ -270,14 +291,49 @@ export default function HRLettersPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="p-8 bg-background rounded-xl border border-border/80 shadow-xs font-serif text-sm leading-relaxed text-foreground whitespace-pre-line space-y-4">
-                    {activePreview}
+                  <div className="p-8 bg-background rounded-xl border border-border/80 shadow-sm font-serif text-sm leading-relaxed text-foreground space-y-6">
+                    {/* Standard Government Letterhead Header */}
+                    <div className="border-b-2 border-[#c0a030] pb-4 space-y-2 text-center bg-gradient-to-r from-blue-900/5 via-amber-500/5 to-blue-900/5 p-4 rounded-lg">
+                      <div className="flex items-center justify-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-[#003082] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                          NISIT
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold tracking-wider text-[#003082] uppercase">
+                            Government of Papua New Guinea
+                          </p>
+                          <p className="text-sm font-extrabold tracking-tight text-foreground uppercase">
+                            National Institute of Standards &amp; Industrial Technology
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            P.O. Box 1071, Port Moresby, National Capital District · Papua New Guinea
+                          </p>
+                        </div>
+                      </div>
+                      <div className="h-0.5 bg-[#c0a030] w-full mt-2" />
+                    </div>
+
+                    {/* Letter Content */}
+                    <div className="whitespace-pre-line text-xs sm:text-sm leading-relaxed">
+                      {activePreview}
+                    </div>
+
+                    {/* Official Stamp & Signatory Block */}
+                    <DocumentOfficialStampBlock signatureData={signatureData} />
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
         </div>
+
+        {/* Digital Signature Modal */}
+        <DigitalSignatureModal
+          open={isSignModalOpen}
+          onOpenChange={setIsSignModalOpen}
+          documentTitle="Official HR Verification Letter"
+          onConfirmSignature={(sig) => setSignatureData(sig)}
+        />
 
         {/* Request Modal */}
         <Dialog open={isRequestOpen} onOpenChange={setIsRequestOpen}>

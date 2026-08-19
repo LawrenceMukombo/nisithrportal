@@ -1,6 +1,6 @@
 import { and, eq, count, isNull, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable, permissionsTable, rolePermissionsTable } from "@workspace/db";
+import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable, permissionsTable, rolePermissionsTable, wikiArticlesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { seedCompleteData, seedPrdReferenceData } from "./seed-data";
 
@@ -22,6 +22,305 @@ const DEFAULT_PERMISSION_GRANTS = [
 ];
 
 const NISIT_AGENCY_NAME = "PNG National Institute of Standards and Industrial Technology";
+
+async function seedWikiArticles(): Promise<void> {
+  const [admin] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, "admin@nisit.gov.pg"));
+  if (!admin) return;
+
+  const articles = [
+    {
+      title: "PNG NISIT HR Portal: System Overview & Architecture",
+      slug: "system-overview",
+      category: "Getting Started",
+      summary: "High-level overview of the PNG National Institute of Standards and Industrial Technology (NISIT) Enterprise Human Resource Information System.",
+      published: true,
+      content: `## 1. System Overview
+The PNG NISIT HR Portal is a unified, digital Human Resource Information System (HRIS) designed to streamline statutory workforce planning, talent acquisition, employee service delivery, establishment control, and executive reporting.
+
+### Core Architectural Pillars
+- **Public Recruitment & Applicant Portal**: Fast, accessible job application workflow with automated CV parsing, screening question scoring, and draft persistence.
+- **Enterprise Talent Pipeline**: Multi-stage review workflow (Applied → Screening → Assessment → Interview → Offer → Hired → Onboarding) with cross-functional panel evaluations.
+- **Statutory Organizational Hierarchy**: Real-time interactive establishment structure builder, Director General / CEO configuration, and division staff allocations.
+- **Employee Lifecycle Management**: Complete staff records, digital personnel files, grade level tracking, and emergency contacts.
+- **Employee Self-Service (ESS)**: Leave requests, attendance timesheets, training nominations, and benefits enrollments.
+- **Executive Governance & Compliance**: Audit trails, RBAC permission matrix, contract expiry warnings, and statutory establishment ceilings.
+
+### Navigation Overview
+- **Overview**: Executive Dashboard, Strategic Briefing, and Organizational Hierarchy.
+- **Recruitment**: Vacancy Management, Candidate Applications, Shortlisted Pipeline, Candidate CRM, and Automated Workflow.
+- **People Management**: Employee Directory, Digital Onboarding, Contract Management, and Offboarding Clearance.
+- **Employee Services**: Leave & Absence, Attendance Timesheets, Performance Reviews & OKRs, Housing & Benefits, and Training Catalog.
+- **Administration**: User Accounts & Roles, Statutory Documents, and this living Help & User Guide Wiki.`,
+    },
+    {
+      title: "Public Job Board & Applicant Portal Guide",
+      slug: "job-vacancies-applicant-portal",
+      category: "Recruitment",
+      summary: "How external candidates and internal staff search vacancies, track applications, and manage applicant accounts.",
+      published: true,
+      content: `## 1. Finding & Filtering Vacancies
+1. Navigate to **Job Vacancies** or the public portal landing page.
+2. Filter positions by **Division / Department**, **Employment Type** (Permanent, Fixed-Term Contract, Secondment), or **Location / Province**.
+3. Use the search bar to find positions by title, keyword, or minimum qualification requirements.
+4. Review key job criteria: **Grade Level**, **Closing Date**, **Remuneration / Salary Band**, and **Core Responsibilities**.
+
+## 2. Submitting an Application
+- Click **Apply Now** on any open vacancy before the advertised closing date.
+- Complete the 8-stage digital wizard:
+  1. **Personal Information**: Legal names, date of birth, gender, and national identification.
+  2. **Contact Details**: Residential address, phone numbers, and permanent email.
+  3. **Position & Availability**: Notice period, expected start date, and relocation preferences.
+  4. **Education & Credentials**: Tertiary degrees, diplomas, institutions, and completion years.
+  5. **Work Experience**: Previous employers, job titles, key responsibilities, and achievements.
+  6. **Skills & Competencies**: Technical proficiencies, language capabilities, and personal statement.
+  7. **Documents & Resume**: PDF CV upload, cover letter, and certified qualification certificates.
+  8. **Statutory Screening & Declarations**: Mandatory compliance answers, conflict of interest declarations, and consent to background checks.
+
+## 3. Application Tracking & Status Updates
+- Sign in to your applicant account to view **My Applications**.
+- Each application displays real-time stage badges: **Application Received**, **CV Screening**, **Assessment**, **Interview**, **Offer Extended**, or **Outcome Determined**.`,
+    },
+    {
+      title: "Recruitment Pipeline & Shortlisting Management",
+      slug: "recruitment-shortlisting-pipeline",
+      category: "Recruitment",
+      summary: "Operational guide for HR Officers and Hiring Managers to screen candidates, score qualifications, and manage shortlisted applicants.",
+      published: true,
+      content: `## 1. Candidate Review & Screening
+1. Navigate to **Applications** or **Shortlisted Candidates** from the Recruitment menu.
+2. Filter applications by status (**Pending Review**, **Screening**, **Interview**, **Offer**, **Hired**).
+3. Open any application to review the candidate's complete profile dossier:
+   - AI Match & Compatibility Score
+   - Verified Educational Qualifications
+   - Chronological Employment History
+   - Statutory Declarations & Screening Answers
+   - Downloadable CV and Supporting Documents
+
+## 2. Moving Candidates Across Workflow Stages
+- **Advance to Shortlist**: Moves the applicant from preliminary CV review into the departmental shortlist.
+- **Schedule Interview**: Queues candidate for panel interview scheduling and email notifications.
+- **Advance to Offer**: Generates formal employment contract and offer letter.
+- **Reject with Notification**: Sends polite, standardized outcome notification to unsuccessful applicants.
+
+## 3. Bulk Selection & Batch Actions
+- Use the table checkboxes to select multiple candidates for batch status transitions (e.g. moving 10 candidates to Interview stage in one click).
+- Export shortlisted lists to Excel or printable PDF format for panel briefing meetings.`,
+    },
+    {
+      title: "Interactive Organizational Hierarchy & Drag-and-Drop Structure Builder",
+      slug: "organizational-hierarchy-builder",
+      category: "Organizational Structure",
+      summary: "How administrators and HR leaders visualize reporting lines, drag and drop personnel across divisions, and modify establishment ceilings.",
+      published: true,
+      content: `## 1. Viewing Organizational Diagrams
+1. Open **Org Hierarchy** from the main navigation menu.
+2. The **Org Chart Diagram** tab renders the full statutory hierarchy of NISIT:
+   - Office of the Director General / Chief Executive Officer
+   - Executive Divisions (Administration, Finance, Human Resources, Industrial Development, Information Technology, Operations)
+   - Real-time KPI summaries: **Total Headcount**, **Filled Positions**, **Vacant Establishment Slots**, and **Approved Ceilings**.
+
+## 2. Using the Interactive Structure Builder (Drag & Drop)
+1. Select the **Structure Builder (Drag & Drop)** tab.
+2. Drag position chips or staff cards between division containers to instantly reassign reporting units:
+   - Moving a **Position** updates the department allocation for that role and all attached vacancies.
+   - Moving an **Assigned Officer** reassigns the employee's department in their employee profile.
+3. Click **Add Division** to create a new organizational branch with custom division code.
+4. Click **Save Structure** to persist all reassignments, new positions, and division changes to the database.
+
+## 3. Changing the Director General / CEO Position
+1. Click the **Change CEO / Director General** button at the top of the Org Hierarchy page.
+2. Either select an existing senior staff member from the dropdown or input custom executive credentials (Title, Full Name, Official Email, Grade Level).
+3. Click **Save Executive Position** to immediately update the root apex of the organizational hierarchy across all executive reports.`,
+    },
+    {
+      title: "Employee Records & Personnel Management",
+      slug: "employee-management-records",
+      category: "People Management",
+      summary: "Comprehensive handbook for maintaining statutory employee profiles, grade levels, emergency contacts, and position history.",
+      published: true,
+      content: `## 1. Employee Directory
+1. Navigate to **Employees** under People Management.
+2. The enterprise directory provides sortable, searchable staff records with active status indicators, department tags, and grade level classifications.
+3. Filter by department, status (Active, On Leave, Probation, Suspended, Separated), or search by staff name / employee number.
+
+## 2. Maintaining Employee Profiles
+- **Personal Information**: Full name, Date of Birth, Gender, National ID / Passport, and Residential Address.
+- **Employment Information**: Division, Position Title, Grade Level (Grade 10 to Grade 20), Employment Type (Permanent, Contract), and Supervisor.
+- **Emergency Contacts**: Primary contact name, phone number, relationship, and residential address.
+- **Position History**: Audit log tracking appointments, promotions, transfers, and acting appointments over time.
+
+## 3. Creating & Onboarding New Employees
+- Click **New Employee** to register a staff member.
+- When an applicant accepts a job offer, the system allows one-click conversion of candidate dossiers into official employee records.`,
+    },
+    {
+      title: "Leave & Absence Management",
+      slug: "leave-absence-management",
+      category: "Employee Services",
+      summary: "Procedures for submitting leave applications, supervisor approvals, balance computations, and public holiday calendars.",
+      published: true,
+      content: `## 1. Applying for Leave (Employee Self-Service)
+1. Navigate to **Leave & Absence** under Employee Services.
+2. Click **Apply for Leave**.
+3. Choose the appropriate statutory leave category:
+   - **Annual Recreation Leave**
+   - **Sick Leave** (requires medical certificate attachment for >2 days)
+   - **Maternity / Paternity Leave**
+   - **Compassionate & Bereavement Leave**
+   - **Study / Examination Leave**
+   - **Leave Without Pay (LWOP)**
+4. Select valid Start and End dates. The system automatically computes working days excluding weekends and gazetted PNG public holidays.
+5. Provide handover officer details and submit for supervisor endorsement.
+
+## 2. Supervisor & HR Approval Workflow
+- Line managers receive instant portal notifications for pending leave endorsements.
+- Managers can **Approve**, **Reject with Comment**, or **Request Modification**.
+- Approved leave immediately updates the employee's remaining leave balance and marks their attendance schedule as on-leave.`,
+    },
+    {
+      title: "Attendance Tracking & Timesheets",
+      slug: "attendance-timesheets",
+      category: "Employee Services",
+      summary: "Monitoring daily staff attendance, biometric clock-ins, manual timesheets, and overtime logs.",
+      published: true,
+      content: `## 1. Daily Check-In & Check-Out
+- Staff can record their daily clock-in and clock-out timestamps via the portal dashboard or designated kiosk terminals.
+- The system automatically tags attendance status: **Present**, **Late**, **Half-Day**, **On Leave**, or **Absent**.
+
+## 2. Timesheet Review & Overtime Endorsements
+- HR Officers and Line Managers can review monthly attendance logs for their division.
+- Overtime hours are automatically calculated based on statutory working hours (40 hours/week) for payroll processing.`,
+    },
+    {
+      title: "Performance Appraisals & OKR Management",
+      slug: "performance-goals-okrs",
+      category: "Employee Services",
+      summary: "Annual appraisal cycles, goal setting, self-assessments, and 360-degree managerial evaluations.",
+      published: true,
+      content: `## 1. Annual Appraisal Cycles
+1. HR Administrators initiate structured appraisal cycles (e.g. Annual Review, Mid-Year Review, Probation Review).
+2. Staff receive automated prompts to complete their **Self-Evaluation** across defined Key Performance Indicators (KPIs) and core institutional competencies.
+
+## 2. Setting Departmental & Individual OKRs
+- Staff and supervisors collaborate on setting quarterly Objectives and Key Results (OKRs).
+- Progress sliders allow real-time tracking of goal milestones throughout the operational year.
+- Performance scores directly feed into promotion recommendations, training nominations, and annual increment eligibility.`,
+    },
+    {
+      title: "Contracts, Compensation & Benefits Schemes",
+      slug: "housing-allowances-benefits",
+      category: "People Management",
+      summary: "Managing employment contracts, expiration alerts, statutory housing schemes, and medical benefits.",
+      published: true,
+      content: `## 1. Fixed-Term Contracts & Secondments
+- Navigate to **Contracts** under People Management to view all active, renewing, and expiring staff contracts.
+- Automated system alerts flag contracts expiring within 90, 60, and 30 days to facilitate timely renewal or gratuity calculations.
+
+## 2. Housing Schemes & Allowances
+- Review institutional housing allocations and rental allowance schedules under **Housing & Benefits**.
+- Track employee eligibility based on grade levels and divisional postings.`,
+    },
+    {
+      title: "Training & Professional Development Catalog",
+      slug: "training-development-catalog",
+      category: "Employee Services",
+      summary: "Course catalog, staff training nominations, skills gap tracking, and certification records.",
+      published: true,
+      content: `## 1. Browsing the Course Catalog
+1. Open **Training & Development** from the Employee Services menu.
+2. Explore available statutory accreditation courses, standards training (ISO/IEC), compliance workshops, and executive leadership seminars.
+
+## 2. Nominations & Certifications
+- Supervisors can nominate team members for specialized technical workshops.
+- Completed courses issue digital certificates that are automatically linked to the employee's permanent skills matrix and personnel profile.`,
+    },
+    {
+      title: "Onboarding & Offboarding Clearance Workflows",
+      slug: "onboarding-offboarding-workflows",
+      category: "People Management",
+      summary: "Step-by-step checklists for welcoming new recruits and executing separation / clearance protocols.",
+      published: true,
+      content: `## 1. Digital Onboarding
+- Automated onboarding tasks are assigned across HR, IT, Finance, and Facilities upon hiring a new employee:
+  - IT Asset Provisioning (Laptop, Email, System Access)
+  - ID Card Issuance & Biometric Registration
+  - Superannuation (Nasfund/Nambawan Super) Enrollment
+  - Code of Conduct & Public Service Orientation
+
+## 2. Offboarding & Asset Clearance
+- Formal separation workflows for resignation, retirement, end-of-contract, or transfer.
+- Departmental clearance checklists ensure return of institutional property, access revocation, and calculation of final terminal benefits.`,
+    },
+    {
+      title: "Role-Based Access Control (RBAC) & Security Governance",
+      slug: "security-rbac-audit-logs",
+      category: "Administration",
+      summary: "Security protocols, user roles, permission grants, audit logs, and data privacy governance.",
+      published: true,
+      content: `## 1. Standard System Roles
+- **System Admin**: Full unrestricted access across all agency records, user accounts, system configuration, and audit logs.
+- **HR Officer**: Full management of jobs, candidate applications, shortlisting, employee profiles, contracts, leave, and letters.
+- **Hiring Manager**: Divisional read and review access to applications and candidates allocated to their department.
+- **Executive**: Strategic dashboard reporting, employee establishment summaries, and high-level analytics.
+- **Applicant / Public User**: Restricted to browsing vacancies, submitting applications, and managing personal profile details.
+
+## 2. Real-Time RBAC & Audit Trail
+- Every administrative action (role change, profile update, salary adjustment, structure change, approval decision) is immutably recorded in the **Audit Log** with user timestamps, IP addresses, and before/after payloads.
+- Role upgrades take effect instantly across active user sessions.`,
+    },
+    {
+      title: "System Release Notes, Features & Bug Fixes (Changelog)",
+      slug: "release-notes-changelog",
+      category: "System Updates",
+      summary: "Living record of platform enhancements, latest features, architectural upgrades, and resolved issues.",
+      published: true,
+      content: `## Version 1.2.0 (Current Release)
+
+### 🚀 Major Features & Enhancements
+1. **Interactive Organizational Structure Builder**:
+   - Drag-and-drop hierarchy builder allowing visual reassignment of positions and employees across divisions.
+   - Dynamic Director General / CEO position editor for real-time leadership apex updates.
+   - Live establishment metrics tracking total headcount, filled positions, vacancies, and approved ceilings.
+
+2. **Enterprise Shortlisting & Candidate Review Hub**:
+   - Upgraded candidate pipeline supporting multi-stage transitions (Screening, Assessment, Interview, Offer).
+   - Candidate dossiers showing AI match score, contact info, and certified documents.
+   - Real-time search and filter tabs across candidate names, job titles, and review stages.
+
+3. **Enterprise Help & User Guide Wiki**:
+   - Comprehensive living documentation covering all 14 HRIS operational modules.
+   - Searchable knowledge base with category filters and printable article views.
+   - Official downloadable Word handbooks (Enterprise End-to-End Manual, Staff User Guide, Applicant Guide).
+
+4. **Real-Time Role Resolution & Dynamic RBAC**:
+   - Instant permission synchronization when user roles are updated in the admin panel.
+   - Single-tenant NISIT agency scoping fallback ensuring zero record isolation for newly converted administrators.
+
+### 🛠️ Resolved Issues & Bug Fixes
+- **Fixed Hierarchy Persistence Route Mismatch**: Corrected Express route path mounting for \`/org-chart/structure\` and \`/org-chart/executive\`, ensuring smooth persistence and authorization for structure changes.
+- **Resolved Admin Conversion Data Visibility**: Ensured dynamic database role lookup in \`authMiddleware\` so converted admin accounts immediately access all records.
+- **Cleaned Up Route Typing & Joins**: Fixed position table joins and type safety in Performance, Training, and Storage routes.`,
+    },
+  ];
+
+  for (const article of articles) {
+    await db.insert(wikiArticlesTable).values({
+      ...article,
+      createdByUserId: admin.id,
+      updatedByUserId: admin.id,
+    }).onConflictDoUpdate({
+      target: wikiArticlesTable.slug,
+      set: {
+        title: article.title,
+        category: article.category,
+        summary: article.summary,
+        content: article.content,
+        published: article.published,
+        updatedAt: new Date(),
+      },
+    });
+  }
+}
 
 /** Add a fixed number of days to a date and return YYYY-MM-DD string. */
 function addDays(days: number): string {
@@ -722,6 +1021,7 @@ export async function seedInitialData(): Promise<void> {
     }
 
     await seedAdminUser();
+    await seedWikiArticles();
     await seedJobVacancies();
     await seedCompleteData();
     await seedPrdReferenceData();

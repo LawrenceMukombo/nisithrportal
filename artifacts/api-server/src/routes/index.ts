@@ -31,6 +31,7 @@ import documentsRouter from "./documents";
 import orgChartRouter from "./org-chart";
 import reportsRouter from "./reports";
 import workflowsRouter from "./workflows";
+import wikiRouter from "./wiki";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(documentsRouter);
 router.use(orgChartRouter);
 router.use(reportsRouter);
 router.use(workflowsRouter);
+router.use(wikiRouter);
 
 export default router;

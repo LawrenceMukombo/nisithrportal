@@ -29,6 +29,8 @@ import {
   Eye,
   LayoutGrid,
   GitFork,
+  UserCog,
+  Edit3,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,6 +56,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/use-auth";
+import { getToken } from "@/lib/api-config";
 
 interface IncumbentEmployee {
   id: number;
@@ -142,6 +145,14 @@ export default function OrgChartPage() {
   } | null>(null);
   const [dragOverDeptId, setDragOverDeptId] = useState<number | null>(null);
 
+  // Edit Executive / CEO Modal
+  const [isEditCeoOpen, setIsEditCeoOpen] = useState(false);
+  const [ceoName, setCeoName] = useState("");
+  const [ceoTitle, setCeoTitle] = useState("");
+  const [ceoEmail, setCeoEmail] = useState("");
+  const [ceoGradeLevel, setCeoGradeLevel] = useState("Grade 20");
+  const [ceoEmployeeId, setCeoEmployeeId] = useState<string>("custom");
+
   // Add Department Modal
   const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
@@ -162,11 +173,107 @@ export default function OrgChartPage() {
     },
   });
 
+  const { data: employeesList } = useQuery<any[]>({
+    queryKey: ["/api/employees"],
+    queryFn: async () => {
+      const res = await fetch("/api/employees");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAdmin || isHR,
+  });
+
+  // Save Structure Mutation
+  const saveStructureMutation = useMutation({
+    mutationFn: async (depts: OrgChartDepartment[]) => {
+      const payload = {
+        departments: depts.map((d) => ({
+          id: d.id,
+          name: d.name,
+          code: d.code,
+          positions: d.positions.map((p) => ({
+            id: p.id,
+            title: p.title,
+            gradeLevel: p.gradeLevel,
+            totalCount: p.totalCount,
+          })),
+          members: d.members.map((m) => ({
+            id: m.id,
+            name: m.name,
+          })),
+        })),
+      };
+      const token = getToken();
+      const res = await fetch("/api/org-chart/structure", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save organizational structure");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      toast({
+        title: "Hierarchy Structure Saved",
+        description: "Organizational reporting lines and divisional assignments have been successfully updated.",
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Save Failed",
+        description: err.message || "Failed to persist hierarchy structure.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update CEO Mutation
+  const updateCeoMutation = useMutation({
+    mutationFn: async (ceoData: { name: string; title: string; email: string; gradeLevel?: string; employeeId?: number | null }) => {
+      const token = getToken();
+      const res = await fetch("/api/org-chart/executive", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(ceoData),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update executive details");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      toast({
+        title: "Executive Leadership Updated",
+        description: "The Director General & CEO position details have been saved.",
+      });
+      setIsEditCeoOpen(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Update Failed",
+        description: err.message || "Failed to update executive leadership.",
+        variant: "destructive",
+      });
+    },
+  });
+
   useEffect(() => {
-    if (data?.departments && customDepts.length === 0) {
+    if (data?.departments) {
       setCustomDepts(data.departments);
     }
-  }, [data, customDepts.length]);
+  }, [data?.departments]);
 
   const toggleDeptCollapse = (id: number) => {
     setCollapsedDepts((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -365,10 +472,7 @@ export default function OrgChartPage() {
   };
 
   const handleSaveStructure = () => {
-    toast({
-      title: "Hierarchy Structure Saved",
-      description: "Organizational reporting lines and divisional assignments updated successfully.",
-    });
+    saveStructureMutation.mutate(customDepts);
   };
 
   const handleResetStructure = () => {
@@ -488,8 +592,14 @@ export default function OrgChartPage() {
                 <Button size="sm" variant="outline" onClick={() => setIsAddDeptOpen(true)} className="text-xs">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Division
                 </Button>
-                <Button size="sm" onClick={handleSaveStructure} className="text-xs bg-primary">
-                  <Save className="h-3.5 w-3.5 mr-1.5" /> Save Structure
+                <Button
+                  size="sm"
+                  onClick={handleSaveStructure}
+                  disabled={saveStructureMutation.isPending}
+                  className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs"
+                >
+                  <Save className={`h-3.5 w-3.5 mr-1.5 ${saveStructureMutation.isPending ? "animate-spin" : ""}`} />
+                  {saveStructureMutation.isPending ? "Saving Changes..." : "Save Structure"}
                 </Button>
               </div>
             )}
@@ -579,24 +689,48 @@ export default function OrgChartPage() {
 
                 {/* Level 1: Director General & Executive Office */}
                 <div className="flex flex-col items-center">
-                  <Card className="w-[420px] bg-gradient-to-r from-primary/10 via-card to-card border-2 border-primary/40 shadow-md">
+                  <Card className="w-[450px] bg-gradient-to-r from-primary/10 via-card to-card border-2 border-primary/40 shadow-md relative group">
                     <CardContent className="p-4 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-base shadow-sm shrink-0">
-                          DG
+                          {data?.directorGeneral.name
+                            ? data.directorGeneral.name.split(" ").filter(p => !p.includes(".")).slice(0, 2).map(n => n[0]).join("").toUpperCase() || "DG"
+                            : "DG"}
                         </div>
                         <div>
-                          <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] uppercase font-semibold">
-                            Executive Chief
-                          </Badge>
-                          <h4 className="font-bold text-sm text-foreground">{data?.directorGeneral.name ?? "Dr. Jerry Tetaga"}</h4>
-                          <p className="text-xs text-muted-foreground">{data?.directorGeneral.title ?? "Director General & CEO"}</p>
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] uppercase font-semibold">
+                              Executive Chief
+                            </Badge>
+                            <span className="text-[11px] font-mono text-muted-foreground">
+                              {(data?.directorGeneral as any)?.gradeLevel || "Grade 20"}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-foreground mt-0.5">{data?.directorGeneral.name ?? "Dr. Jerry Tetaga"}</h4>
+                          <p className="text-xs text-muted-foreground">{data?.directorGeneral.title ?? "Director General & Chief Executive Officer"}</p>
                           <p className="text-[11px] text-primary font-mono">{data?.directorGeneral.email ?? "dg@nisit.gov.pg"}</p>
                         </div>
                       </div>
-                      <Badge variant="outline" className="bg-background text-[11px] font-semibold shrink-0">
-                        Grade 20
-                      </Badge>
+
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {(isAdmin || isHR) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs bg-background/90 hover:bg-background border-primary/40 text-primary shadow-2xs"
+                            onClick={() => {
+                              setCeoName(data?.directorGeneral.name || "Dr. Jerry Tetaga");
+                              setCeoTitle(data?.directorGeneral.title || "Director General & Chief Executive Officer");
+                              setCeoEmail(data?.directorGeneral.email || "dg@nisit.gov.pg");
+                              setCeoGradeLevel((data?.directorGeneral as any)?.gradeLevel || "Grade 20");
+                              setCeoEmployeeId((data?.directorGeneral as any)?.employeeId ? String((data?.directorGeneral as any).employeeId) : "custom");
+                              setIsEditCeoOpen(true);
+                            }}
+                          >
+                            <UserCog className="w-3.5 h-3.5 mr-1 text-primary" /> Change CEO
+                          </Button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
 
@@ -820,13 +954,32 @@ export default function OrgChartPage() {
                 <div>
                   <p className="font-bold text-foreground">Interactive Structure & Drag-and-Drop Reassignment</p>
                   <p className="text-muted-foreground mt-0.5">
-                    Drag position chips or staff records between division containers to instantly reassign reporting units and restructure establishment lines.
+                    Drag position chips or staff records between division containers to instantly reassign reporting units. Click <strong>"Save Structure"</strong> to persist changes to the database.
                   </p>
                 </div>
               </div>
-              <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 font-mono text-[11px] self-start md:self-auto">
-                Live Interactive Mode
-              </Badge>
+              <div className="flex items-center gap-2 self-start md:self-auto">
+                {(isAdmin || isHR) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-primary/30 text-primary"
+                    onClick={() => {
+                      setCeoName(data?.directorGeneral.name || "Dr. Jerry Tetaga");
+                      setCeoTitle(data?.directorGeneral.title || "Director General & Chief Executive Officer");
+                      setCeoEmail(data?.directorGeneral.email || "dg@nisit.gov.pg");
+                      setCeoGradeLevel((data?.directorGeneral as any)?.gradeLevel || "Grade 20");
+                      setCeoEmployeeId((data?.directorGeneral as any)?.employeeId ? String((data?.directorGeneral as any).employeeId) : "custom");
+                      setIsEditCeoOpen(true);
+                    }}
+                  >
+                    <UserCog className="w-3.5 h-3.5 mr-1" /> Change CEO
+                  </Button>
+                )}
+                <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 font-mono text-[11px]">
+                  Live Interactive Mode
+                </Badge>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1034,6 +1187,124 @@ export default function OrgChartPage() {
                   Cancel
                 </Button>
                 <Button type="submit">Add Position</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        {/* Modal: Edit CEO / Executive Chief */}
+        <Dialog open={isEditCeoOpen} onOpenChange={setIsEditCeoOpen}>
+          <DialogContent className="sm:max-w-md">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateCeoMutation.mutate({
+                  name: ceoName,
+                  title: ceoTitle,
+                  email: ceoEmail,
+                  gradeLevel: ceoGradeLevel,
+                  employeeId: ceoEmployeeId !== "custom" ? Number(ceoEmployeeId) : null,
+                });
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserCog className="w-5 h-5 text-primary" />
+                  Change CEO / Executive Chief Position
+                </DialogTitle>
+                <DialogDescription>
+                  Update the statutory apex executive officer (Director General & CEO) of NISIT.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 py-4 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Select from Active NISIT Staff (Optional)</label>
+                  <Select
+                    value={ceoEmployeeId}
+                    onValueChange={(val) => {
+                      setCeoEmployeeId(val);
+                      if (val !== "custom" && employeesList) {
+                        const selectedEmp = employeesList.find((e) => String(e.id) === val);
+                        if (selectedEmp) {
+                          setCeoName(selectedEmp.name);
+                          if (selectedEmp.email) setCeoEmail(selectedEmp.email);
+                          if (selectedEmp.gradeLevel) setCeoGradeLevel(selectedEmp.gradeLevel);
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose an active employee or custom entry..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">Custom / External Incumbent</SelectItem>
+                      {(employeesList ?? []).map((emp) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.employeeNumber || `EMP-${emp.id}`}) — {emp.gradeLevel || "Grade 10"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Selecting an employee pre-fills their name and contact information.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Full Name & Title *</label>
+                  <Input
+                    placeholder="e.g. Dr. Jerry Tetaga"
+                    value={ceoName}
+                    onChange={(e) => setCeoName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Executive Position Title *</label>
+                  <Input
+                    placeholder="e.g. Director General & Chief Executive Officer"
+                    value={ceoTitle}
+                    onChange={(e) => setCeoTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-medium text-foreground block mb-1">Official Email</label>
+                    <Input
+                      type="email"
+                      placeholder="dg@nisit.gov.pg"
+                      value={ceoEmail}
+                      onChange={(e) => setCeoEmail(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-medium text-foreground block mb-1">Grade Level</label>
+                    <Select value={ceoGradeLevel} onValueChange={setCeoGradeLevel}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Grade" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Grade 20">Grade 20 (Director General / CEO)</SelectItem>
+                        <SelectItem value="Grade 18">Grade 18 (Executive Director)</SelectItem>
+                        <SelectItem value="Grade 16">Grade 16 (Principal Manager)</SelectItem>
+                        <SelectItem value="Grade 14">Grade 14 (Senior Specialist)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditCeoOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateCeoMutation.isPending} className="bg-primary">
+                  {updateCeoMutation.isPending ? "Updating..." : "Save Executive Details"}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>

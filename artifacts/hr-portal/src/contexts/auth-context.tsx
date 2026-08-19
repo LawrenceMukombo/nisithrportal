@@ -4,6 +4,7 @@ import { getSessionTimeoutMinutes } from "@/lib/session-timeout";
 
 export interface AuthUser {
   userId: number;
+  name?: string;
   role: string;
   agencyId: number;
   email: string;
@@ -40,12 +41,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // logout-all action. Verify it once at startup so protected pages do not
         // misleadingly render empty datasets under an expired session.
         fetch("/api/auth/me", { headers: { Authorization: `Bearer ${stored}` } })
-          .then((response) => {
+          .then(async (response) => {
             if (response.status === 401 || response.status === 403) {
               clearToken();
               setTokenState(null);
               setUser(null);
+              return;
             }
+            if (!response.ok) return;
+            const currentUser = await response.json() as { name?: string; email?: string; roleName?: string; agencyId?: number };
+            setUser((previous) => previous ? {
+              ...previous,
+              name: currentUser.name?.trim() || previous.name,
+              email: currentUser.email?.trim() || previous.email,
+              role: currentUser.roleName || previous.role,
+              agencyId: currentUser.agencyId ?? previous.agencyId,
+            } : previous);
           })
           .catch(() => {
             // Keep the local session during a transient offline/server error.

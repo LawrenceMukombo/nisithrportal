@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, performanceCyclesTable, performanceReviewsTable, goalsTable, employeesTable, usersTable } from "@workspace/db";
+import { db, performanceCyclesTable, performanceReviewsTable, goalsTable, employeesTable, positionsTable, usersTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
 
@@ -60,7 +60,7 @@ router.get("/performance/reviews", authMiddleware, async (req, res): Promise<voi
         cycleTitle: performanceCyclesTable.title,
         employeeId: performanceReviewsTable.employeeId,
         employeeName: employeesTable.name,
-        employeeTitle: employeesTable.title,
+        employeeTitle: positionsTable.title,
         reviewerId: performanceReviewsTable.reviewerId,
         status: performanceReviewsTable.status,
         selfScore: performanceReviewsTable.selfScore,
@@ -77,6 +77,7 @@ router.get("/performance/reviews", authMiddleware, async (req, res): Promise<voi
       .from(performanceReviewsTable)
       .leftJoin(performanceCyclesTable, eq(performanceReviewsTable.cycleId, performanceCyclesTable.id))
       .leftJoin(employeesTable, eq(performanceReviewsTable.employeeId, employeesTable.id))
+      .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(performanceReviewsTable.createdAt));
 
@@ -116,7 +117,7 @@ router.post("/performance/reviews", authMiddleware, requireRole("admin", "hr_man
 // PATCH /api/performance/reviews/:id - Update review scores / feedback
 router.patch("/performance/reviews/:id", authMiddleware, async (req, res): Promise<void> => {
   try {
-    const reviewId = parseInt(req.params.id);
+    const reviewId = parseInt(String(req.params.id), 10);
     const { status, selfScore, managerScore, finalRating, selfFeedback, managerFeedback, strengths, developmentAreas, goalsSummary } = req.body;
 
     const [updated] = await db
@@ -230,7 +231,7 @@ router.post("/performance/goals", authMiddleware, async (req, res): Promise<void
 // PATCH /api/performance/goals/:id - Update goal progress
 router.patch("/performance/goals/:id", authMiddleware, async (req, res): Promise<void> => {
   try {
-    const goalId = parseInt(req.params.id);
+    const goalId = parseInt(String(req.params.id), 10);
     const { progressPercentage, status, description, metrics } = req.body;
 
     const [updated] = await db

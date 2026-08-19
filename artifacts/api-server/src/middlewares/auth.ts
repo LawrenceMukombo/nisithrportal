@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, rolesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
@@ -59,9 +59,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   try {
     const payload = jwt.verify(token, effectiveSecret) as JwtPayload;
 
-    // Check if user is active
+    // Check if user is active and load current role from DB
     const [userRecord] = await db
-      .select({ id: usersTable.id, status: usersTable.status, tokenVersion: usersTable.tokenVersion })
+      .select({
+        id: usersTable.id,
+        status: usersTable.status,
+        tokenVersion: usersTable.tokenVersion,
+        roleId: usersTable.roleId,
+        agencyId: usersTable.agencyId,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, payload.userId));
 
@@ -70,7 +76,23 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       return;
     }
 
-    req.user = payload;
+    let roleName = payload.roleName;
+    if (userRecord.roleId != null) {
+      const [role] = await db
+        .select({ name: rolesTable.name })
+        .from(rolesTable)
+        .where(eq(rolesTable.id, userRecord.roleId));
+      if (role?.name) {
+        roleName = role.name;
+      }
+    }
+
+    req.user = {
+      ...payload,
+      roleId: userRecord.roleId,
+      agencyId: userRecord.agencyId ?? payload.agencyId ?? 1,
+      roleName,
+    };
     next();
   } catch {
     res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
@@ -92,7 +114,8 @@ export function requireRole(...roles: string[]) {
 }
 
 export function generateToken(payload: JwtPayload): string {
-  return jwt.sign(payload, effectiveSecret, { expiresIn: process.env.JWT_EXPIRES_IN ?? "8h" });
+  const expiresIn = (process.env.JWT_EXPIRES_IN ?? "8h") as jwt.SignOptions["expiresIn"];
+  return jwt.sign(payload, effectiveSecret, { expiresIn });
 }
 
 export function parseIntParam(raw: string | string[]): number {

@@ -40,6 +40,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
+import { PenTool, Stamp } from "lucide-react";
+import {
+  DigitalSignatureModal,
+  type DigitalSignatureData,
+} from "@/components/digital-signature-modal";
 
 interface EmployeeDoc {
   id: number;
@@ -65,6 +70,7 @@ export default function DocumentsVaultPage() {
   const pageSize = 10;
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [signDocTarget, setSignDocTarget] = useState<EmployeeDoc | null>(null);
   const [docTitle, setDocTitle] = useState("");
   const [docCategory, setDocCategory] = useState("identification");
   const [docUrl, setDocUrl] = useState("https://storage.nisit.gov.pg/documents/sample-doc.pdf");
@@ -281,6 +287,15 @@ export default function DocumentsVaultPage() {
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10 flex items-center gap-1"
+                            onClick={() => setSignDocTarget(doc)}
+                            title="Digitally Sign & Stamp"
+                          >
+                            <PenTool className="w-3.5 h-3.5" /> Sign
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
                             className="h-7 w-7 p-0"
                             onClick={() => window.open(doc.fileUrl, "_blank")}
                             title="View Document"
@@ -402,6 +417,19 @@ export default function DocumentsVaultPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Digital Signature Modal */}
+        <DigitalSignatureModal
+          open={signDocTarget !== null}
+          onOpenChange={(open) => { if (!open) setSignDocTarget(null); }}
+          documentTitle={signDocTarget?.title ?? "Official Statutory Document"}
+          defaultSignerName={signDocTarget?.employeeName ?? "Authorised Officer"}
+          defaultSignerTitle="Staff Officer / HR Registrar"
+          onConfirmSignature={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+            setSignDocTarget(null);
+          }}
+        />
       </div>
     </AppLayout>
   );

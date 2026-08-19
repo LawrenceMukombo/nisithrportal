@@ -167,7 +167,8 @@ router.post("/upload", uploadRateLimit, (req: Request, res: Response) => {
  */
 router.get("/storage/local/:filename", (req: Request, res: Response) => {
   try {
-    const filename = path.basename(req.params.filename);
+    const rawFilename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
+    const filename = path.basename(rawFilename ?? "");
     const diskPath = path.join(getLocalUploadsDir(), filename);
 
     if (!fs.existsSync(diskPath)) {

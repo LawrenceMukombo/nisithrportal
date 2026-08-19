@@ -49,6 +49,7 @@ import DocumentsVaultPage from "@/pages/documents";
 import HRLettersPage from "@/pages/hr-letters";
 import ReportsPage from "@/pages/reports";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
+import HelpGuidePage from "@/pages/help-guide";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -121,6 +122,9 @@ function Router() {
       </Route>
       <Route path="/org-chart">
         {() => <ProtectedRoute component={OrgChartPage} />}
+      </Route>
+      <Route path="/help">
+        {() => <ProtectedRoute component={HelpGuidePage} />}
       </Route>
       <Route path="/jobs" component={JobsPage} />
       <Route path="/jobs/new">

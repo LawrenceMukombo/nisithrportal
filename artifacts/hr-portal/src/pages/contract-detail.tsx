@@ -28,6 +28,11 @@ import { useRole } from "@/contexts/use-auth";
 import { getToken } from "@/lib/api-config";
 import { useQueryClient } from "@tanstack/react-query";
 import { PdfPreviewDialog } from "@/components/pdf-preview-dialog";
+import { PenTool, Stamp, ShieldCheck as ShieldCheckIcon } from "lucide-react";
+import {
+  DigitalSignatureModal,
+  type DigitalSignatureData,
+} from "@/components/digital-signature-modal";
 
 type DocDeletion = {
   id: number;
@@ -164,6 +169,8 @@ export default function ContractDetailPage() {
   const [removingDoc, setRemovingDoc] = useState(false);
   const [removeReason, setRemoveReason] = useState("");
   const [docDeletions, setDocDeletions] = useState<DocDeletion[]>([]);
+  const [showDigitalSign, setShowDigitalSign] = useState(false);
+  const [contractSignature, setContractSignature] = useState<DigitalSignatureData | null>(null);
   const signedFileRef = useRef<HTMLInputElement>(null);
   const updateContractMutation = useUpdateContract();
   const { canManageContracts } = useRole();
@@ -311,6 +318,16 @@ export default function ContractDetailPage() {
                 )}
                 <Button size="sm" variant="outline" onClick={() => setShowStatus(true)} data-testid="button-update-status">
                   Update Status
+                </Button>
+                <Button
+                  size="sm"
+                  variant={contractSignature ? "secondary" : "outline"}
+                  onClick={() => setShowDigitalSign(true)}
+                  data-testid="button-sign-contract"
+                  className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-500 dark:hover:bg-emerald-950"
+                >
+                  <PenTool className="h-3.5 w-3.5 mr-1" />
+                  {contractSignature ? "Signed & Stamped" : "Digitally Sign & Stamp"}
                 </Button>
                 <Button
                   size="sm"
@@ -590,6 +607,14 @@ export default function ContractDetailPage() {
           downloadFilename={`contract-${contract.id}-signed-document.pdf`}
         />
       )}
+      <DigitalSignatureModal
+        open={showDigitalSign}
+        onOpenChange={setShowDigitalSign}
+        documentTitle={`Employment Contract #${contract.id}`}
+        defaultSignerName={employee?.name ?? "Authorised Officer"}
+        defaultSignerTitle="Staff Signatory / HR Registrar"
+        onConfirmSignature={(sig) => setContractSignature(sig)}
+      />
     </AppLayout>
   );
 }

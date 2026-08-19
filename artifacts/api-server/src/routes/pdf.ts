@@ -162,23 +162,60 @@ function attachFooterToAllPages(doc: PDFKit.PDFDocument, agencyName: string, ref
   drawFooter(doc, agencyName, refNo, label);
 }
 
-function signatureBlock(doc: PDFKit.PDFDocument) {
-  doc.moveDown(2);
-  const x = doc.page.margins.left;
-  doc.fontSize(10).font("Helvetica").fillColor("#000000");
+function drawOfficialStamp(doc: PDFKit.PDFDocument, x: number, y: number, refNo: string, dateStr: string) {
+  doc.save();
+  try {
+    // Outer red dashed border
+    doc.lineWidth(1.5).strokeColor("#991b1b").rect(x, y, 170, 78).dash(4, { space: 2 }).stroke();
+    doc.undash();
 
-  doc.text("Yours sincerely,", x);
-  doc.moveDown(2.5);
+    // Inner background tint
+    doc.rect(x + 1, y + 1, 168, 76).fillOpacity(0.04).fill("#991b1b");
+    doc.fillOpacity(1);
 
-  doc.strokeColor("#000000").moveTo(x, doc.y).lineTo(x + 200, doc.y).lineWidth(0.8).stroke();
-  doc.moveDown(0.3);
-  doc.font("Helvetica-Bold").text("Authorised Officer", x);
-  doc.font("Helvetica").text("Human Resources Division", x);
-  doc.text("PNG National Information & Communications Technology Institute (NISIT)", x);
+    // Header badge
+    doc.fontSize(7).font("Helvetica-Bold").fillColor("#991b1b")
+      .text("GOVERNMENT OF PAPUA NEW GUINEA", x, y + 6, { width: 170, align: "center" });
+
+    doc.fontSize(8.5).font("Helvetica-Bold").fillColor("#002b66")
+      .text("NISIT STATUTORY SEAL", x, y + 18, { width: 170, align: "center" });
+
+    doc.fontSize(7).font("Helvetica-Bold").fillColor("#c0a030")
+      .text("★ OFFICIALLY VERIFIED & AUTHENTICATED ★", x, y + 31, { width: 170, align: "center" });
+
+    // Divider line
+    doc.strokeColor("#991b1b").lineWidth(0.5).moveTo(x + 10, y + 43).lineTo(x + 160, y + 43).stroke();
+
+    doc.fontSize(6.5).font("Helvetica").fillColor("#333333")
+      .text(`Certified On: ${dateStr}`, x, y + 48, { width: 170, align: "center" });
+
+    doc.fontSize(6).font("Helvetica-Bold").fillColor("#666666")
+      .text(`Security Ref: ${refNo}`, x, y + 59, { width: 170, align: "center" });
+  } finally {
+    doc.restore();
+  }
+}
+
+function signatureBlock(doc: PDFKit.PDFDocument, refNo: string = `NISIT/HR/${new Date().getFullYear()}`, dateStr: string = fmtDate(new Date())) {
   doc.moveDown(1.5);
-  doc.strokeColor("#000000").moveTo(x + 240, doc.y).lineTo(x + 480, doc.y).lineWidth(0.8).stroke();
-  doc.moveDown(0.3);
-  doc.font("Helvetica-Bold").text("Date", x + 240);
+  const x = doc.page.margins.left;
+  const currentY = doc.y;
+
+  doc.fontSize(10).font("Helvetica").fillColor("#000000");
+  doc.text("Yours sincerely,", x, currentY);
+
+  const signLineY = currentY + 45;
+  doc.strokeColor("#000000").moveTo(x, signLineY).lineTo(x + 200, signLineY).lineWidth(0.8).stroke();
+  doc.fontSize(9).font("Helvetica-Bold").text("Authorised Officer", x, signLineY + 5);
+  doc.font("Helvetica").fontSize(8.5).text("Corporate Services & Human Resources", x, signLineY + 18);
+  doc.text("PNG National Institute of Standards and Industrial Technology (NISIT)", x, signLineY + 30);
+  doc.font("Helvetica-Bold").text(`Date: ${dateStr}`, x, signLineY + 44);
+
+  // Render official stamp on the right side
+  const stampX = doc.page.width - doc.page.margins.right - 170;
+  drawOfficialStamp(doc, stampX, currentY + 10, refNo, dateStr);
+
+  doc.y = signLineY + 60;
 }
 
 // ─── GET /api/pdf/offer-letter/:applicationId ────────────────────────────────
@@ -610,6 +647,11 @@ router.get(
     doc.moveDown(0.3);
     doc.text("Date", mx, doc.y);
     doc.text("Date", col2, doc.y - doc.currentLineHeight());
+
+    // Official Seal on the bottom-centre
+    doc.moveDown(1.5);
+    const stampX = (doc.page.width - 170) / 2;
+    drawOfficialStamp(doc, stampX, doc.y, refNo, fmtDate(new Date()));
 
     doc.end();
   }

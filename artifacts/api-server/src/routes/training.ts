@@ -99,16 +99,9 @@ router.post(["/training/enroll", "/training/enrollments"], authMiddleware, async
     if (employeeId) {
       targetEmployeeId = parseInt(String(employeeId), 10);
     } else {
-      // Find employee record by logged in user
+      // Find employee record by logged in user email
       const user = req.user;
-      if (user?.userId) {
-        const [empByUser] = await db
-          .select({ id: employeesTable.id })
-          .from(employeesTable)
-          .where(eq(employeesTable.userId, user.userId));
-        if (empByUser) targetEmployeeId = empByUser.id;
-      }
-      if (!targetEmployeeId && user?.email) {
+      if (user?.email) {
         const [empByEmail] = await db
           .select({ id: employeesTable.id })
           .from(employeesTable)

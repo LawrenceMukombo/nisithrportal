@@ -111,29 +111,58 @@ export default function ExecutiveDashboardPage() {
     { name: "Industrial Development", count: 1 },
   ];
 
-  const rawEmployees: any[] = employeesData?.employees || employeesData || [];
-  const rawJobs: any[] = jobsData?.jobs || jobsData || [];
-  const rawApplications: any[] = applicationsData?.applications || applicationsData || [];
+  // Fetch Departments for reliable ID-to-name mapping
+  const { data: departmentsData } = useQuery<any>({
+    queryKey: ["/api/departments"],
+    queryFn: async () => {
+      const res = await fetch("/api/departments", {
+        headers: { ...getAuthHeader() },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const rawEmployees: any[] = Array.isArray(employeesData) ? employeesData : employeesData?.employees || [];
+  const rawJobs: any[] = Array.isArray(jobsData) ? jobsData : jobsData?.jobs || [];
+  const rawApplications: any[] = Array.isArray(applicationsData) ? applicationsData : applicationsData?.applications || [];
+  const departmentsList: any[] = Array.isArray(departmentsData) ? departmentsData : departmentsData?.departments || [];
+
+  // Helper to resolve employee department name
+  const resolveEmpDept = (emp: any): string => {
+    if (emp.department && typeof emp.department === "string") return emp.department;
+    if (emp.departmentName && typeof emp.departmentName === "string") return emp.departmentName;
+    if (emp.division && typeof emp.division === "string") return emp.division;
+    if (emp.departmentId) {
+      const found = departmentsList.find((d: any) => d.id === Number(emp.departmentId));
+      if (found?.name) return found.name;
+    }
+    return "General";
+  };
 
   // Filtered employees for Headcount / Department modal
   const filteredEmployees = useMemo(() => {
     return rawEmployees.filter((emp: any) => {
+      const empDept = resolveEmpDept(emp);
       const matchesSearch =
         !searchQuery ||
         emp.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.position?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.positionTitle?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        empDept.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.employeeNumber?.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesDept =
         !selectedDept ||
         selectedDept === "all" ||
-        emp.department?.toLowerCase() === selectedDept.toLowerCase() ||
-        emp.departmentName?.toLowerCase() === selectedDept.toLowerCase();
+        empDept.toLowerCase() === selectedDept.toLowerCase() ||
+        empDept.toLowerCase().includes(selectedDept.toLowerCase()) ||
+        selectedDept.toLowerCase().includes(empDept.toLowerCase());
 
       return matchesSearch && matchesDept;
     });
-  }, [rawEmployees, searchQuery, selectedDept]);
+  }, [rawEmployees, searchQuery, selectedDept, departmentsList]);
 
   // Filtered jobs for Vacancies modal
   const filteredJobs = useMemo(() => {
@@ -525,8 +554,8 @@ export default function ExecutiveDashboardPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-2.5 text-foreground">{emp.position || emp.designation || "Officer"}</td>
-                      <td className="p-2.5 text-muted-foreground">{emp.department || emp.departmentName || "General"}</td>
+                      <td className="p-2.5 text-foreground">{emp.positionTitle || emp.position || emp.designation || "Officer"}</td>
+                      <td className="p-2.5 text-muted-foreground">{resolveEmpDept(emp)}</td>
                       <td className="p-2.5">
                         <Badge variant="outline" className="text-[10px] font-mono">
                           {emp.grade || emp.gradeLevel || "Grade 12"}

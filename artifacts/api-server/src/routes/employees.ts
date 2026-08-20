@@ -85,9 +85,67 @@ router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "exe
       );
     }
 
+    const selectFields = {
+      id: employeesTable.id,
+      employeeNumber: employeesTable.employeeNumber,
+      name: employeesTable.name,
+      firstName: employeesTable.firstName,
+      lastName: employeesTable.lastName,
+      middleName: employeesTable.middleName,
+      email: employeesTable.email,
+      phone: employeesTable.phone,
+      dateOfBirth: employeesTable.dateOfBirth,
+      gender: employeesTable.gender,
+      maritalStatus: employeesTable.maritalStatus,
+      nationalId: employeesTable.nationalId,
+      passportNumber: employeesTable.passportNumber,
+      photoUrl: employeesTable.photoUrl,
+      residentialAddress: employeesTable.residentialAddress,
+      postalAddress: employeesTable.postalAddress,
+      city: employeesTable.city,
+      province: employeesTable.province,
+      emergencyContactName: employeesTable.emergencyContactName,
+      emergencyContactPhone: employeesTable.emergencyContactPhone,
+      emergencyContactRelationship: employeesTable.emergencyContactRelationship,
+      emergencyContactAddress: employeesTable.emergencyContactAddress,
+      positionId: employeesTable.positionId,
+      position: positionsTable.title,
+      positionTitle: positionsTable.title,
+      departmentId: employeesTable.departmentId,
+      department: departmentsTable.name,
+      departmentName: departmentsTable.name,
+      agencyId: employeesTable.agencyId,
+      supervisorId: employeesTable.supervisorId,
+      gradeLevel: employeesTable.gradeLevel,
+      division: employeesTable.division,
+      unit: employeesTable.unit,
+      employmentType: employeesTable.employmentType,
+      contractId: employeesTable.contractId,
+      status: employeesTable.status,
+      startDate: employeesTable.startDate,
+      probationStartDate: employeesTable.probationStartDate,
+      probationEndDate: employeesTable.probationEndDate,
+      confirmationDate: employeesTable.confirmationDate,
+      separationDate: employeesTable.separationDate,
+      separationReason: employeesTable.separationReason,
+      createdAt: employeesTable.createdAt,
+      updatedAt: employeesTable.updatedAt,
+    };
+
     const results = conditions.length > 0
-      ? await db.select().from(employeesTable).where(and(...conditions)).orderBy(employeesTable.name)
-      : await db.select().from(employeesTable).orderBy(employeesTable.name);
+      ? await db
+          .select(selectFields)
+          .from(employeesTable)
+          .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
+          .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+          .where(and(...conditions))
+          .orderBy(employeesTable.name)
+      : await db
+          .select(selectFields)
+          .from(employeesTable)
+          .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
+          .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+          .orderBy(employeesTable.name);
 
     res.json(results);
   } catch (error) {

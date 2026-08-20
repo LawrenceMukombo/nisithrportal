@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppLayout } from "@/layouts/app-layout";
 import { useRole } from "@/contexts/use-auth";
+import { getAuthHeader } from "@/lib/api-config";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default",
@@ -80,7 +81,7 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     if (employeeId) {
       setLoadingHistory(true);
-      fetch(`/api/employees/${employeeId}/history`, { credentials: "include" })
+      fetch(`/api/employees/${employeeId}/history`, { headers: getAuthHeader(), credentials: "include" })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) setHistory(data);

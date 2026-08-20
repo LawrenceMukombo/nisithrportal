@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
-import { getToken } from "@/lib/api-config";
+import { getAuthHeader } from "@/lib/api-config";
 
 const maximumEmployableDateOfBirth = () => {
   const date = new Date();
@@ -71,7 +71,7 @@ const employeeMasterFormSchema = z.object({
   division: z.string().optional(),
   unit: z.string().optional(),
   employmentType: z.string().default("permanent"),
-  startDate: z.string().optional(),
+  startDate: z.string().default(() => new Date().toISOString().slice(0, 10)),
   probationStartDate: z.string().optional(),
   probationEndDate: z.string().optional(),
   status: z.string().default("active"),
@@ -121,16 +121,32 @@ export default function EmployeeFormPage() {
   const form = useForm<EmployeeMasterFormValues>({
     resolver: zodResolver(employeeMasterFormSchema),
     defaultValues: {
-      name: prefillName,
-      email: prefillEmail,
-      phone: prefillPhone,
-      departmentId: prefillDeptId,
-      positionId: prefillPositionId,
+      name: prefillName || "",
+      email: prefillEmail || "",
+      phone: prefillPhone || "",
+      dateOfBirth: "",
+      gender: "",
+      maritalStatus: "",
+      nationalId: "",
+      passportNumber: "",
+      residentialAddress: "",
+      postalAddress: "",
       city: "Port Moresby",
       province: "National Capital District",
+      emergencyContactName: "",
+      emergencyContactRelationship: "",
+      emergencyContactPhone: "",
+      emergencyContactAddress: "",
+      departmentId: prefillDeptId || "",
+      positionId: prefillPositionId || "",
+      supervisorId: "",
       gradeLevel: "Grade 10",
+      division: "",
+      unit: "",
       employmentType: "permanent",
       startDate: new Date().toISOString().slice(0, 10),
+      probationStartDate: "",
+      probationEndDate: "",
       status: "active",
     },
   });
@@ -142,7 +158,7 @@ export default function EmployeeFormPage() {
         name: emp.name ?? "",
         email: emp.email ?? "",
         phone: emp.phone ?? "",
-        dateOfBirth: emp.dateOfBirth ?? "",
+        dateOfBirth: emp.dateOfBirth ? String(emp.dateOfBirth).slice(0, 10) : "",
         gender: emp.gender ?? "",
         maritalStatus: emp.maritalStatus ?? "",
         nationalId: emp.nationalId ?? "",
@@ -162,9 +178,9 @@ export default function EmployeeFormPage() {
         division: emp.division ?? "",
         unit: emp.unit ?? "",
         employmentType: emp.employmentType ?? "permanent",
-        startDate: emp.startDate ?? "",
-        probationStartDate: emp.probationStartDate ?? "",
-        probationEndDate: emp.probationEndDate ?? "",
+        startDate: emp.startDate ? String(emp.startDate).slice(0, 10) : "",
+        probationStartDate: emp.probationStartDate ? String(emp.probationStartDate).slice(0, 10) : "",
+        probationEndDate: emp.probationEndDate ? String(emp.probationEndDate).slice(0, 10) : "",
         status: emp.status ?? "active",
       });
     }
@@ -176,12 +192,23 @@ export default function EmployeeFormPage() {
       const url = isEdit ? `/api/employees/${employeeId}` : "/api/employees";
       const method = isEdit ? "PATCH" : "POST";
 
+      const sanitizeDate = (val?: string) => {
+        if (!val || val === "dd/mm/yyyy" || val === "yyyy-mm-dd") return null;
+        const dmy = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+        return val.slice(0, 10);
+      };
+
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json", ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
         credentials: "include",
         body: JSON.stringify({
           ...values,
+          dateOfBirth: sanitizeDate(values.dateOfBirth),
+          startDate: sanitizeDate(values.startDate) || new Date().toISOString().slice(0, 10),
+          probationStartDate: sanitizeDate(values.probationStartDate),
+          probationEndDate: sanitizeDate(values.probationEndDate),
           departmentId: values.departmentId ? parseInt(values.departmentId, 10) : null,
           positionId: values.positionId ? parseInt(values.positionId, 10) : null,
           supervisorId: values.supervisorId ? parseInt(values.supervisorId, 10) : null,

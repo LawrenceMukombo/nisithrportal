@@ -14,6 +14,7 @@ import {
 } from "@workspace/db";
 import { authMiddleware } from "../middlewares/auth";
 import { createNotification } from "../lib/notificationService";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -161,11 +162,18 @@ router.post("/messages/conversations", authMiddleware, async (req: Request, res:
   try {
     const userId = req.user!.userId;
     const agencyId = req.user!.agencyId || 1;
-    const { type = "direct", targetUserId, title, participantUserIds = [] } = req.body;
+    const body = req.body || {};
+    const type = body.type || "direct";
+
+    const targetUserId = Number(
+      body.targetUserId ||
+      (Array.isArray(body.participantUserIds) ? body.participantUserIds.find((id: any) => Number(id) !== userId) : undefined) ||
+      (Array.isArray(body.participantIds) ? body.participantIds.find((id: any) => Number(id) !== userId) : undefined)
+    );
 
     if (type === "direct") {
       if (!targetUserId || targetUserId === userId) {
-        res.status(400).json({ error: "Valid targetUserId required for direct chat" });
+        res.status(400).json({ error: "Valid target user required for direct chat" });
         return;
       }
 
@@ -211,12 +219,19 @@ router.post("/messages/conversations", authMiddleware, async (req: Request, res:
     }
 
     // Group chat
+    const title = body.title;
     if (!title || !title.trim()) {
       res.status(400).json({ error: "Title required for group conversations" });
       return;
     }
 
-    const uniqueParticipants = Array.from(new Set([userId, ...participantUserIds]));
+    const rawList = Array.isArray(body.participantUserIds)
+      ? body.participantUserIds
+      : Array.isArray(body.participantIds)
+      ? body.participantIds
+      : [];
+    const validMemberIds = rawList.map((id: any) => Number(id)).filter((id: number) => !isNaN(id) && id > 0);
+    const uniqueParticipants = Array.from(new Set([userId, ...validMemberIds]));
 
     const [conv] = await db
       .insert(chatConversationsTable)
@@ -240,6 +255,7 @@ router.post("/messages/conversations", authMiddleware, async (req: Request, res:
 
     res.status(201).json({ id: conv.id, isExisting: false });
   } catch (error) {
+    logger.error({ err: error }, "Failed to create conversation");
     res.status(500).json({ error: "Failed to create conversation" });
   }
 });

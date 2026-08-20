@@ -485,7 +485,9 @@ export default function MessagesPage() {
   const createConversationMutation = useMutation({
     mutationFn: async (payload: {
       type: "direct" | "group";
-      participantIds: number[];
+      targetUserId?: number;
+      participantIds?: number[];
+      participantUserIds?: number[];
       title?: string;
     }) => {
       const token = getToken();
@@ -497,16 +499,29 @@ export default function MessagesPage() {
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to create conversation");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to create conversation");
+      }
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/messages/conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/messages/unread-total"] });
       setNewChatModalOpen(false);
       setSelectedGroupUsers([]);
       setGroupTitle("");
-      setLocation(`/messages/${data.id}`);
+      if (data?.id) {
+        setLocation(`/messages/${data.id}`);
+      }
       toast({ title: "Conversation started" });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Could not start chat",
+        description: err.message || "Please try again",
+        variant: "destructive",
+      });
     },
   });
 
@@ -630,7 +645,9 @@ export default function MessagesPage() {
   const handleStartDirectChat = (otherUserId: number) => {
     createConversationMutation.mutate({
       type: "direct",
+      targetUserId: otherUserId,
       participantIds: [otherUserId],
+      participantUserIds: [otherUserId],
     });
   };
 
@@ -647,6 +664,7 @@ export default function MessagesPage() {
       type: "group",
       title: groupTitle.trim(),
       participantIds: selectedGroupUsers,
+      participantUserIds: selectedGroupUsers,
     });
   };
 

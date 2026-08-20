@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -46,6 +46,11 @@ app.listen(port, (err) => {
   if (process.env["SEED_ON_STARTUP"] !== "false") {
     seedInitialData().catch((e) => logger.error(e, "Seed error"));
   }
+
+  // Ensure WhatsApp-style messaging tables exist
+  ensureChatTablesExist().catch((e) =>
+    logger.error(e, "ensureChatTablesExist failed"),
+  );
 
   // Always run the legacy job back-fill, independent of SEED_ON_STARTUP.
   // It is idempotent (only updates rows where employmentType/province IS NULL)

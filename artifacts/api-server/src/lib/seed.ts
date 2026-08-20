@@ -1179,3 +1179,51 @@ async function seedAdminUser(): Promise<void> {
   });
   logger.info({ email: ADMIN_EMAIL }, "seedAdminUser: seeded default NISIT admin user");
 }
+
+export async function ensureChatTablesExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS chat_conversations (
+        id SERIAL PRIMARY KEY,
+        agency_id INTEGER NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'direct',
+        title TEXT,
+        avatar TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        last_message_at TIMESTAMPTZ DEFAULT NOW(),
+        last_message_preview TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_participants (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member',
+        last_read_at TIMESTAMPTZ DEFAULT NOW(),
+        muted BOOLEAN NOT NULL DEFAULT FALSE,
+        joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        message_type TEXT NOT NULL DEFAULT 'text',
+        content TEXT NOT NULL DEFAULT '',
+        attachment_url TEXT,
+        attachment_name TEXT,
+        attachment_size INTEGER,
+        reply_to_id INTEGER,
+        deleted_for_everyone BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    logger.info("ensureChatTablesExist: verified chat database tables exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensureChatTablesExist failed to verify chat tables");
+  }
+}
+

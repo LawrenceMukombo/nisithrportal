@@ -11,6 +11,7 @@ import {
   chatMessagesTable,
   usersTable,
   rolesTable,
+  agenciesTable,
 } from "@workspace/db";
 import { authMiddleware } from "../middlewares/auth";
 import { createNotification } from "../lib/notificationService";
@@ -161,7 +162,12 @@ router.get("/messages/conversations", authMiddleware, async (req: Request, res: 
 router.post("/messages/conversations", authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
-    const agencyId = req.user!.agencyId || 1;
+    let agencyId = req.user?.agencyId;
+    if (!agencyId) {
+      const [firstAgency] = await db.select({ id: agenciesTable.id }).from(agenciesTable).limit(1);
+      agencyId = firstAgency?.id || 1;
+    }
+
     const body = req.body || {};
     const type = body.type || "direct";
 
@@ -254,9 +260,9 @@ router.post("/messages/conversations", authMiddleware, async (req: Request, res:
     );
 
     res.status(201).json({ id: conv.id, isExisting: false });
-  } catch (error) {
+  } catch (error: any) {
     logger.error({ err: error }, "Failed to create conversation");
-    res.status(500).json({ error: "Failed to create conversation" });
+    res.status(500).json({ error: error?.message || "Failed to create conversation" });
   }
 });
 

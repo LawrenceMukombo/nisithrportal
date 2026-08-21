@@ -306,6 +306,132 @@ router.post("/employees", authMiddleware, requireRole("admin", "hr_officer"), as
   }
 });
 
+// GET /api/employees/:id - Fetch single employee master record
+router.get("/employees/:id", authMiddleware, async (req, res): Promise<void> => {
+  try {
+    const id = parseIntParam(req.params.id);
+    if (!id || isNaN(id)) {
+      res.status(400).json({ error: "Invalid employee id" });
+      return;
+    }
+
+    const [employee] = await db
+      .select({
+        id: employeesTable.id,
+        employeeNumber: employeesTable.employeeNumber,
+        name: employeesTable.name,
+        firstName: employeesTable.firstName,
+        lastName: employeesTable.lastName,
+        middleName: employeesTable.middleName,
+        email: employeesTable.email,
+        phone: employeesTable.phone,
+        dateOfBirth: employeesTable.dateOfBirth,
+        gender: employeesTable.gender,
+        maritalStatus: employeesTable.maritalStatus,
+        nationalId: employeesTable.nationalId,
+        passportNumber: employeesTable.passportNumber,
+        photoUrl: employeesTable.photoUrl,
+        residentialAddress: employeesTable.residentialAddress,
+        postalAddress: employeesTable.postalAddress,
+        city: employeesTable.city,
+        province: employeesTable.province,
+        emergencyContactName: employeesTable.emergencyContactName,
+        emergencyContactPhone: employeesTable.emergencyContactPhone,
+        emergencyContactRelationship: employeesTable.emergencyContactRelationship,
+        emergencyContactAddress: employeesTable.emergencyContactAddress,
+        positionId: employeesTable.positionId,
+        position: positionsTable.title,
+        positionTitle: positionsTable.title,
+        departmentId: employeesTable.departmentId,
+        department: departmentsTable.name,
+        departmentName: departmentsTable.name,
+        supervisorId: employeesTable.supervisorId,
+        gradeLevel: employeesTable.gradeLevel,
+        division: employeesTable.division,
+        unit: employeesTable.unit,
+        employmentType: employeesTable.employmentType,
+        agencyId: employeesTable.agencyId,
+        status: employeesTable.status,
+        startDate: employeesTable.startDate,
+        probationStartDate: employeesTable.probationStartDate,
+        probationEndDate: employeesTable.probationEndDate,
+        confirmationDate: employeesTable.confirmationDate,
+        separationDate: employeesTable.separationDate,
+        separationReason: employeesTable.separationReason,
+        createdAt: employeesTable.createdAt,
+        updatedAt: employeesTable.updatedAt,
+      })
+      .from(employeesTable)
+      .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
+      .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(eq(employeesTable.id, id));
+
+    if (!employee) {
+      res.status(404).json({ error: "Employee not found" });
+      return;
+    }
+    if (!await canReadEmployee(req, id)) {
+      res.status(403).json({ error: "Forbidden: no access to this employee record" });
+      return;
+    }
+
+    // Lookup supervisor info if assigned
+    let supervisor = null;
+    if (employee.supervisorId) {
+      [supervisor] = await db
+        .select({ id: employeesTable.id, name: employeesTable.name, employeeNumber: employeesTable.employeeNumber, email: employeesTable.email })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, employee.supervisorId));
+    }
+
+    res.json({ ...employee, supervisor });
+  } catch (error: any) {
+    logger.error({ err: error }, "Failed to fetch employee record");
+    res.status(500).json({ error: error?.message || "Failed to fetch employee record" });
+  }
+});
+
+// GET /api/employees/:id/history - Fetch position / promotion history
+router.get("/employees/:id/history", authMiddleware, async (req, res): Promise<void> => {
+  try {
+    const id = parseIntParam(req.params.id);
+    if (!id || isNaN(id)) {
+      res.status(400).json({ error: "Invalid employee id" });
+      return;
+    }
+    if (!await canReadEmployee(req, id)) {
+      res.status(403).json({ error: "Forbidden: no access to this employee history" });
+      return;
+    }
+
+    const history = await db
+      .select({
+        id: employeePositionHistoryTable.id,
+        employeeId: employeePositionHistoryTable.employeeId,
+        positionId: employeePositionHistoryTable.positionId,
+        positionTitle: positionsTable.title,
+        departmentId: employeePositionHistoryTable.departmentId,
+        departmentName: departmentsTable.name,
+        gradeLevel: employeePositionHistoryTable.gradeLevel,
+        startDate: employeePositionHistoryTable.startDate,
+        endDate: employeePositionHistoryTable.endDate,
+        changeType: employeePositionHistoryTable.changeType,
+        notes: employeePositionHistoryTable.notes,
+        createdAt: employeePositionHistoryTable.createdAt,
+      })
+      .from(employeePositionHistoryTable)
+      .leftJoin(positionsTable, eq(employeePositionHistoryTable.positionId, positionsTable.id))
+      .leftJoin(departmentsTable, eq(employeePositionHistoryTable.departmentId, departmentsTable.id))
+      .where(eq(employeePositionHistoryTable.employeeId, id))
+      .orderBy(desc(employeePositionHistoryTable.startDate));
+
+    res.json(history);
+  } catch (error: any) {
+    logger.error({ err: error }, "Failed to fetch employee history");
+    res.status(500).json({ error: error?.message || "Failed to fetch employee history" });
+  }
+});
+
 // Shared employee update handler for PATCH & PUT /api/employees/:id
 async function handleUpdateEmployee(req: any, res: any): Promise<void> {
   try {

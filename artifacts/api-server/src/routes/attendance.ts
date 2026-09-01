@@ -63,10 +63,13 @@ router.post("/attendance/clock-in", authMiddleware, async (req, res): Promise<vo
     const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
     const ownEmployeeId = await currentEmployeeId(req);
     const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
-    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot clock in for this employee" }); return; }
 
     if (!targetEmployeeId) {
-      res.status(400).json({ error: "Employee profile required for clock-in" });
+      res.status(403).json({ error: "No active employee profile is linked to this account. Daily attendance tracking is reserved for registered NISIT staff members." });
+      return;
+    }
+    if (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId)) {
+      res.status(403).json({ error: "Forbidden: You do not have permission to clock in for this employee." });
       return;
     }
 
@@ -101,8 +104,8 @@ router.post("/attendance/clock-in", authMiddleware, async (req, res): Promise<vo
         status: lateMinutes > 15 ? "late" : "present",
         lateMinutes,
         location: location || "NISIT HQ Port Moresby",
-        source: "web",
         notes,
+        source: "portal_clock_in",
       })
       .returning();
 
@@ -119,10 +122,13 @@ router.post("/attendance/clock-out", authMiddleware, async (req, res): Promise<v
     const requestedEmployeeId = employeeId ? parseInt(employeeId) : null;
     const ownEmployeeId = await currentEmployeeId(req);
     const targetEmployeeId = requestedEmployeeId ?? ownEmployeeId;
-    if (!targetEmployeeId || (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId))) { res.status(403).json({ error: "Forbidden: cannot clock out for this employee" }); return; }
 
     if (!targetEmployeeId) {
-      res.status(400).json({ error: "Employee profile required" });
+      res.status(403).json({ error: "No active employee profile is linked to this account. Daily attendance tracking is reserved for registered NISIT staff members." });
+      return;
+    }
+    if (requestedEmployeeId && requestedEmployeeId !== ownEmployeeId && !await canManageEmployee(req, requestedEmployeeId)) {
+      res.status(403).json({ error: "Forbidden: You do not have permission to clock out for this employee." });
       return;
     }
 

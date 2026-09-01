@@ -62,7 +62,7 @@ export default function AttendancePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { isAdmin, isHR } = useRole();
+  const { isAdmin, isHR, isApplicant } = useRole();
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [search, setSearch] = useState("");
@@ -291,7 +291,16 @@ export default function AttendancePage() {
 
               {/* Punch Actions */}
               <div className="space-y-2">
-                {!todayRecord?.clockIn ? (
+                {isApplicant ? (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center space-y-1">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                      Applicant Account
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Daily time tracking and punch clock logging are reserved for active PNG NISIT employees and staff members.
+                    </p>
+                  </div>
+                ) : !todayRecord?.clockIn ? (
                   <Button
                     onClick={() => clockInMutation.mutate()}
                     disabled={clockInMutation.isPending}

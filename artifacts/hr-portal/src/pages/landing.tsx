@@ -326,6 +326,12 @@ export default function LandingPage() {
     return jobsList.filter(j => {
       // Exclude draft or closed jobs on public landing page
       if (j.status && j.status !== "open" && j.status !== "published") return false;
+      // Exclude jobs where the closing date has passed
+      if (j.closingDate) {
+        const closing = new Date(j.closingDate);
+        closing.setHours(23, 59, 59, 999);
+        if (closing.getTime() < Date.now()) return false;
+      }
       const matchSearch = !search || j.title.toLowerCase().includes(search.toLowerCase()) ||
         (j.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
       const matchDept = deptFilter === "all" || j.departmentId === parseInt(deptFilter);

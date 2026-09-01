@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, asc, or, isNull } from "drizzle-orm";
+import { eq, and, inArray, asc, or, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db, jobsTable, departmentsTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
@@ -48,6 +48,8 @@ router.get("/jobs", optionalAuth, async (req, res): Promise<void> => {
     } else {
       conditions.push(inArray(jobsTable.status, ["open", "published"]));
     }
+    // Only show unexpired jobs to public / non-staff users
+    conditions.push(or(isNull(jobsTable.closingDate), sql`DATE(${jobsTable.closingDate}) >= CURRENT_DATE`)!);
     conditions.push(PUBLIC_TARGET_FILTER);
   } else if (query.data.status != null) {
     if (query.data.status === "open" || query.data.status === "published") {
@@ -148,14 +150,13 @@ router.get("/jobs/:id", optionalAuth, async (req, res): Promise<void> => {
   const isPublished = job.status === "published" || job.status === "open";
   const isPublicTarget = !job.publishTarget || job.publishTarget === "public" || job.publishTarget === "both";
   const canViewInternal = isInternalStaff(req.user) && isOwnAgency;
+  const isPastClosing = job.closingDate != null && new Date(job.closingDate).setHours(23, 59, 59, 999) < Date.now();
 
-  if (!isPublished && !isOwnAgency) {
-    res.status(req.user ? 403 : 404).json({ error: "Job not found" });
-    return;
-  }
-  if (isPublished && !isPublicTarget && !canViewInternal) {
-    res.status(req.user ? 403 : 404).json({ error: "Job not found" });
-    return;
+  if (!canViewInternal) {
+    if (!isPublished || !isPublicTarget || isPastClosing) {
+      res.status(req.user ? 403 : 404).json({ error: "Job vacancy has closed or is no longer available" });
+      return;
+    }
   }
   res.json(job);
 });

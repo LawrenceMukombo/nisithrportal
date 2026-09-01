@@ -888,6 +888,11 @@ export default function JobDetailPage() {
                       Closes in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}
                     </Badge>
                   )}
+                  {((daysRemaining !== null && daysRemaining < 0) || job.status === "closed") && (
+                    <Badge variant="outline" className="text-xs text-destructive border-destructive/40 bg-destructive/10 font-semibold">
+                      Applications Closed
+                    </Badge>
+                  )}
                 </div>
 
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground" data-testid="heading-job-title">
@@ -913,11 +918,15 @@ export default function JobDetailPage() {
                       View Submitted Application
                     </Button>
                   </Link>
-                ) : isPublished ? (
+                ) : isPublished && (!daysRemaining || daysRemaining >= 0) && job.status !== "closed" ? (
                   <Button size="lg" className="w-full font-semibold shadow-sm text-base px-6 h-11" onClick={() => setWizardOpen(true)} data-testid="button-apply-now">
                     <Send className="h-4 w-4 mr-2" /> Apply for Position
                   </Button>
-                ) : null}
+                ) : (
+                  <Button size="lg" variant="secondary" disabled className="w-full font-medium text-sm h-11 opacity-80 cursor-not-allowed">
+                    Applications Closed
+                  </Button>
+                )}
               </div>
             </div>
 

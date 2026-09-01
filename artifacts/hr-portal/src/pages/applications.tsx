@@ -14,6 +14,7 @@ import type { Application } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/layouts/app-layout";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -37,8 +38,13 @@ const STATUS_OPTIONS = ["applied", "screening", "interview", "offer", "hired", "
 const STATUS_LABELS: Record<string, string> = {
   applied: "Pending",
   screening: "Under Review",
-  interview: "Shortlisted",
+  shortlisted: "Shortlisted",
+  interview: "Interview",
+  interview_scheduled: "Interview Scheduled",
+  interview_completed: "Interview Completed",
+  evaluation: "Evaluation",
   offer: "Offer",
+  offered: "Offer Extended",
   hired: "Hired",
   onboarding: "Onboarding",
   rejected: "Rejected",
@@ -48,8 +54,13 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   applied: "bg-gray-100 text-gray-700 border-gray-200",
   screening: "bg-blue-50 text-blue-700 border-blue-200",
+  shortlisted: "bg-indigo-50 text-indigo-700 border-indigo-200",
   interview: "bg-violet-50 text-violet-700 border-violet-200",
+  interview_scheduled: "bg-violet-50 text-violet-700 border-violet-200",
+  interview_completed: "bg-purple-50 text-purple-700 border-purple-200",
+  evaluation: "bg-indigo-50 text-indigo-700 border-indigo-200",
   offer: "bg-amber-50 text-amber-700 border-amber-200",
+  offered: "bg-amber-50 text-amber-700 border-amber-200",
   hired: "bg-green-50 text-green-700 border-green-200",
   onboarding: "bg-teal-50 text-teal-700 border-teal-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
@@ -99,13 +110,25 @@ function StatusSelect({ app }: { app: Application }) {
     },
   });
 
+  const currentStatus = app.status ?? "applied";
+  const selectValue = STATUS_OPTIONS.includes(currentStatus)
+    ? currentStatus
+    : currentStatus === "shortlisted"
+    ? "interview"
+    : currentStatus.startsWith("interview")
+    ? "interview"
+    : currentStatus.startsWith("offer")
+    ? "offer"
+    : "applied";
+
   return (
     <Select
-      value={app.status ?? "applied"}
+      value={selectValue}
       onValueChange={(v) => mutation.mutate({ id: app.id, data: { status: v } })}
+      disabled={mutation.isPending}
     >
-      <SelectTrigger className="w-36 h-7 text-xs" data-testid={`select-status-${app.id}`}>
-        <SelectValue />
+      <SelectTrigger className="w-32 h-7 text-xs bg-background" data-testid={`select-status-${app.id}`}>
+        <SelectValue placeholder="Update status" />
       </SelectTrigger>
       <SelectContent>
         {STATUS_OPTIONS.map((s) => (
@@ -406,18 +429,32 @@ export default function ApplicationsPage() {
       sortable: true,
       sortValue: (a) => a.status ?? "",
       exportValue: (a) => STATUS_LABELS[a.status ?? "applied"] ?? a.status ?? "",
-      render: (a) => (
-        <div className="flex items-center gap-2">
+      render: (a) => {
+        const rawStatus = a.status ?? "applied";
+        const label = STATUS_LABELS[rawStatus] ?? rawStatus.replace(/_/g, " ");
+        const badgeClass = STATUS_BADGE_CLASSES[rawStatus] ?? "bg-gray-100 text-gray-700 border-gray-200";
+        return (
           <Badge
             variant="outline"
-            className={`text-xs ${STATUS_BADGE_CLASSES[a.status ?? "applied"] ?? ""}`}
+            className={`text-xs font-medium capitalize whitespace-nowrap ${badgeClass}`}
             data-testid={`badge-status-${a.id}`}
           >
-            {STATUS_LABELS[a.status ?? "applied"] ?? a.status}
+            {label}
           </Badge>
-          <span className="print:hidden">
-            <StatusSelect app={a} />
-          </span>
+        );
+      },
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      sortable: false,
+      resizable: false,
+      render: (a) => (
+        <div className="flex items-center gap-2 print:hidden">
+          <StatusSelect app={a} />
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" asChild>
+            <Link href={`/applications/${a.id}`}>View</Link>
+          </Button>
         </div>
       ),
     },

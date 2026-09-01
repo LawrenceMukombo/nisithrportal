@@ -4,8 +4,21 @@ const bcryptPkgPath = path.resolve(__dirname, "../node_modules/.pnpm/bcryptjs@3.
 const { Client } = require(pgPkgPath);
 const bcrypt = require(bcryptPkgPath);
 
+let dbUrl = process.env.DATABASE_URL;
+if (!dbUrl) {
+  const fs = require("fs");
+  const envPath = path.resolve(__dirname, "../.env");
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf8");
+    const match = envContent.match(/^DATABASE_URL\s*=\s*["']?([^"'\r\n]+)["']?/m);
+    if (match) {
+      dbUrl = match[1];
+    }
+  }
+}
+
 const client = new Client({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/nisit_hr_portal",
+  connectionString: dbUrl || "postgresql://postgres:postgres@localhost:5432/nisit_hr_portal",
 });
 
 async function main() {

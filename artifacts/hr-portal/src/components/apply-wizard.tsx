@@ -1795,9 +1795,14 @@ export function ApplyWizard({
       } : {}),
     };
 
+    const token = getToken();
     const res = await fetch("/api/applications", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
       body: JSON.stringify(body),
     });
 
@@ -1811,6 +1816,15 @@ export function ApplyWizard({
     // Clear local draft and notify any open My Applications page
     localStorage.removeItem(DRAFT_KEY(jobId));
     window.dispatchEvent(new CustomEvent("draft_cleared", { detail: { jobId } }));
+
+    // Clean up server-side draft if user is authenticated
+    if (token) {
+      fetch(`/api/applications/draft/${jobId}?email=${encodeURIComponent(values.candidateEmail)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      }).catch(() => {});
+    }
 
     setSubmitted({ id: result.id, email: values.candidateEmail });
   };

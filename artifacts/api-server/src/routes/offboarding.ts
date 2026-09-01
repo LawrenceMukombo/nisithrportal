@@ -29,7 +29,7 @@ const SEPARATION_STATUS: Record<string, string> = {
 async function canUpdateTask(userId: number, assignedToUserId: number | null): Promise<boolean> {
   if (assignedToUserId === userId) return true;
   const [user] = await db.select({ role: rolesTable.name }).from(usersTable).leftJoin(rolesTable, eq(usersTable.roleId, rolesTable.id)).where(eq(usersTable.id, userId));
-  return ["admin", "hr_manager", "hr_officer"].includes(user?.role ?? "");
+  return ["admin", "hr_manager", "hr_officer", "executive", "hiring_manager", "finance_officer", "it_admin"].includes(user?.role ?? "");
 }
 
 // GET /api/offboarding - List offboarding workflows
@@ -43,8 +43,11 @@ router.get("/offboarding", authMiddleware, requireRole("admin", "hr_manager", "h
         employeeEmail: employeesTable.email,
         employeePosition: positionsTable.title,
         reason: offboardingWorkflowsTable.reason,
+        separationType: offboardingWorkflowsTable.reason,
         separationDate: offboardingWorkflowsTable.separationDate,
+        lastWorkingDay: offboardingWorkflowsTable.separationDate,
         status: offboardingWorkflowsTable.status,
+        clearanceStatus: offboardingWorkflowsTable.status,
         exitInterviewDone: offboardingWorkflowsTable.exitInterviewDone,
         exitInterviewNotes: offboardingWorkflowsTable.exitInterviewNotes,
         handoverCompleted: offboardingWorkflowsTable.handoverCompleted,
@@ -127,7 +130,7 @@ router.patch("/offboarding/tasks/:taskId", authMiddleware, async (req, res): Pro
       .set({
         status: status || undefined,
         notes: notes !== undefined ? notes : undefined,
-        completedAt: status === "completed" ? new Date() : undefined,
+        completedAt: (status === "completed" || status === "cleared") ? new Date() : (status === "pending" ? null : undefined),
         updatedAt: new Date(),
       })
       .where(eq(offboardingTasksTable.id, taskId))

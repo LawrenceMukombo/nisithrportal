@@ -46,11 +46,13 @@ interface OffboardingTask {
   id: number;
   workflowId: number;
   title: string;
-  category: "hr" | "it" | "finance" | "assets" | "admin";
-  assignedRole: string | null;
-  status: "pending" | "cleared" | "waived" | "flagged";
-  clearedAt: string | null;
-  clearedBy: string | null;
+  category: "hr" | "it" | "finance" | "assets" | "admin" | string;
+  assignedRole?: string | null;
+  assignedToUserId?: number | null;
+  status: "pending" | "completed" | "cleared" | "waived" | "flagged" | string;
+  completedAt?: string | null;
+  clearedAt?: string | null;
+  clearedBy?: string | null;
   notes: string | null;
 }
 
@@ -60,10 +62,15 @@ interface OffboardingWorkflow {
   employeeName: string;
   employeeEmail: string | null;
   employeePosition: string | null;
-  separationType: string;
-  lastWorkingDay: string;
-  clearanceStatus: "in_progress" | "cleared" | "held";
+  reason?: string;
+  separationType?: string;
+  separationDate?: string;
+  lastWorkingDay?: string;
+  status?: string;
+  clearanceStatus?: string;
+  exitInterviewDone?: boolean;
   exitInterviewNotes: string | null;
+  handoverCompleted?: boolean;
   createdAt: string;
   tasks: OffboardingTask[];
 }
@@ -137,7 +144,7 @@ export default function OffboardingPage() {
     },
   });
 
-  // Toggle Clearance Task Mutation
+  // Toggle Clearance Task Mutation with Optimistic UI Update
   const toggleTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: number; status: string }) => {
       const res = await fetch(`/api/offboarding/tasks/${taskId}`, {
@@ -148,16 +155,44 @@ export default function OffboardingPage() {
         },
         body: JSON.stringify({ status, notes: `Marked ${status} via HR Portal` }),
       });
-      if (!res.ok) throw new Error("Failed to update clearance task");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update clearance task");
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onMutate: async ({ taskId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/offboarding"] });
+      const previousWorkflows = queryClient.getQueryData<OffboardingWorkflow[]>(["/api/offboarding"]);
+
+      if (previousWorkflows) {
+        queryClient.setQueryData<OffboardingWorkflow[]>(["/api/offboarding"], (old) => {
+          if (!old) return [];
+          return old.map((wf) => {
+            const hasTask = (wf.tasks ?? []).some((t) => t.id === taskId);
+            if (!hasTask) return wf;
+            const updatedTasks = (wf.tasks ?? []).map((t) =>
+              t.id === taskId ? { ...t, status } : t
+            );
+            return { ...wf, tasks: updatedTasks };
+          });
+        });
+      }
+
+      return { previousWorkflows };
+    },
+    onError: (err: any, _vars, context) => {
+      if (context?.previousWorkflows) {
+        queryClient.setQueryData(["/api/offboarding"], context.previousWorkflows);
+      }
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/offboarding"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      toast({ title: "Clearance Task Updated" });
     },
-    onError: (err: any) => {
-      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    onSuccess: () => {
+      toast({ title: "Clearance Task Updated" });
     },
   });
 
@@ -242,9 +277,9 @@ export default function OffboardingPage() {
                   const isSelected = activeWorkflow?.id === wf.id;
                   const tasks = wf.tasks ?? [];
                   const totalTasks = tasks.length;
-                  const completedTasks = tasks.filter((t) => t.status === "cleared").length;
+                  const completedTasks = tasks.filter((t) => t.status === "completed" || t.status === "cleared").length;
                   const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-                  const isCleared = wf.clearanceStatus === "cleared";
+                  const isCleared = wf.status === "completed" || wf.clearanceStatus === "cleared" || (totalTasks > 0 && completedTasks === totalTasks);
 
                   return (
                     <button
@@ -259,7 +294,7 @@ export default function OffboardingPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="font-semibold text-xs text-foreground">{wf.employeeName || `Employee #${wf.employeeId}`}</p>
-                          <p className="text-[11px] text-muted-foreground capitalize">Type: {(wf.separationType || "separation").replace("_", " ")}</p>
+                          <p className="text-[11px] text-muted-foreground capitalize">Type: {(wf.reason || wf.separationType || "separation").replace("_", " ")}</p>
                         </div>
                         <Badge
                           variant={isCleared ? "default" : "secondary"}
@@ -272,7 +307,7 @@ export default function OffboardingPage() {
                       <div className="mt-3 space-y-1.5">
                         <Progress value={pct} className="h-1.5" />
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                          <span>Date: {wf.lastWorkingDay || "Pending"}</span>
+                          <span>Date: {wf.separationDate || wf.lastWorkingDay || "Pending"}</span>
                           <span>{completedTasks} / {totalTasks} Cleared</span>
                         </div>
                       </div>
@@ -291,16 +326,16 @@ export default function OffboardingPage() {
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-base font-bold">{activeWorkflow.employeeName || `Employee #${activeWorkflow.employeeId}`}</CardTitle>
                         <Badge variant="outline" className="text-xs capitalize">
-                          {(activeWorkflow.separationType || "separation").replace("_", " ")}
+                          {(activeWorkflow.reason || activeWorkflow.separationType || "separation").replace("_", " ")}
                         </Badge>
                       </div>
                       <CardDescription className="text-xs mt-0.5">
-                        Separation Effective Date: {activeWorkflow.lastWorkingDay || "Pending"} • Designation: {activeWorkflow.employeePosition || "Officer"}
+                        Separation Effective Date: {activeWorkflow.separationDate || activeWorkflow.lastWorkingDay || "Pending"} • Designation: {activeWorkflow.employeePosition || "Officer"}
                       </CardDescription>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {activeWorkflow.clearanceStatus === "cleared" ? (
+                      {(activeWorkflow.status === "completed" || activeWorkflow.clearanceStatus === "cleared" || (activeWorkflow.tasks?.length > 0 && activeWorkflow.tasks.every(t => t.status === "completed" || t.status === "cleared"))) ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Fully Cleared & Archived
                         </Badge>
@@ -326,7 +361,7 @@ export default function OffboardingPage() {
 
                   <div className="space-y-2.5">
                     {(activeWorkflow.tasks ?? []).map((task, idx) => {
-                      const isCompleted = task.status === "cleared";
+                      const isCompleted = task.status === "completed" || task.status === "cleared";
                       return (
                         <div
                           key={task.id}

@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Sparkles,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,10 +95,16 @@ export default function LeaveManagementPage() {
   const pageSize = 8;
 
   const [isApplyOpen, setIsApplyOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [selectedType, setSelectedType] = useState<string>("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   const [reviewDialog, setReviewDialog] = useState<{
     open: boolean;
@@ -223,8 +230,12 @@ export default function LeaveManagementPage() {
       toast({ title: "Invalid leave dates", description: "The end date must be on or after the start date.", variant: "destructive" });
       return;
     }
+    const effectiveEmployeeId = selectedEmployeeId
+      ? parseInt(selectedEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
+
     applyMutation.mutate({
-      employeeId: 1, // Fallback active employee ID
+      employeeId: effectiveEmployeeId,
       leaveTypeId: parseInt(selectedType),
       startDate,
       endDate,
@@ -530,6 +541,25 @@ export default function LeaveManagementPage() {
               </DialogHeader>
 
               <div className="space-y-4 py-4 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1.5">Staff Member *</label>
+                  <Select
+                    value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setSelectedEmployeeId}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select staff member" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1.5">Leave Category *</label>
                   <Select value={selectedType} onValueChange={setSelectedType}>

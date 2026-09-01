@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Calculator,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,12 +42,14 @@ interface Benefit {
   id: number;
   name: string;
   code?: string;
-  category?: string;
+  category?: "superannuation" | "medical" | "life_insurance" | "housing" | "allowance" | string;
   type?: string;
-  provider: string | null;
-  description: string | null;
+  provider?: string | null;
+  description?: string | null;
   defaultCoverage?: string | null;
   taxable?: boolean;
+  employerContributionPercent?: string | null;
+  employeeContributionPercent?: string | null;
   employerContributionPercentage?: string | null;
   employeeContributionPercentage?: string | null;
   isStatutory?: boolean;
@@ -56,6 +59,7 @@ interface Benefit {
 interface BenefitEnrollment {
   id: number;
   employeeId: number;
+  employeeName?: string;
   benefitId: number;
   benefitName: string;
   benefitCategory?: string;
@@ -64,10 +68,10 @@ interface BenefitEnrollment {
   policyNumber: string | null;
   coverageLevel: string | null;
   dependantsCount?: number;
-  employeeContribution: string | null;
-  employerContribution: string | null;
-  status: "active" | "suspended" | "cancelled";
-  startDate: string;
+  employeeContribution?: string | null;
+  employerContribution?: string | null;
+  status: "active" | "suspended" | "cancelled" | string;
+  startDate?: string;
 }
 
 export default function BenefitsPage() {
@@ -76,10 +80,16 @@ export default function BenefitsPage() {
 
   const [calcSalary, setCalcSalary] = useState("75000");
   const [isEnrollOpen, setIsEnrollOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [selectedBenefitId, setSelectedBenefitId] = useState("");
   const [coverageLevel, setCoverageLevel] = useState("Standard Employee + Dependants");
   const [dependants, setDependants] = useState("2");
   const [policyNum, setPolicyNum] = useState("");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   // Fetch Benefits Catalogue
   const { data: benefits = [], isLoading: isLoadingBenefits } = useQuery<Benefit[]>({
@@ -139,8 +149,11 @@ export default function BenefitsPage() {
   const handleEnrollSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const benefitIdToUse = selectedBenefitId || String(benefits[0]?.id || 1);
+    const effectiveEmployeeId = selectedEmployeeId
+      ? parseInt(selectedEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
     enrollMutation.mutate({
-      employeeId: 1,
+      employeeId: effectiveEmployeeId,
       benefitId: parseInt(benefitIdToUse),
       policyNumber: policyNum || `NISIT-POL-${Math.floor(100000 + Math.random() * 900000)}`,
       coverageLevel,
@@ -339,6 +352,25 @@ export default function BenefitsPage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Staff Member *</label>
+                  <Select
+                    value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setSelectedEmployeeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Select Benefit *</label>
                   <Select value={selectedBenefitId} onValueChange={setSelectedBenefitId}>

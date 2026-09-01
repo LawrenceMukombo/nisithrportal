@@ -13,6 +13,7 @@ import {
   ChevronRight,
   UserCheck,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,11 +45,10 @@ import { getAuthHeader } from "@/lib/api-config";
 interface PerformanceCycle {
   id: number;
   title: string;
-  type: string;
   startDate: string;
   endDate: string;
-  status: "draft" | "active" | "completed" | "archived";
-  description: string | null;
+  status: "planning" | "in_progress" | "review" | "completed";
+  type: string;
 }
 
 interface Goal {
@@ -56,48 +56,68 @@ interface Goal {
   employeeId: number;
   employeeName: string;
   title: string;
-  category: "strategic" | "operational" | "metrology_technical" | "development";
   description: string | null;
-  weight: number;
+  category: "strategic" | "operational" | "metrology_technical" | "development" | string;
   targetValue: string | null;
   currentValue: string | null;
   unit: string | null;
-  status: "draft" | "in_progress" | "achieved" | "deferred";
-  dueDate: string | null;
-  progressPercent: number;
+  weightage?: number;
+  weight?: number;
+  progressPercentage?: number;
+  progressPercent?: number;
+  status: "not_started" | "on_track" | "at_risk" | "behind" | "completed" | "draft" | "in_progress" | "achieved" | "deferred" | string;
+  targetDate?: string;
+  dueDate?: string | null;
 }
 
 interface PerformanceReview {
   id: number;
-  cycleId: number;
-  cycleTitle: string;
+  cycleId?: number;
+  cycleTitle?: string;
   employeeId: number;
   employeeName: string;
-  employeePosition: string | null;
-  status: "draft" | "submitted" | "manager_review" | "finalized";
-  selfRating: string | null;
-  managerRating: string | null;
-  finalRating: string | null;
-  strengths: string | null;
-  improvementAreas: string | null;
-  createdAt: string;
+  positionTitle?: string;
+  employeePosition?: string | null;
+  reviewerId?: number;
+  reviewerName?: string;
+  reviewPeriod?: string;
+  overallRating?: number | null;
+  selfRating?: string | null;
+  managerRating?: string | null;
+  finalRating?: string | null;
+  status: "draft" | "submitted" | "manager_review" | "calibration" | "signed_off" | "finalized" | string;
+  coreCompetenciesScore?: number | null;
+  kpiAchievementScore?: number | null;
+  publicServiceValuesScore?: number | null;
+  developmentPlan?: string | null;
+  reviewDate?: string | null;
 }
 
 export default function PerformancePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isAdmin, isHR, isHiringManager } = useRole();
 
   const [activeTab, setActiveTab] = useState("okrs");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
   const [isGoalOpen, setIsGoalOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [goalTitle, setGoalTitle] = useState("");
-  const [goalCategory, setGoalCategory] = useState("operational");
+  const [goalCategory, setGoalCategory] = useState("strategic");
   const [goalTarget, setGoalTarget] = useState("100");
   const [goalCurrent, setGoalCurrent] = useState("25");
   const [goalUnit, setGoalUnit] = useState("%");
   const [goalWeight, setGoalWeight] = useState("20");
   const [goalDueDate, setGoalDueDate] = useState("2026-12-31");
   const [goalDescription, setGoalDescription] = useState("");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   // Fetch Cycles
   const { data: cycles = [] } = useQuery<PerformanceCycle[]>({
@@ -187,8 +207,11 @@ export default function PerformancePage() {
   const handleCreateGoal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!goalTitle) return;
+    const effectiveEmployeeId = selectedEmployeeId
+      ? parseInt(selectedEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
     addGoalMutation.mutate({
-      employeeId: 1,
+      employeeId: effectiveEmployeeId,
       title: goalTitle,
       category: goalCategory,
       targetValue: goalTarget,
@@ -394,6 +417,25 @@ export default function PerformancePage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Staff Member *</label>
+                  <Select
+                    value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setSelectedEmployeeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Objective Title *</label>
                   <Input

@@ -16,6 +16,7 @@ import {
   Sparkles,
   Timer,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,11 +73,17 @@ export default function AttendancePage() {
   const pageSize = 10;
 
   const [manualOpen, setManualOpen] = useState(false);
+  const [manualEmployeeId, setManualEmployeeId] = useState<string>("");
   const [manualDate, setManualDate] = useState(new Date().toISOString().split("T")[0]);
   const [manualClockIn, setManualClockIn] = useState("08:00");
   const [manualClockOut, setManualClockOut] = useState("16:06");
   const [manualStatus, setManualStatus] = useState("present");
   const [manualNotes, setManualNotes] = useState("");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   // Keep live clock updated
   useEffect(() => {
@@ -187,8 +194,11 @@ export default function AttendancePage() {
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const effectiveEmployeeId = manualEmployeeId
+      ? parseInt(manualEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
     manualMutation.mutate({
-      employeeId: 1,
+      employeeId: effectiveEmployeeId,
       date: manualDate,
       clockIn: manualClockIn ? `${manualDate}T${manualClockIn}:00` : null,
       clockOut: manualClockOut ? `${manualDate}T${manualClockOut}:00` : null,
@@ -556,6 +566,25 @@ export default function AttendancePage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Staff Member *</label>
+                  <Select
+                    value={manualEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setManualEmployeeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Date *</label>
                   <Input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} required />

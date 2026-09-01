@@ -17,12 +17,14 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -47,48 +49,59 @@ interface HousingScheme {
   id: number;
   title: string;
   code: string;
-  type: string;
-  maxMonthlyAllowance: string | null;
+  type: "institutional" | "home_ownership" | "commercial_rental" | "allowance";
   description: string | null;
-  active: boolean;
+  maxMonthlyAllowance: string | null;
+  isActive: boolean;
 }
 
 interface HousingApplication {
   id: number;
   employeeId: number;
   employeeName: string;
-  employeePosition: string | null;
+  positionTitle?: string | null;
+  employeePosition?: string | null;
+  departmentName?: string | null;
   schemeId: number;
   schemeTitle: string;
-  schemeType: string;
   propertyAddress: string;
   landlordName: string | null;
   monthlyRentRequested: string;
-  leasePeriodMonths: number;
-  status: "submitted" | "under_review" | "approved" | "rejected" | "terminated";
+  monthlyAllowanceApproved?: string | null;
+  approvedAmount?: string | null;
+  approvedAt?: string | null;
+  leasePeriodMonths: number | null;
+  status: "pending" | "submitted" | "under_review" | "approved" | "rejected" | "terminated" | string;
   reviewComments: string | null;
-  approvedAmount: string | null;
-  approvedAt: string | null;
   createdAt: string;
 }
 
 export default function HousingPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isAdmin, isHR, isExecutive } = useRole();
-  const canReview = isAdmin || isHR || isExecutive;
+  const canManageHousing = isAdmin || isHR || isExecutive;
+  const canReview = canManageHousing;
 
+  const [activeTab, setActiveTab] = useState("applications");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
   const [isApplyOpen, setIsApplyOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [selectedSchemeId, setSelectedSchemeId] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
   const [landlordName, setLandlordName] = useState("");
   const [monthlyRent, setMonthlyRent] = useState("");
   const [leaseMonths, setLeaseMonths] = useState("12");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   const [reviewDialog, setReviewDialog] = useState<{
     open: boolean;
@@ -180,8 +193,11 @@ export default function HousingPage() {
   const handleApplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSchemeId || !propertyAddress || !monthlyRent) return;
+    const effectiveEmployeeId = selectedEmployeeId
+      ? parseInt(selectedEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
     applyMutation.mutate({
-      employeeId: 1,
+      employeeId: effectiveEmployeeId,
       schemeId: parseInt(selectedSchemeId),
       propertyAddress,
       landlordName,
@@ -466,6 +482,25 @@ export default function HousingPage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Staff Member *</label>
+                  <Select
+                    value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setSelectedEmployeeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Target Housing Scheme *</label>
                   <Select value={selectedSchemeId} onValueChange={setSelectedSchemeId}>

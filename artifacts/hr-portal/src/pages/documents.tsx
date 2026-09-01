@@ -15,7 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
   FileBadge,
+  PenTool,
 } from "lucide-react";
+import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,21 +42,25 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
-import { PenTool, Stamp } from "lucide-react";
-import {
-  DigitalSignatureModal,
-  type DigitalSignatureData,
-} from "@/components/digital-signature-modal";
+import { DigitalSignatureModal } from "@/components/digital-signature-modal";
 
 interface EmployeeDoc {
   id: number;
   employeeId: number;
   employeeName: string;
-  category: "contract" | "identification" | "qualification" | "medical" | "appraisal" | "disciplinary" | "other";
+  category: "contract" | "identification" | "qualification" | "medical" | "appraisal" | "other";
   title: string;
   fileUrl: string;
   fileSize: number | null;
   mimeType: string | null;
+  isVerified: boolean;
+  isSigned: boolean;
+  signatureHash: string | null;
+  signedBy: string | null;
+  signedAt: string | null;
+  isStamped: boolean;
+  stampedBy: string | null;
+  stampedAt: string | null;
   expiryDate: string | null;
   createdAt: string;
 }
@@ -62,6 +68,7 @@ interface EmployeeDoc {
 export default function DocumentsVaultPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isAdmin, isHR, canSignDocuments } = useRole();
 
   const [search, setSearch] = useState("");
@@ -71,10 +78,16 @@ export default function DocumentsVaultPage() {
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [signDocTarget, setSignDocTarget] = useState<EmployeeDoc | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [docTitle, setDocTitle] = useState("");
   const [docCategory, setDocCategory] = useState("identification");
   const [docUrl, setDocUrl] = useState("https://storage.nisit.gov.pg/documents/sample-doc.pdf");
   const [docExpiry, setDocExpiry] = useState("");
+
+  const { data: rawEmployees = [] } = useGetEmployees(undefined, {
+    query: { queryKey: getGetEmployeesQueryKey() },
+  });
+  const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
 
   // Fetch Documents
   const { data: documents = [], isLoading } = useQuery<EmployeeDoc[]>({
@@ -133,8 +146,11 @@ export default function DocumentsVaultPage() {
   const handleUploadSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!docTitle || !docUrl) return;
+    const effectiveEmployeeId = selectedEmployeeId
+      ? parseInt(selectedEmployeeId)
+      : (employees[0]?.id ? employees[0].id : 1);
     uploadMutation.mutate({
-      employeeId: 1,
+      employeeId: effectiveEmployeeId,
       category: docCategory,
       title: docTitle,
       fileUrl: docUrl,
@@ -369,6 +385,25 @@ export default function DocumentsVaultPage() {
               </DialogHeader>
 
               <div className="space-y-3 py-3 text-xs">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Staff Member *</label>
+                  <Select
+                    value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
+                    onValueChange={setSelectedEmployeeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select employee" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {employees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <label className="font-medium text-foreground block mb-1">Document Title *</label>
                   <Input

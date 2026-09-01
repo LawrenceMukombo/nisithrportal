@@ -1507,6 +1507,13 @@ export const CreateContractBody = zod.object({
   endDate: zod.string().nullish(),
   type: zod.string().optional(),
   documentUrl: zod.string().nullish(),
+  salary: zod.string().nullish(),
+  duties: zod.string().nullish(),
+  specialConditions: zod.string().nullish(),
+  probationPeriod: zod.string().nullish(),
+  noticePeriod: zod.string().nullish(),
+  workingHours: zod.string().nullish(),
+  customClauses: zod.string().nullish(),
 });
 
 /**
@@ -1524,6 +1531,13 @@ export const GetContractResponse = zod.object({
   type: zod.string(),
   status: zod.string(),
   documentUrl: zod.string().nullish(),
+  salary: zod.string().nullish(),
+  duties: zod.string().nullish(),
+  specialConditions: zod.string().nullish(),
+  probationPeriod: zod.string().nullish(),
+  noticePeriod: zod.string().nullish(),
+  workingHours: zod.string().nullish(),
+  customClauses: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });
@@ -1541,6 +1555,13 @@ export const UpdateContractBody = zod.object({
   type: zod.string().optional(),
   status: zod.string().optional(),
   documentUrl: zod.string().nullish(),
+  salary: zod.string().nullish(),
+  duties: zod.string().nullish(),
+  specialConditions: zod.string().nullish(),
+  probationPeriod: zod.string().nullish(),
+  noticePeriod: zod.string().nullish(),
+  workingHours: zod.string().nullish(),
+  customClauses: zod.string().nullish(),
   reason: zod
     .string()
     .nullish()
@@ -1557,6 +1578,13 @@ export const UpdateContractResponse = zod.object({
   type: zod.string(),
   status: zod.string(),
   documentUrl: zod.string().nullish(),
+  salary: zod.string().nullish(),
+  duties: zod.string().nullish(),
+  specialConditions: zod.string().nullish(),
+  probationPeriod: zod.string().nullish(),
+  noticePeriod: zod.string().nullish(),
+  workingHours: zod.string().nullish(),
+  customClauses: zod.string().nullish(),
   createdAt: zod.string().optional(),
   updatedAt: zod.string().optional(),
 });

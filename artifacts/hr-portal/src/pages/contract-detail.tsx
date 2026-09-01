@@ -156,6 +156,8 @@ function StatusDialog({ contractId, currentStatus, onClose }: { contractId: numb
   );
 }
 
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
 function EditContractDialog({
   contract,
   onClose,
@@ -171,6 +173,13 @@ function EditContractDialog({
   const [startDate, setStartDate] = useState(contract.startDate ?? "");
   const [endDate, setEndDate] = useState(contract.endDate ?? "");
   const [status, setStatus] = useState(contract.status ?? "active");
+  const [salary, setSalary] = useState(contract.salary ?? "");
+  const [duties, setDuties] = useState(contract.duties ?? "");
+  const [specialConditions, setSpecialConditions] = useState(contract.specialConditions ?? "");
+  const [probationPeriod, setProbationPeriod] = useState(contract.probationPeriod ?? "");
+  const [noticePeriod, setNoticePeriod] = useState(contract.noticePeriod ?? "");
+  const [workingHours, setWorkingHours] = useState(contract.workingHours ?? "");
+  const [customClauses, setCustomClauses] = useState(contract.customClauses ?? "");
 
   const isPermanent = type === "permanent";
 
@@ -197,11 +206,18 @@ function EditContractDialog({
           startDate,
           endDate: isPermanent ? null : endDate,
           status,
+          salary: salary.trim() || null,
+          duties: duties.trim() || null,
+          specialConditions: specialConditions.trim() || null,
+          probationPeriod: probationPeriod.trim() || null,
+          noticePeriod: noticePeriod.trim() || null,
+          workingHours: workingHours.trim() || null,
+          customClauses: customClauses.trim() || null,
         },
       });
       queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contract.id) });
       queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
-      toast({ title: "Contract updated successfully", description: "Contract terms, dates, and status saved." });
+      toast({ title: "Contract contents updated successfully", description: "All contract terms, remuneration, duties, and clauses saved." });
       onClose();
     } catch (err: any) {
       toast({ title: "Update failed", description: err.message ?? "Could not update contract", variant: "destructive" });
@@ -210,78 +226,180 @@ function EditContractDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={handleSave} className="space-y-4">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <form onSubmit={handleSave} className="flex flex-col h-full space-y-4 overflow-hidden">
           <DialogHeader>
-            <DialogTitle>Edit Contract #{contract.id}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" /> Edit Contract Contents #{contract.id}
+            </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 text-xs">
-            <div>
-              <Label className="font-medium text-foreground block mb-1">Contract Type *</Label>
-              <Select value={type} onValueChange={(val) => {
-                setType(val);
-                if (val === "permanent") setEndDate("");
-              }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contract">Fixed-Term Contract</SelectItem>
-                  <SelectItem value="permanent">Permanent / Tenured</SelectItem>
-                  <SelectItem value="probationary">Probationary Contract</SelectItem>
-                  <SelectItem value="casual">Casual / Daily Hire</SelectItem>
-                  <SelectItem value="temporary">Temporary Appointment</SelectItem>
-                  <SelectItem value="consultancy">Special Consultancy</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <Tabs defaultValue="terms" className="flex-1 flex flex-col min-h-0">
+            <TabsList className="grid grid-cols-4 w-full text-xs">
+              <TabsTrigger value="terms">1. Terms & Dates</TabsTrigger>
+              <TabsTrigger value="remuneration">2. Remuneration</TabsTrigger>
+              <TabsTrigger value="duties">3. Duties & Scope</TabsTrigger>
+              <TabsTrigger value="clauses">4. Conditions & Clauses</TabsTrigger>
+            </TabsList>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="font-medium text-foreground block mb-1">Start Date *</Label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <Label className="font-medium text-foreground block mb-1">
-                  End Date {!isPermanent && "*"}
-                </Label>
-                <Input
-                  type="date"
-                  value={endDate}
-                  disabled={isPermanent}
-                  placeholder={isPermanent ? "Ongoing" : undefined}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  required={!isPermanent}
-                />
-              </div>
-            </div>
+            <div className="flex-1 overflow-y-auto pt-3 pb-1 space-y-4 pr-1">
+              <TabsContent value="terms" className="space-y-3 mt-0">
+                <div>
+                  <Label className="font-medium text-foreground block mb-1">Contract Type *</Label>
+                  <Select value={type} onValueChange={(val) => {
+                    setType(val);
+                    if (val === "permanent") setEndDate("");
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contract">Fixed-Term Contract</SelectItem>
+                      <SelectItem value="permanent">Permanent / Tenured</SelectItem>
+                      <SelectItem value="probationary">Probationary Contract</SelectItem>
+                      <SelectItem value="casual">Casual / Daily Hire</SelectItem>
+                      <SelectItem value="temporary">Temporary Appointment</SelectItem>
+                      <SelectItem value="consultancy">Special Consultancy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div>
-              <Label className="font-medium text-foreground block mb-1">Contract Status *</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
-                  <SelectItem value="terminated">Terminated</SelectItem>
-                  <SelectItem value="draft">Draft / Under Review</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">Start Date *</Label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">
+                      End Date {!isPermanent && "*"}
+                    </Label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      disabled={isPermanent}
+                      placeholder={isPermanent ? "Ongoing" : undefined}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      required={!isPermanent}
+                    />
+                  </div>
+                </div>
 
-          <div className="flex gap-2 justify-end pt-2 border-t">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">Probation Period</Label>
+                    <Input
+                      placeholder="e.g. 3 months, 6 months"
+                      value={probationPeriod}
+                      onChange={(e) => setProbationPeriod(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">Notice Period</Label>
+                    <Input
+                      placeholder="e.g. 1 month written notice"
+                      value={noticePeriod}
+                      onChange={(e) => setNoticePeriod(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">Working Hours</Label>
+                    <Input
+                      placeholder="e.g. Mon-Fri 8:00 AM - 4:06 PM (36.75 hrs/wk)"
+                      value={workingHours}
+                      onChange={(e) => setWorkingHours(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="font-medium text-foreground block mb-1">Contract Status *</Label>
+                    <Select value={status} onValueChange={setStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="expired">Expired</SelectItem>
+                        <SelectItem value="terminated">Terminated</SelectItem>
+                        <SelectItem value="draft">Draft / Under Review</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="remuneration" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="font-medium text-foreground block">
+                    Remuneration, Grade Band & Allowances (Clause 4)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Specify the base salary, grade level, step, and any statutory or special allowances (e.g. SDA, Housing, Utilities).
+                  </p>
+                  <Textarea
+                    rows={6}
+                    placeholder="e.g. Base Salary: PGK 78,500 per annum (Grade Band 14, Step 2)&#10;Allowances: 15% Special Duty Allowance (SDA) + Fortnightly Housing Subsidy of PGK 450.&#10;Superannuation: 8.4% employer contribution to Nasfund."
+                    value={salary}
+                    onChange={(e) => setSalary(e.target.value)}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="duties" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="font-medium text-foreground block">
+                    Key Duties & Scope of Work (Clause 5)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Customize specific key responsibilities, deliverables, or operational scope for this contract.
+                  </p>
+                  <Textarea
+                    rows={6}
+                    placeholder="e.g. 1. Oversee inspection and verification of national standards compliance.&#10;2. Conduct technical audits of testing laboratories under ISO/IEC 17025.&#10;3. Liaise with international metrology and standardization bodies.&#10;4. Provide quarterly technical reports to the Executive Management."
+                    value={duties}
+                    onChange={(e) => setDuties(e.target.value)}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="clauses" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="font-medium text-foreground block">
+                    Special Conditions & Entitlements
+                  </Label>
+                  <Textarea
+                    rows={3}
+                    placeholder="e.g. Official communication device provided; official travel allowance applicable per DPM circular."
+                    value={specialConditions}
+                    onChange={(e) => setSpecialConditions(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="font-medium text-foreground block">
+                    Custom Legal Clauses & Addenda (Clause 9)
+                  </Label>
+                  <Textarea
+                    rows={4}
+                    placeholder="e.g. Clause 9.1: Non-Disclosure Agreement&#10;All confidential technical specifications, industrial formulas, and data remain the exclusive property of NISIT and the State of Papua New Guinea."
+                    value={customClauses}
+                    onChange={(e) => setCustomClauses(e.target.value)}
+                  />
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+
+          <div className="flex gap-2 justify-end pt-3 border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={updateContract.isPending}>
-              {updateContract.isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" disabled={updateContract.isPending} data-testid="button-save-contract-contents">
+              {updateContract.isPending ? "Saving..." : "Save Contract Contents"}
             </Button>
           </div>
         </form>
@@ -535,6 +653,71 @@ export default function ContractDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Document</span>
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleViewDocument} data-testid="button-view-contract-document">View Document</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-contract-contents">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" /> Contract Contents & Clauses
+            </CardTitle>
+            {canManageContracts && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-primary"
+                onClick={() => setShowEdit(true)}
+              >
+                <Pencil className="h-3 w-3 mr-1" /> Edit Terms
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4 text-xs">
+            <div className="rounded-md border p-3 bg-muted/20 space-y-1">
+              <span className="font-semibold text-foreground block">Remuneration & Allowances (Clause 4)</span>
+              <p className="text-muted-foreground whitespace-pre-wrap">
+                {contract.salary || "Standard Public Service Salary Schedule & applicable DPM allowances."}
+              </p>
+            </div>
+
+            <div className="rounded-md border p-3 bg-muted/20 space-y-1">
+              <span className="font-semibold text-foreground block">Key Duties & Scope of Work (Clause 5)</span>
+              <p className="text-muted-foreground whitespace-pre-wrap">
+                {contract.duties || "Official duties as specified in the Position Description and assigned by Executive Management."}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-md border p-2.5 bg-muted/20">
+                <span className="text-muted-foreground block text-[11px]">Probation Period</span>
+                <span className="font-medium text-foreground">{contract.probationPeriod || "Standard (3 months)"}</span>
+              </div>
+              <div className="rounded-md border p-2.5 bg-muted/20">
+                <span className="text-muted-foreground block text-[11px]">Notice Period</span>
+                <span className="font-medium text-foreground">{contract.noticePeriod || "1 month written notice"}</span>
+              </div>
+              <div className="rounded-md border p-2.5 bg-muted/20">
+                <span className="text-muted-foreground block text-[11px]">Working Hours</span>
+                <span className="font-medium text-foreground">{contract.workingHours || "36.75 hours / week"}</span>
+              </div>
+            </div>
+
+            {(contract.specialConditions || contract.customClauses) && (
+              <div className="rounded-md border p-3 bg-muted/20 space-y-2">
+                {contract.specialConditions && (
+                  <div>
+                    <span className="font-semibold text-foreground block">Special Conditions</span>
+                    <p className="text-muted-foreground whitespace-pre-wrap mt-0.5">{contract.specialConditions}</p>
+                  </div>
+                )}
+                {contract.customClauses && (
+                  <div className="border-t pt-2">
+                    <span className="font-semibold text-foreground block">Custom Legal Clauses (Clause 9)</span>
+                    <p className="text-muted-foreground whitespace-pre-wrap mt-0.5">{contract.customClauses}</p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -50,6 +50,11 @@ app.listen(port, (err) => {
   // Ensure WhatsApp-style messaging tables exist
   ensureChatTablesExist().catch((e) =>
     logger.error(e, "ensureChatTablesExist failed"),
+  );
+
+  // Ensure contract contents columns (salary, duties, specialConditions, etc.) exist
+  ensureContractColumnsExist().catch((e) =>
+    logger.error(e, "ensureContractColumnsExist failed"),
   );
 
   // Always run the legacy job back-fill, independent of SEED_ON_STARTUP.

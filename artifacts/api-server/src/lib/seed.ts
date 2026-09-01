@@ -1227,3 +1227,20 @@ export async function ensureChatTablesExist(): Promise<void> {
   }
 }
 
+export async function ensureContractColumnsExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS salary TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS duties TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS special_conditions TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS probation_period TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS notice_period TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS working_hours TEXT;
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS custom_clauses TEXT;
+    `);
+    logger.info("ensureContractColumnsExist: verified contract content columns exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensureContractColumnsExist failed to verify contract content columns");
+  }
+}
+

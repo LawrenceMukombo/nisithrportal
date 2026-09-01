@@ -173,6 +173,13 @@ router.post("/contracts", authMiddleware, requireRole("admin", "hr_officer"), as
       type: parsed.data.type ?? "fixed_term",
       status: "active",
       documentUrl: parsed.data.documentUrl ?? null,
+      salary: parsed.data.salary ?? null,
+      duties: parsed.data.duties ?? null,
+      specialConditions: parsed.data.specialConditions ?? null,
+      probationPeriod: parsed.data.probationPeriod ?? null,
+      noticePeriod: parsed.data.noticePeriod ?? null,
+      workingHours: parsed.data.workingHours ?? null,
+      customClauses: parsed.data.customClauses ?? null,
     }).returning();
     await tx.update(employeesTable)
       .set({ contractId: created.id })
@@ -248,6 +255,13 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
         status: body.data.status,
         // Distinguish absent (undefined → leave alone) from explicit null (clear the field).
         documentUrl: body.data.documentUrl === undefined ? undefined : body.data.documentUrl,
+        salary: body.data.salary === undefined ? undefined : body.data.salary,
+        duties: body.data.duties === undefined ? undefined : body.data.duties,
+        specialConditions: body.data.specialConditions === undefined ? undefined : body.data.specialConditions,
+        probationPeriod: body.data.probationPeriod === undefined ? undefined : body.data.probationPeriod,
+        noticePeriod: body.data.noticePeriod === undefined ? undefined : body.data.noticePeriod,
+        workingHours: body.data.workingHours === undefined ? undefined : body.data.workingHours,
+        customClauses: body.data.customClauses === undefined ? undefined : body.data.customClauses,
         updatedAt: new Date(),
       })
       .where(eq(contractsTable.id, params.data.id))

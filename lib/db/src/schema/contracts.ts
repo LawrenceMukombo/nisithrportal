@@ -11,6 +11,13 @@ export const contractsTable = pgTable("contracts", {
   type: text("type").notNull().default("fixed_term"),
   status: text("status").notNull().default("active"),
   documentUrl: text("document_url"),
+  salary: text("salary"),
+  duties: text("duties"),
+  specialConditions: text("special_conditions"),
+  probationPeriod: text("probation_period"),
+  noticePeriod: text("notice_period"),
+  workingHours: text("working_hours"),
+  customClauses: text("custom_clauses"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

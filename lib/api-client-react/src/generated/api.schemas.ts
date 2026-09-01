@@ -730,6 +730,20 @@ export interface Contract {
   status: string;
   /** @nullable */
   documentUrl?: string | null;
+  /** @nullable */
+  salary?: string | null;
+  /** @nullable */
+  duties?: string | null;
+  /** @nullable */
+  specialConditions?: string | null;
+  /** @nullable */
+  probationPeriod?: string | null;
+  /** @nullable */
+  noticePeriod?: string | null;
+  /** @nullable */
+  workingHours?: string | null;
+  /** @nullable */
+  customClauses?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -742,6 +756,20 @@ export interface CreateContractRequest {
   type?: string;
   /** @nullable */
   documentUrl?: string | null;
+  /** @nullable */
+  salary?: string | null;
+  /** @nullable */
+  duties?: string | null;
+  /** @nullable */
+  specialConditions?: string | null;
+  /** @nullable */
+  probationPeriod?: string | null;
+  /** @nullable */
+  noticePeriod?: string | null;
+  /** @nullable */
+  workingHours?: string | null;
+  /** @nullable */
+  customClauses?: string | null;
 }
 
 export interface UpdateContractRequest {
@@ -752,6 +780,20 @@ export interface UpdateContractRequest {
   status?: string;
   /** @nullable */
   documentUrl?: string | null;
+  /** @nullable */
+  salary?: string | null;
+  /** @nullable */
+  duties?: string | null;
+  /** @nullable */
+  specialConditions?: string | null;
+  /** @nullable */
+  probationPeriod?: string | null;
+  /** @nullable */
+  noticePeriod?: string | null;
+  /** @nullable */
+  workingHours?: string | null;
+  /** @nullable */
+  customClauses?: string | null;
   /**
    * Optional HR-supplied reason captured when a signed contract document is being cleared or replaced. Persisted into the audit log for the resulting contract_document_clear entry.
    * @nullable

@@ -573,24 +573,42 @@ router.get(
     fieldRow(doc, "Employment Type", contractTypeLabel);
     doc.moveDown(0.5);
 
-    sectionLabel(doc, "3. Contract Duration");
+    sectionLabel(doc, "3. Contract Duration & Working Hours");
     fieldRow(doc, "Start Date", fmtDate(contract.startDate));
     fieldRow(doc, "End Date", contract.endDate ? fmtDate(contract.endDate) : "Ongoing (Permanent Appointment)");
+    if (contract.probationPeriod) {
+      fieldRow(doc, "Probation Period", contract.probationPeriod);
+    }
+    if (contract.workingHours) {
+      fieldRow(doc, "Working Hours", contract.workingHours);
+    }
     doc.moveDown(0.5);
 
     sectionLabel(doc, "4. Remuneration & Benefits");
-    bodyText(doc,
-      `The Employee shall be remunerated in accordance with the applicable government salary ` +
-      `schedule, grade band, and any applicable allowances as determined by the Department of Personnel ` +
-      `Management (DPM) and agreed at the time of appointment.`
-    );
+    if (contract.salary && contract.salary.trim()) {
+      bodyText(doc, contract.salary.trim());
+      doc.moveDown(0.3);
+      bodyText(doc,
+        `All statutory deductions (tax/IRC and superannuation/Nasfund) shall apply in accordance with the laws of Papua New Guinea.`
+      );
+    } else {
+      bodyText(doc,
+        `The Employee shall be remunerated in accordance with the applicable government salary ` +
+        `schedule, grade band, and any applicable allowances as determined by the Department of Personnel ` +
+        `Management (DPM) and agreed at the time of appointment.`
+      );
+    }
 
     sectionLabel(doc, "5. Duties & Responsibilities");
-    bodyText(doc,
-      `The Employee agrees to perform the duties and responsibilities associated with the position of ` +
-      `${positionTitle}, as outlined in the relevant Position Description. The Employee may be assigned ` +
-      `additional duties consistent with the level of the position from time to time.`
-    );
+    if (contract.duties && contract.duties.trim()) {
+      bodyText(doc, contract.duties.trim());
+    } else {
+      bodyText(doc,
+        `The Employee agrees to perform the duties and responsibilities associated with the position of ` +
+        `${positionTitle}, as outlined in the relevant Position Description. The Employee may be assigned ` +
+        `additional duties consistent with the level of the position from time to time.`
+      );
+    }
 
     sectionLabel(doc, "6. Leave Entitlements");
     bodyText(doc,
@@ -599,18 +617,34 @@ router.get(
       `Maternity/Paternity Leave, and other statutory entitlements.`
     );
 
-    sectionLabel(doc, "7. Termination");
-    bodyText(doc,
-      `Either party may terminate this Contract by providing the notice period specified in the ` +
-      `relevant Enterprise Agreement or as required by law. The Employer reserves the right to ` +
-      `terminate this Contract in accordance with the Public Services (Management) Act 2014.`
-    );
+    sectionLabel(doc, "7. Termination & Notice Period");
+    if (contract.noticePeriod && contract.noticePeriod.trim()) {
+      bodyText(doc,
+        `Notice Period: ${contract.noticePeriod.trim()}. Either party may terminate this Contract by providing the written notice specified herein or payment in lieu thereof, subject to the Public Services (Management) Act 2014.`
+      );
+    } else {
+      bodyText(doc,
+        `Either party may terminate this Contract by providing the notice period specified in the ` +
+        `relevant Enterprise Agreement or as required by law. The Employer reserves the right to ` +
+        `terminate this Contract in accordance with the Public Services (Management) Act 2014.`
+      );
+    }
 
-    sectionLabel(doc, "8. Confidentiality");
+    sectionLabel(doc, "8. Confidentiality & Code of Conduct");
     bodyText(doc,
       `The Employee agrees to maintain strict confidentiality regarding all government information, ` +
-      `data, and documents accessed in the course of employment, both during and after the term of this Contract.`
+      `data, and documents accessed in the course of employment, both during and after the term of this Contract, and uphold the Public Service Code of Conduct.`
     );
+
+    if ((contract.specialConditions && contract.specialConditions.trim()) || (contract.customClauses && contract.customClauses.trim())) {
+      sectionLabel(doc, "9. Special Conditions & Custom Clauses");
+      if (contract.specialConditions && contract.specialConditions.trim()) {
+        fieldRow(doc, "Special Conditions", contract.specialConditions.trim());
+      }
+      if (contract.customClauses && contract.customClauses.trim()) {
+        bodyText(doc, contract.customClauses.trim());
+      }
+    }
 
     divider(doc);
 

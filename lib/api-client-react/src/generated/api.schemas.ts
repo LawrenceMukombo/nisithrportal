@@ -745,6 +745,7 @@ export interface CreateContractRequest {
 }
 
 export interface UpdateContractRequest {
+  startDate?: string;
   /** @nullable */
   endDate?: string | null;
   type?: string;

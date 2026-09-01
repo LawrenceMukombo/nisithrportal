@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2, Eye } from "lucide-react";
+import { ArrowLeft, RefreshCw, FileDown, Loader2, Upload, FileText, CheckCircle2, Trash2, Eye, Pencil } from "lucide-react";
 import { useGetContract, useGetEmployee, useUpdateContract, getGetContractQueryKey, getGetEmployeeQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -156,9 +156,144 @@ function StatusDialog({ contractId, currentStatus, onClose }: { contractId: numb
   );
 }
 
+function EditContractDialog({
+  contract,
+  onClose,
+}: {
+  contract: any;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const updateContract = useUpdateContract();
+
+  const [type, setType] = useState(contract.type ?? "contract");
+  const [startDate, setStartDate] = useState(contract.startDate ?? "");
+  const [endDate, setEndDate] = useState(contract.endDate ?? "");
+  const [status, setStatus] = useState(contract.status ?? "active");
+
+  const isPermanent = type === "permanent";
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!startDate) {
+      toast({ title: "Start date is required", variant: "destructive" });
+      return;
+    }
+    if (!isPermanent && !endDate) {
+      toast({ title: "End date is required for fixed-term contracts", variant: "destructive" });
+      return;
+    }
+    if (!isPermanent && endDate <= startDate) {
+      toast({ title: "End date must be after start date", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await updateContract.mutateAsync({
+        id: contract.id,
+        data: {
+          type,
+          startDate,
+          endDate: isPermanent ? null : endDate,
+          status,
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: getGetContractQueryKey(contract.id) });
+      queryClient.invalidateQueries({ queryKey: ["/api/contracts"] });
+      toast({ title: "Contract updated successfully", description: "Contract terms, dates, and status saved." });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Update failed", description: err.message ?? "Could not update contract", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <form onSubmit={handleSave} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Edit Contract #{contract.id}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <Label className="font-medium text-foreground block mb-1">Contract Type *</Label>
+              <Select value={type} onValueChange={(val) => {
+                setType(val);
+                if (val === "permanent") setEndDate("");
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contract">Fixed-Term Contract</SelectItem>
+                  <SelectItem value="permanent">Permanent / Tenured</SelectItem>
+                  <SelectItem value="probationary">Probationary Contract</SelectItem>
+                  <SelectItem value="casual">Casual / Daily Hire</SelectItem>
+                  <SelectItem value="temporary">Temporary Appointment</SelectItem>
+                  <SelectItem value="consultancy">Special Consultancy</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="font-medium text-foreground block mb-1">Start Date *</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label className="font-medium text-foreground block mb-1">
+                  End Date {!isPermanent && "*"}
+                </Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  disabled={isPermanent}
+                  placeholder={isPermanent ? "Ongoing" : undefined}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  required={!isPermanent}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="font-medium text-foreground block mb-1">Contract Status *</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="terminated">Terminated</SelectItem>
+                  <SelectItem value="draft">Draft / Under Review</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={updateContract.isPending}>
+              {updateContract.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ContractDetailPage() {
   const [match, params] = useRoute("/contracts/:id");
   const [, setLocation] = useLocation();
+  const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -296,6 +431,14 @@ export default function ContractDetailPage() {
   const isExpired = !isPermanent && (contract.status === "expired" || contract.endDate! < today);
   const isExpiringSoon = !isExpired && !isPermanent && contract.status === "active" && contract.endDate! <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+  const handleViewDocument = () => {
+    if (contract.documentUrl && contract.documentUrl.startsWith("/api/storage/")) {
+      setDocumentPreviewUrl(contract.documentUrl);
+    } else {
+      setShowPreview(true);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -311,6 +454,9 @@ export default function ContractDetailPage() {
             </Badge>
             {canManageContracts && (
               <>
+                <Button size="sm" variant="outline" onClick={() => setShowEdit(true)} data-testid="button-edit-contract">
+                  <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Contract
+                </Button>
                 {!isPermanent && (isExpired || isExpiringSoon) && (
                   <Button size="sm" variant="outline" onClick={() => setShowRenew(true)} data-testid="button-renew-contract">
                     <RefreshCw className="h-3.5 w-3.5 mr-1" /> Renew
@@ -388,7 +534,7 @@ export default function ContractDetailPage() {
             {contract.documentUrl && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Document</span>
-                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setDocumentPreviewUrl(contract.documentUrl!)} data-testid="button-view-contract-document">View Document</Button>
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleViewDocument} data-testid="button-view-contract-document">View Document</Button>
               </div>
             )}
           </CardContent>
@@ -410,7 +556,7 @@ export default function ContractDetailPage() {
                       ? "Signed contract uploaded —"
                       : "Contract document on file —"}
                   </span>
-                  <Button variant="link" size="sm" className="h-auto p-0 underline font-medium" onClick={() => setDocumentPreviewUrl(contract.documentUrl!)} data-testid="button-view-signed-contract-document">View Document</Button>
+                  <Button variant="link" size="sm" className="h-auto p-0 underline font-medium" onClick={handleViewDocument} data-testid="button-view-signed-contract-document">View Document</Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-300" data-testid="banner-signed-missing">
@@ -577,6 +723,12 @@ export default function ContractDetailPage() {
         )}
       </div>
 
+      {showEdit && (
+        <EditContractDialog
+          contract={contract}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
       {showRenew && (
         <RenewDialog
           contractId={contract.id}

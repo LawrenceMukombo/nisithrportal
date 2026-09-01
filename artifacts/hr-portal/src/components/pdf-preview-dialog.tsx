@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Loader2, Download } from "lucide-react";
+import { Loader2, Download, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/api-config";
@@ -102,10 +102,20 @@ export function PdfPreviewDialog({
           )}
           {error && !loading && (
             <div
-              className="h-full flex items-center justify-center text-destructive p-6 text-center"
+              className="h-full flex flex-col items-center justify-center p-6 text-center space-y-3"
               data-testid="pdf-preview-error"
             >
-              {error}
+              <div className="rounded-full bg-destructive/10 p-3 text-destructive">
+                <FileText className="h-6 w-6" />
+              </div>
+              <div className="space-y-1 max-w-md">
+                <p className="text-sm font-medium text-foreground">Document preview unavailable</p>
+                <p className="text-xs text-muted-foreground">
+                  {error.includes("Failed to fetch")
+                    ? "The stored file location is not accessible or has not been uploaded to local storage yet."
+                    : error}
+                </p>
+              </div>
             </div>
           )}
           {pdfBlobUrl && !loading && !error && (

@@ -232,8 +232,9 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
     return;
   }
   const finalType = body.data.type ?? existing.type;
+  const finalStartDate = body.data.startDate ?? existing.startDate;
   const finalEndDate = body.data.endDate === undefined ? existing.endDate : body.data.endDate;
-  const dateError = contractDateError(finalType, existing.startDate, finalEndDate);
+  const dateError = contractDateError(finalType, finalStartDate, finalEndDate);
   if (dateError) { res.status(400).json({ error: dateError }); return; }
   if (body.data.status === "active" && body.data.endDate && body.data.endDate <= new Date().toISOString().slice(0, 10)) {
     res.status(400).json({ error: "An active renewed contract must end in the future" }); return;
@@ -241,11 +242,13 @@ router.patch("/contracts/:id", authMiddleware, requireRole("admin", "hr_officer"
   const contract = await db.transaction(async (tx) => {
     const [updated] = await tx.update(contractsTable)
       .set({
-        endDate: body.data.endDate ?? undefined,
+        startDate: body.data.startDate ?? undefined,
+        endDate: body.data.endDate === null ? null : (body.data.endDate ?? undefined),
         type: body.data.type,
         status: body.data.status,
         // Distinguish absent (undefined → leave alone) from explicit null (clear the field).
         documentUrl: body.data.documentUrl === undefined ? undefined : body.data.documentUrl,
+        updatedAt: new Date(),
       })
       .where(eq(contractsTable.id, params.data.id))
       .returning();

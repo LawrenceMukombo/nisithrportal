@@ -165,6 +165,20 @@ export default function ContractsPage() {
         </Badge>
       ),
     },
+    {
+      key: "actions",
+      label: "Actions",
+      sortable: false,
+      render: (c) => (
+        <div className="flex items-center gap-1">
+          <Link href={`/contracts/${c.id}`}>
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs">
+              View & Edit
+            </Button>
+          </Link>
+        </div>
+      ),
+    },
   ];
 
   return (

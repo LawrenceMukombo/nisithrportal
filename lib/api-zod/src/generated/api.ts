@@ -1536,6 +1536,7 @@ export const UpdateContractParams = zod.object({
 });
 
 export const UpdateContractBody = zod.object({
+  startDate: zod.string().optional(),
   endDate: zod.string().nullish(),
   type: zod.string().optional(),
   status: zod.string().optional(),

@@ -140,8 +140,11 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
     }
 
     const { email, password } = parsed.data;
-
-    const users = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase().trim()));
+    const normalizedEmail = email.toLowerCase().trim();
+    const users = await db
+      .select()
+      .from(usersTable)
+      .where(sql`LOWER(TRIM(${usersTable.email})) = ${normalizedEmail}`);
     if (users.length === 0) {
       await writeAuditLog({
         targetEmail: email,

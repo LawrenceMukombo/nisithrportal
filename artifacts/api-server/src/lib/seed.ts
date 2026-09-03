@@ -1049,7 +1049,7 @@ export async function seedInitialData(): Promise<void> {
       logger.info({ agency: agency.name }, "Seeded default agency and departments");
     }
 
-    await seedAdminUser();
+    await ensureAdminUserExists();
     await seedWikiArticles();
     await seedJobVacancies();
     await seedCompleteData();
@@ -1139,45 +1139,113 @@ export async function backfillCandidateUserIds(): Promise<number> {
   return linked;
 }
 
-async function seedAdminUser(): Promise<void> {
-  const [agency] = await db.select().from(agenciesTable).where(eq(agenciesTable.name, NISIT_AGENCY_NAME));
-  if (!agency) {
-    logger.warn("seedAdminUser: NISIT agency not found, skipping");
-    return;
-  }
-
-  const ADMIN_EMAIL = "admin@nisit.gov.pg";
-  const existing = await db.select({ id: usersTable.id, agencyId: usersTable.agencyId })
-    .from(usersTable)
-    .where(eq(usersTable.email, ADMIN_EMAIL));
-
-  if (existing.length > 0) {
-    const adminUser = existing[0];
-    if (adminUser.agencyId !== agency.id) {
-      await db.update(usersTable).set({ agencyId: agency.id }).where(eq(usersTable.id, adminUser.id));
-      logger.info({ adminId: adminUser.id, agencyId: agency.id }, "seedAdminUser: corrected admin agencyId to NISIT agency");
-    } else {
-      logger.info("seedAdminUser: admin user already exists with correct agencyId, skipping");
+export async function ensureAdminUserExists(): Promise<void> {
+  try {
+    // 1. Ensure basic roles exist (admin, hr_officer, executive, employee, applicant, hiring_manager)
+    for (const role of DEFAULT_ROLES) {
+      const existingRole = await db.select().from(rolesTable).where(eq(rolesTable.name, role.name)).limit(1);
+      if (existingRole.length === 0) {
+        await db.insert(rolesTable).values({ name: role.name, permissions: role.permissions });
+        logger.info({ role: role.name }, "ensureAdminUserExists: seeded missing role");
+      }
     }
-    return;
-  }
 
-  const adminRoles = await db.select().from(rolesTable).where(eq(rolesTable.name, "admin"));
-  if (adminRoles.length === 0) {
-    logger.warn("seedAdminUser: admin role not found, skipping");
-    return;
-  }
+    const [adminRole] = await db.select().from(rolesTable).where(eq(rolesTable.name, "admin")).limit(1);
+    if (!adminRole) {
+      logger.error("ensureAdminUserExists: admin role could not be resolved");
+      return;
+    }
 
-  const passwordHash = await bcrypt.hash("Admin123!", 10);
-  await db.insert(usersTable).values({
-    name: "NISIT Administrator",
-    email: ADMIN_EMAIL,
-    passwordHash,
-    agencyId: agency.id,
-    roleId: adminRoles[0].id,
-    status: "active",
-  });
-  logger.info({ email: ADMIN_EMAIL }, "seedAdminUser: seeded default NISIT admin user");
+    // 2. Resolve primary agency without rigid name requirement
+    let [agency] = await db.select().from(agenciesTable).limit(1);
+    if (!agency) {
+      const [newAgency] = await db.insert(agenciesTable).values({
+        name: NISIT_AGENCY_NAME,
+        type: "government",
+      }).returning();
+      agency = newAgency;
+      logger.info({ agencyId: agency.id }, "ensureAdminUserExists: created default agency");
+    }
+
+    // 3. Upsert admin@nisit.gov.pg with known credentials, active status, and reset lockouts
+    const ADMIN_EMAIL = "admin@nisit.gov.pg";
+    const adminPasswordHash = await bcrypt.hash("Admin123!", 10);
+
+    const existingAdmins = await db
+      .select()
+      .from(usersTable)
+      .where(sql`LOWER(TRIM(${usersTable.email})) = ${ADMIN_EMAIL}`);
+
+    if (existingAdmins.length === 0) {
+      await db.insert(usersTable).values({
+        name: "NISIT Administrator",
+        email: ADMIN_EMAIL,
+        passwordHash: adminPasswordHash,
+        agencyId: agency.id,
+        roleId: adminRole.id,
+        status: "active",
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      logger.info({ email: ADMIN_EMAIL }, "ensureAdminUserExists: created default admin user");
+    } else {
+      const adminUser = existingAdmins[0];
+      await db
+        .update(usersTable)
+        .set({
+          email: ADMIN_EMAIL,
+          passwordHash: adminPasswordHash,
+          agencyId: agency.id,
+          roleId: adminRole.id,
+          status: "active",
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, adminUser.id));
+      logger.info({ adminId: adminUser.id, email: ADMIN_EMAIL }, "ensureAdminUserExists: synchronized and unlocked admin user");
+    }
+
+    // 4. Ensure secondary default accounts from DEPLOYMENT_SOP exist and are active
+    const [hrRole] = await db.select().from(rolesTable).where(eq(rolesTable.name, "hr_officer")).limit(1);
+    const [execRole] = await db.select().from(rolesTable).where(eq(rolesTable.name, "executive")).limit(1);
+
+    const secondaryAccounts = [
+      { name: "Margaret Tolo (HR Officer)", email: "m.tolo@nisit.gov.pg", roleId: hrRole?.id || adminRole.id },
+      { name: "Director General (Executive)", email: "director@nisit.gov.pg", roleId: execRole?.id || adminRole.id },
+    ];
+
+    for (const acc of secondaryAccounts) {
+      const existing = await db
+        .select()
+        .from(usersTable)
+        .where(sql`LOWER(TRIM(${usersTable.email})) = ${acc.email.toLowerCase()}`);
+      if (existing.length === 0) {
+        await db.insert(usersTable).values({
+          name: acc.name,
+          email: acc.email,
+          passwordHash: adminPasswordHash,
+          agencyId: agency.id,
+          roleId: acc.roleId,
+          status: "active",
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        });
+      } else {
+        await db
+          .update(usersTable)
+          .set({
+            status: "active",
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            passwordHash: adminPasswordHash,
+          })
+          .where(eq(usersTable.id, existing[0].id));
+      }
+    }
+  } catch (err) {
+    logger.error(err, "ensureAdminUserExists: failed (non-fatal)");
+  }
 }
 
 export async function ensureChatTablesExist(): Promise<void> {

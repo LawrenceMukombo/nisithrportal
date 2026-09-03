@@ -34,6 +34,22 @@ async function main() {
   await client.connect();
   console.log("Connected to database...");
 
+  // Guarantee columns exist on production table
+  await client.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_change_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_saved_job_closing BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_soon_days INTEGER NOT NULL DEFAULT 7;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_stale_applications BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  `);
+  console.log("Verified users table security and preference columns exist.");
+
   const hash = await bcrypt.hash("Admin123!", 10);
   const roleRes = await client.query("SELECT id FROM roles WHERE name = 'admin' LIMIT 1");
   const roleId = roleRes.rows[0]?.id || 1;

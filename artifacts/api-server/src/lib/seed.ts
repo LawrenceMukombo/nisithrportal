@@ -1139,8 +1139,31 @@ export async function backfillCandidateUserIds(): Promise<number> {
   return linked;
 }
 
+export async function ensureUserSecurityColumnsExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER REFERENCES employees(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_change_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_saved_job_closing BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_soon_days INTEGER NOT NULL DEFAULT 7;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_stale_applications BOOLEAN NOT NULL DEFAULT TRUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    `);
+    logger.info("ensureUserSecurityColumnsExist: verified user security and preference columns exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensureUserSecurityColumnsExist failed to verify user columns");
+  }
+}
+
 export async function ensureAdminUserExists(): Promise<void> {
   try {
+    // 0. Ensure user security columns exist before executing any user table queries
+    await ensureUserSecurityColumnsExist();
     // 1. Ensure basic roles exist (admin, hr_officer, executive, employee, applicant, hiring_manager)
     for (const role of DEFAULT_ROLES) {
       const existingRole = await db.select().from(rolesTable).where(eq(rolesTable.name, role.name)).limit(1);

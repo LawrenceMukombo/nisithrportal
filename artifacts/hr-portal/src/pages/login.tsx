@@ -51,8 +51,12 @@ export default function LoginPage() {
         const dest = payload?.roleName === "applicant" ? "/my-applications" : "/dashboard";
         setLocation(dest);
       },
-      onError: () => {
-        toast({ title: "Login failed", description: "Invalid email or password.", variant: "destructive" });
+      onError: (err: any) => {
+        const errorMsg =
+          err?.response?.data?.error ||
+          err?.message ||
+          "Invalid email or password.";
+        toast({ title: "Login failed", description: errorMsg, variant: "destructive" });
       },
     },
   });

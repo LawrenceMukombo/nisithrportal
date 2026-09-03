@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   FileBadge,
@@ -44,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   DigitalSignatureModal,
   DocumentOfficialStampBlock,
@@ -124,6 +125,16 @@ export default function HRLettersPage() {
       return res.json();
     },
   });
+
+  const employeeOptions = useMemo(
+    () =>
+      employees.map((emp) => ({
+        value: String(emp.id),
+        label: `${emp.name} ${emp.positionTitle ? `(${emp.positionTitle})` : ""}`,
+        searchTerms: `${emp.name} ${(emp as any).employeeNumber || ""} ${emp.positionTitle || ""} ${emp.departmentName || ""} ${emp.email || ""}`,
+      })),
+    [employees]
+  );
 
   // Auto select matching employee or first employee
   useEffect(() => {
@@ -565,18 +576,14 @@ export default function HRLettersPage() {
                 {(isAdmin || isHR) && employees.length > 0 && (
                   <div>
                     <label className="font-medium text-foreground block mb-1">Employee / Staff Member *</label>
-                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                      <SelectTrigger data-testid="select-letter-employee">
-                        <SelectValue placeholder="Select Employee" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-56">
-                        {employees.map((emp) => (
-                          <SelectItem key={emp.id} value={String(emp.id)}>
-                            {emp.name} {emp.positionTitle ? `(${emp.positionTitle})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={selectedEmployeeId}
+                      onValueChange={setSelectedEmployeeId}
+                      options={employeeOptions}
+                      placeholder="Search or select employee..."
+                      searchPlaceholder="Search staff by name or position..."
+                      data-testid="select-letter-employee"
+                    />
                   </div>
                 )}
 

@@ -19,6 +19,7 @@ import {
 export interface SearchableSelectOption {
   value: string;
   label: string;
+  searchTerms?: string;
 }
 
 interface SearchableSelectProps {
@@ -40,6 +41,7 @@ export function SearchableSelect({
   placeholder = "Select…",
   searchPlaceholder = "Search…",
   emptyMessage = "No results found.",
+  className,
   triggerClassName,
   "data-testid": testId,
 }: SearchableSelectProps) {
@@ -55,7 +57,7 @@ export function SearchableSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "justify-between font-normal text-sm h-9",
+            "w-full justify-between font-normal text-sm h-9 bg-background",
             !selectedLabel && "text-muted-foreground",
             triggerClassName,
           )}
@@ -66,8 +68,8 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="p-0"
-        style={{ width: "var(--radix-popover-trigger-width)", minWidth: 200 }}
+        className={cn("p-0 z-[60]", className)}
+        style={{ width: "var(--radix-popover-trigger-width)", minWidth: 240 }}
         align="start"
       >
         <Command>
@@ -78,7 +80,7 @@ export function SearchableSelect({
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.label}
+                  value={`${option.label} ${option.searchTerms || ""}`.trim()}
                   onSelect={() => {
                     onValueChange(option.value);
                     setOpen(false);

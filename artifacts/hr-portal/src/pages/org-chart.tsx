@@ -56,7 +56,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useRole } from "@/contexts/use-auth";
-import { getToken } from "@/lib/api-config";
+import { getToken, getAuthHeader } from "@/lib/api-config";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface IncumbentEmployee {
   id: number;
@@ -122,6 +123,16 @@ interface OrgChartData {
     headcount: number;
   };
   departments: OrgChartDepartment[];
+  allActiveStaff?: Array<{
+    id: number;
+    name: string;
+    employeeNumber: string;
+    gradeLevel: string;
+    email: string | null;
+    phone: string | null;
+    departmentId?: number | null;
+    positionId?: number | null;
+  }>;
 }
 
 export default function OrgChartPage() {
@@ -176,12 +187,96 @@ export default function OrgChartPage() {
   const { data: employeesList } = useQuery<any[]>({
     queryKey: ["/api/employees"],
     queryFn: async () => {
-      const res = await fetch("/api/employees");
+      const res = await fetch("/api/employees", {
+        headers: { ...getAuthHeader() },
+      });
       if (!res.ok) return [];
-      return res.json();
+      const json = await res.json();
+      return Array.isArray(json) ? json : [];
     },
-    enabled: isAdmin || isHR,
   });
+
+  // Comprehensive staff list combining /api/employees and org chart dataset fallbacks
+  const activeStaffList = useMemo(() => {
+    const list: Array<{
+      id: number;
+      name: string;
+      employeeNumber: string;
+      gradeLevel: string;
+      email: string | null;
+      phone: string | null;
+    }> = [];
+    const seenIds = new Set<number>();
+
+    // 1. From /api/employees
+    if (Array.isArray(employeesList)) {
+      for (const emp of employeesList) {
+        if (emp && emp.id && !seenIds.has(emp.id)) {
+          seenIds.add(emp.id);
+          list.push({
+            id: emp.id,
+            name: emp.name,
+            employeeNumber: emp.employeeNumber || `EMP-${emp.id}`,
+            gradeLevel: emp.gradeLevel || "Grade 10",
+            email: emp.email || null,
+            phone: emp.phone || null,
+          });
+        }
+      }
+    }
+
+    // 2. From allActiveStaff in /api/org-chart
+    if (Array.isArray(data?.allActiveStaff)) {
+      for (const emp of data.allActiveStaff) {
+        if (emp && emp.id && !seenIds.has(emp.id)) {
+          seenIds.add(emp.id);
+          list.push({
+            id: emp.id,
+            name: emp.name,
+            employeeNumber: emp.employeeNumber || `EMP-${emp.id}`,
+            gradeLevel: emp.gradeLevel || "Grade 10",
+            email: emp.email || null,
+            phone: emp.phone || null,
+          });
+        }
+      }
+    }
+
+    // 3. Fallback from department members
+    if (Array.isArray(data?.departments)) {
+      for (const d of data.departments) {
+        if (Array.isArray(d.members)) {
+          for (const m of d.members) {
+            if (m && m.id && !seenIds.has(m.id)) {
+              seenIds.add(m.id);
+              list.push({
+                id: m.id,
+                name: m.name,
+                employeeNumber: m.employeeNumber || `EMP-${m.id}`,
+                gradeLevel: m.gradeLevel || "Grade 10",
+                email: m.email || null,
+                phone: m.phone || null,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [employeesList, data?.allActiveStaff, data?.departments]);
+
+  const ceoStaffOptions = useMemo(
+    () => [
+      { value: "custom", label: "Custom / External Incumbent", searchTerms: "external custom new position" },
+      ...activeStaffList.map((emp) => ({
+        value: String(emp.id),
+        label: `${emp.name} (${emp.employeeNumber}) — ${emp.gradeLevel}`,
+        searchTerms: `${emp.name} ${emp.employeeNumber} ${emp.gradeLevel} ${emp.email || ""}`,
+      })),
+    ],
+    [activeStaffList]
+  );
 
   // Save Structure Mutation
   const saveStructureMutation = useMutation({
@@ -1219,12 +1314,12 @@ export default function OrgChartPage() {
               <div className="space-y-3 py-4 text-xs">
                 <div>
                   <label className="font-medium text-foreground block mb-1">Select from Active NISIT Staff (Optional)</label>
-                  <Select
+                  <SearchableSelect
                     value={ceoEmployeeId}
                     onValueChange={(val) => {
                       setCeoEmployeeId(val);
-                      if (val !== "custom" && employeesList) {
-                        const selectedEmp = employeesList.find((e) => String(e.id) === val);
+                      if (val !== "custom") {
+                        const selectedEmp = activeStaffList.find((e) => String(e.id) === val);
                         if (selectedEmp) {
                           setCeoName(selectedEmp.name);
                           if (selectedEmp.email) setCeoEmail(selectedEmp.email);
@@ -1232,19 +1327,11 @@ export default function OrgChartPage() {
                         }
                       }
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose an active employee or custom entry..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="custom">Custom / External Incumbent</SelectItem>
-                      {(employeesList ?? []).map((emp) => (
-                        <SelectItem key={emp.id} value={String(emp.id)}>
-                          {emp.name} ({emp.employeeNumber || `EMP-${emp.id}`}) — {emp.gradeLevel || "Grade 10"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    options={ceoStaffOptions}
+                    placeholder="Search active employee or choose custom..."
+                    searchPlaceholder="Search by name, employee #, or grade..."
+                    triggerClassName="h-9 text-xs"
+                  />
                   <p className="text-[10px] text-muted-foreground mt-1">
                     Selecting an employee pre-fills their name and contact information.
                   </p>

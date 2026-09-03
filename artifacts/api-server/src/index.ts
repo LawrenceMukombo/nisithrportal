@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -55,6 +55,11 @@ app.listen(port, (err) => {
   // Ensure contract contents columns (salary, duties, specialConditions, etc.) exist
   ensureContractColumnsExist().catch((e) =>
     logger.error(e, "ensureContractColumnsExist failed"),
+  );
+
+  // Ensure expanded leave tables (public holidays, balance adjustments, handover columns) exist
+  ensureLeaveTablesAndColumnsExist().catch((e) =>
+    logger.error(e, "ensureLeaveTablesAndColumnsExist failed"),
   );
 
   // Always run the legacy job back-fill, independent of SEED_ON_STARTUP.

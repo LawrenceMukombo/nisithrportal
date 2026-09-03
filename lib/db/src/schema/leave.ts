@@ -39,6 +39,33 @@ export const leaveRequestsTable = pgTable("leave_requests", {
   approverComment: text("approver_comment"),
   approvedAt: timestamp("approved_at"),
   attachmentUrl: text("attachment_url"),
+  handoverEmployeeId: integer("handover_employee_id").references(() => employeesTable.id),
+  leavePeriodType: text("leave_period_type").notNull().default("full_day"), // full_day, half_day_am, half_day_pm
+  emergencyContact: text("emergency_contact"),
+  medicalCertificateNumber: text("medical_certificate_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const publicHolidaysTable = pgTable("public_holidays", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  date: date("date").notNull(),
+  year: integer("year").notNull().default(2026),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  agencyId: integer("agency_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const leaveBalanceAdjustmentsTable = pgTable("leave_balance_adjustments", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").references(() => employeesTable.id).notNull(),
+  leaveTypeId: integer("leave_type_id").references(() => leaveTypesTable.id).notNull(),
+  year: integer("year").notNull().default(2026),
+  adjustmentDays: numeric("adjustment_days", { precision: 5, scale: 1 }).notNull(),
+  adjustmentType: text("adjustment_type").notNull().default("accrual"), // accrual, carry_over, correction, credit, debit
+  reason: text("reason").notNull(),
+  authorizedByUserId: integer("authorized_by_user_id").references(() => usersTable.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

@@ -1244,3 +1244,60 @@ export async function ensureContractColumnsExist(): Promise<void> {
   }
 }
 
+export async function ensureLeaveTablesAndColumnsExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS handover_employee_id INTEGER REFERENCES employees(id);
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS leave_period_type TEXT NOT NULL DEFAULT 'full_day';
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS medical_certificate_number TEXT;
+
+      CREATE TABLE IF NOT EXISTS public_holidays (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        date DATE NOT NULL,
+        year INTEGER NOT NULL DEFAULT 2026,
+        is_recurring BOOLEAN NOT NULL DEFAULT FALSE,
+        agency_id INTEGER,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS leave_balance_adjustments (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL REFERENCES employees(id),
+        leave_type_id INTEGER NOT NULL REFERENCES leave_types(id),
+        year INTEGER NOT NULL DEFAULT 2026,
+        adjustment_days NUMERIC(5, 1) NOT NULL,
+        adjustment_type TEXT NOT NULL DEFAULT 'accrual',
+        reason TEXT NOT NULL,
+        authorized_by_user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // Seed default PNG 2026 statutory public holidays if none exist
+    const holidayCountRes = await db.execute(sql`SELECT COUNT(*)::int as count FROM public_holidays WHERE year = 2026`);
+    const count = Number((holidayCountRes.rows[0] as any)?.count || 0);
+    if (count === 0) {
+      await db.execute(sql`
+        INSERT INTO public_holidays (name, date, year, is_recurring, notes) VALUES
+        ('New Year''s Day', '2026-01-01', 2026, true, 'PNG National Statutory Holiday'),
+        ('Good Friday', '2026-04-03', 2026, false, 'Christian Easter Holiday'),
+        ('Easter Saturday', '2026-04-04', 2026, false, 'Christian Easter Holiday'),
+        ('Easter Monday', '2026-04-06', 2026, false, 'Christian Easter Holiday'),
+        ('King''s Official Birthday', '2026-06-08', 2026, true, 'Commonwealth & Head of State Observance'),
+        ('National Remembrance Day', '2026-07-23', 2026, true, 'Honoring Fallen Servicemen & Peacekeepers'),
+        ('National Repentance Day', '2026-08-26', 2026, true, 'National Prayer and Thanksgiving Day'),
+        ('Independence Day', '2026-09-16', 2026, true, '51st Anniversary of PNG Independence'),
+        ('Christmas Day', '2026-12-25', 2026, true, 'Christian Holiday'),
+        ('Boxing Day', '2026-12-26', 2026, true, 'Public Holiday');
+      `);
+    }
+
+    logger.info("ensureLeaveTablesAndColumnsExist: verified leave tables and public holidays exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensureLeaveTablesAndColumnsExist failed");
+  }
+}
+

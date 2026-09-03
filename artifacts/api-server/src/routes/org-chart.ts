@@ -117,6 +117,16 @@ router.get("/org-chart", optionalAuth, async (req, res): Promise<void> => {
         headcount: deptsWithStaff.find((d) => d.name.toLowerCase().includes("admin"))?.headcount || 4,
       },
       departments: deptsWithStaff,
+      allActiveStaff: employees.map((e) => ({
+        id: e.id,
+        name: e.name,
+        employeeNumber: e.employeeNumber || `EMP-${e.id}`,
+        gradeLevel: e.gradeLevel || "Grade 10",
+        email: e.email,
+        phone: e.phone,
+        departmentId: e.departmentId,
+        positionId: e.positionId,
+      })),
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to build organizational chart" });

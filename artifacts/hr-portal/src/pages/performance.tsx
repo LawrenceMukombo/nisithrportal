@@ -41,6 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { getAuthHeader } from "@/lib/api-config";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface PerformanceCycle {
   id: number;
@@ -118,6 +119,16 @@ export default function PerformancePage() {
     query: { queryKey: getGetEmployeesQueryKey() },
   });
   const employees = Array.isArray(rawEmployees) ? rawEmployees : [];
+
+  const employeeOptions = useMemo(
+    () =>
+      employees.map((emp: any) => ({
+        value: String(emp.id),
+        label: `${emp.name} (${emp.position?.title || `Staff #${emp.id}`})`,
+        searchTerms: `${emp.name} ${emp.employeeNumber || ""} ${emp.position?.title || ""} ${emp.email || ""}`,
+      })),
+    [employees]
+  );
 
   // Fetch Cycles
   const { data: cycles = [] } = useQuery<PerformanceCycle[]>({
@@ -419,21 +430,13 @@ export default function PerformancePage() {
               <div className="space-y-3 py-3 text-xs">
                 <div>
                   <label className="font-medium text-foreground block mb-1">Staff Member *</label>
-                  <Select
+                  <SearchableSelect
                     value={selectedEmployeeId || (employees[0]?.id ? String(employees[0].id) : "")}
                     onValueChange={setSelectedEmployeeId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select employee" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-56">
-                      {employees.map((emp: any) => (
-                        <SelectItem key={emp.id} value={String(emp.id)}>
-                          {emp.name} ({emp.position?.title || `Staff #${emp.id}`})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    options={employeeOptions}
+                    placeholder="Search or select employee..."
+                    searchPlaceholder="Search employee by name, position, or ID..."
+                  />
                 </div>
 
                 <div>

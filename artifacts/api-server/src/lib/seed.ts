@@ -1392,3 +1392,69 @@ export async function ensureLeaveTablesAndColumnsExist(): Promise<void> {
   }
 }
 
+export async function ensureClockingTablesExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS clocking_devices (
+        id SERIAL PRIMARY KEY,
+        agency_id INTEGER NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        device_model TEXT DEFAULT 'Generic REST Biometric',
+        serial_number TEXT,
+        ip_address TEXT,
+        location TEXT NOT NULL DEFAULT 'NISIT HQ Port Moresby',
+        api_key TEXT UNIQUE NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        last_heartbeat_at TIMESTAMPTZ,
+        total_punches_recorded INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS clocking_raw_punches (
+        id SERIAL PRIMARY KEY,
+        device_id INTEGER REFERENCES clocking_devices(id) ON DELETE SET NULL,
+        device_identifier TEXT,
+        employee_identifier TEXT NOT NULL,
+        matched_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+        punch_time TIMESTAMPTZ NOT NULL,
+        punch_type TEXT NOT NULL DEFAULT 'auto',
+        verification_mode TEXT NOT NULL DEFAULT 'biometric',
+        location TEXT,
+        raw_payload TEXT,
+        status TEXT NOT NULL DEFAULT 'processed',
+        processed_attendance_record_id INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES clocking_devices(id) ON DELETE SET NULL;
+      ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS raw_punch_in_id INTEGER REFERENCES clocking_raw_punches(id) ON DELETE SET NULL;
+      ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS raw_punch_out_id INTEGER REFERENCES clocking_raw_punches(id) ON DELETE SET NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_clocking_raw_punches_employee_id ON clocking_raw_punches (matched_employee_id);
+      CREATE INDEX IF NOT EXISTS idx_clocking_raw_punches_punch_time ON clocking_raw_punches (punch_time);
+      CREATE INDEX IF NOT EXISTS idx_clocking_devices_api_key ON clocking_devices (api_key);
+    `);
+
+    // Seed default NISIT clocking terminals if none exist
+    const [agency] = await db.select().from(agenciesTable).limit(1);
+    if (agency) {
+      const existing = await db.execute(sql`SELECT COUNT(*)::int as count FROM clocking_devices WHERE agency_id = ${agency.id}`);
+      const count = Number((existing.rows[0] as any)?.count || 0);
+      if (count === 0) {
+        await db.execute(sql`
+          INSERT INTO clocking_devices (agency_id, name, device_model, serial_number, ip_address, location, api_key, status, notes) VALUES
+          (${agency.id}, 'NISIT HQ Main Entrance Turnstile', 'ZKTeco SpeedFace-V5L', 'ZK-HQ-001', '192.168.10.201', 'NISIT HQ Ground Floor - Main Lobby', 'clk_live_zkteco_hq_main_entrance_secret_key_2026', 'active', 'Primary biometric face & fingerprint terminal for staff entrance'),
+          (${agency.id}, 'Metrology & Standards Wing Scanner', 'Hikvision DS-K1T671MF', 'HIK-MET-002', '192.168.10.202', 'Standards & Industrial Testing Lab', 'clk_live_hikvision_metrology_wing_secret_key_2026', 'active', 'Lab access control and attendance reader');
+        `);
+      }
+    }
+
+    logger.info("ensureClockingTablesExist: verified clocking interoperability tables exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensureClockingTablesExist failed");
+  }
+}
+
+

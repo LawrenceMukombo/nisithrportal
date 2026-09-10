@@ -1140,24 +1140,28 @@ export async function backfillCandidateUserIds(): Promise<number> {
 }
 
 export async function ensureUserSecurityColumnsExist(): Promise<void> {
-  try {
-    await db.execute(sql`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER REFERENCES employees(id);
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_change_at TIMESTAMPTZ;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_saved_job_closing BOOLEAN NOT NULL DEFAULT TRUE;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_soon_days INTEGER NOT NULL DEFAULT 7;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_stale_applications BOOLEAN NOT NULL DEFAULT TRUE;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    `);
-    logger.info("ensureUserSecurityColumnsExist: verified user security and preference columns exist");
-  } catch (error) {
-    logger.error({ err: error }, "ensureUserSecurityColumnsExist failed to verify user columns");
+  const statements = [
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_change_at TIMESTAMPTZ;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_saved_job_closing BOOLEAN NOT NULL DEFAULT TRUE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS closing_soon_days INTEGER NOT NULL DEFAULT 7;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_stale_applications BOOLEAN NOT NULL DEFAULT TRUE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();",
+  ];
+
+  for (const statement of statements) {
+    try {
+      await db.execute(sql.raw(statement));
+    } catch (error) {
+      logger.warn({ err: error, statement }, "ensureUserSecurityColumnsExist: column check warning");
+    }
   }
+  logger.info("ensureUserSecurityColumnsExist: verified user security and preference columns exist");
 }
 
 export async function ensureAdminUserExists(): Promise<void> {

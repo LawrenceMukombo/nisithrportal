@@ -131,6 +131,16 @@ router.post("/auth/applicant-register", registerRateLimit, async (req, res): Pro
   });
 });
 
+function safeToIsoString(val: unknown): string | null {
+  if (!val) return null;
+  try {
+    const d = val instanceof Date ? val : new Date(val as string | number);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   try {
     const parsed = LoginBody.safeParse(req.body);
@@ -188,6 +198,12 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
       agencyId: user.agencyId,
     });
     res.status(423).json({ error: `Account temporarily locked due to consecutive failed attempts. Please try again in ${minsLeft} minute(s) or contact administrator.` });
+    return;
+  }
+
+  if (!user.passwordHash) {
+    logger.warn({ userId: user.id, email: user.email }, "User record has no password hash");
+    res.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
@@ -266,7 +282,7 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
     roleId: user.roleId ?? null,
     agencyId: user.agencyId ?? null,
     roleName,
-    tokenVersion: user.tokenVersion,
+    tokenVersion: user.tokenVersion ?? 0,
   });
 
     res.json({
@@ -277,9 +293,9 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
         email: user.email,
         roleId: user.roleId,
         agencyId: user.agencyId,
-        status: user.status,
-        lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
-        createdAt: user.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString(),
+        status: user.status ?? "active",
+        lastLoginAt: safeToIsoString(user.lastLoginAt),
+        createdAt: safeToIsoString(user.createdAt) ?? new Date().toISOString(),
       },
     });
   } catch (err: any) {

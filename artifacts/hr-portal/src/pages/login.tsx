@@ -52,11 +52,20 @@ export default function LoginPage() {
         setLocation(dest);
       },
       onError: (err: any) => {
-        const errorMsg =
-          err?.response?.data?.error ||
-          err?.message ||
-          "Invalid email or password.";
-        toast({ title: "Login failed", description: errorMsg, variant: "destructive" });
+        const status = err?.response?.status;
+        const serverError = err?.response?.data?.error;
+        let title = "Login failed";
+        let errorMsg = serverError || err?.message || "Invalid email or password.";
+
+        if (status === 503 || err?.response?.data?.code === "DATABASE_UNAVAILABLE") {
+          title = "Service Reconnecting";
+          errorMsg = "The database service is currently reconnecting. Please wait a few seconds and try again.";
+        } else if (status === 500) {
+          title = "Service Busy";
+          errorMsg = serverError || "Unable to sign in at this moment. The system is self-healing; please try again.";
+        }
+
+        toast({ title, description: errorMsg, variant: "destructive" });
       },
     },
   });

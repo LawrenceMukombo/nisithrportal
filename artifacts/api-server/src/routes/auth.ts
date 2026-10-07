@@ -151,17 +151,42 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
 
     const { email, password } = parsed.data;
     const normalizedEmail = email.toLowerCase().trim();
-    const users = await db
-      .select()
-      .from(usersTable)
-      .where(sql`LOWER(TRIM(${usersTable.email})) = ${normalizedEmail}`);
+    let users;
+    try {
+      users = await db
+        .select()
+        .from(usersTable)
+        .where(sql`LOWER(TRIM(${usersTable.email})) = ${normalizedEmail}`);
+    } catch (firstErr: any) {
+      const isConnErr =
+        firstErr?.code === "ECONNREFUSED" ||
+        firstErr?.code === "ETIMEDOUT" ||
+        firstErr?.code === "57P01" ||
+        firstErr?.message?.includes("Connection terminated") ||
+        firstErr?.message?.includes("connection");
+      if (isConnErr) {
+        logger.warn({ err: firstErr?.message }, "Transient DB error during login user fetch; retrying once in 500ms");
+        await new Promise((r) => setTimeout(r, 500));
+        users = await db
+          .select()
+          .from(usersTable)
+          .where(sql`LOWER(TRIM(${usersTable.email})) = ${normalizedEmail}`);
+      } else {
+        throw firstErr;
+      }
+    }
+
     if (users.length === 0) {
-      await writeAuditLog({
-        targetEmail: email,
-        actionType: "login_failure",
-        outcome: "rejected",
-        details: { reason: "user_not_found" },
-      });
+      try {
+        await writeAuditLog({
+          targetEmail: email,
+          actionType: "login_failure",
+          outcome: "rejected",
+          details: { reason: "user_not_found" },
+        });
+      } catch (auditErr) {
+        logger.warn({ auditErr }, "Failed to write audit log for user_not_found");
+      }
       res.status(401).json({ error: "Invalid email or password" });
       return;
     }
@@ -170,16 +195,20 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
 
   // Check account status
   if (user.status === "inactive") {
-    await writeAuditLog({
-      performedById: user.id,
-      performedByEmail: user.email,
-      targetUserId: user.id,
-      targetEmail: user.email,
-      actionType: "login_failure",
-      outcome: "rejected",
-      details: { reason: "account_deactivated" },
-      agencyId: user.agencyId,
-    });
+    try {
+      await writeAuditLog({
+        performedById: user.id,
+        performedByEmail: user.email,
+        targetUserId: user.id,
+        targetEmail: user.email,
+        actionType: "login_failure",
+        outcome: "rejected",
+        details: { reason: "account_deactivated" },
+        agencyId: user.agencyId,
+      });
+    } catch (auditErr) {
+      logger.warn({ auditErr }, "Failed to write audit log for account_deactivated");
+    }
     res.status(403).json({ error: "Your account has been deactivated. Please contact your system administrator." });
     return;
   }
@@ -187,16 +216,20 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   // Check lockout
   if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
     const minsLeft = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
-    await writeAuditLog({
-      performedById: user.id,
-      performedByEmail: user.email,
-      targetUserId: user.id,
-      targetEmail: user.email,
-      actionType: "login_failure",
-      outcome: "rejected",
-      details: { reason: "account_currently_locked", minutesRemaining: minsLeft },
-      agencyId: user.agencyId,
-    });
+    try {
+      await writeAuditLog({
+        performedById: user.id,
+        performedByEmail: user.email,
+        targetUserId: user.id,
+        targetEmail: user.email,
+        actionType: "login_failure",
+        outcome: "rejected",
+        details: { reason: "account_currently_locked", minutesRemaining: minsLeft },
+        agencyId: user.agencyId,
+      });
+    } catch (auditErr) {
+      logger.warn({ auditErr }, "Failed to write audit log for account_locked");
+    }
     res.status(423).json({ error: `Account temporarily locked due to consecutive failed attempts. Please try again in ${minsLeft} minute(s) or contact administrator.` });
     return;
   }
@@ -212,67 +245,99 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
     const newAttempts = (user.failedLoginAttempts || 0) + 1;
     if (newAttempts >= 5) {
       const lockTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
-      await db.update(usersTable).set({ failedLoginAttempts: newAttempts, lockedUntil: lockTime }).where(eq(usersTable.id, user.id));
+      try {
+        await db.update(usersTable).set({ failedLoginAttempts: newAttempts, lockedUntil: lockTime }).where(eq(usersTable.id, user.id));
+      } catch (updErr) {
+        logger.warn({ updErr }, "Failed to record lockout attempts on users table");
+      }
+      try {
+        await writeAuditLog({
+          performedById: user.id,
+          performedByEmail: user.email,
+          targetUserId: user.id,
+          targetEmail: user.email,
+          actionType: "account_locked",
+          outcome: "rejected",
+          details: { consecutiveFailures: newAttempts, lockDurationMinutes: 30 },
+          agencyId: user.agencyId,
+        });
+      } catch (auditErr) {
+        logger.warn({ auditErr }, "Failed to write audit log for account_locked");
+      }
+      res.status(423).json({ error: "Account locked for 30 minutes due to 5 consecutive failed login attempts." });
+      return;
+    }
+
+    try {
+      await db.update(usersTable).set({ failedLoginAttempts: newAttempts }).where(eq(usersTable.id, user.id));
+    } catch (updErr) {
+      logger.warn({ updErr }, "Failed to update failed login attempts");
+    }
+    try {
       await writeAuditLog({
         performedById: user.id,
         performedByEmail: user.email,
         targetUserId: user.id,
         targetEmail: user.email,
-        actionType: "account_locked",
+        actionType: "login_failure",
         outcome: "rejected",
-        details: { consecutiveFailures: newAttempts, lockDurationMinutes: 30 },
+        details: { attempts: newAttempts, remainingAttempts: 5 - newAttempts },
         agencyId: user.agencyId,
       });
-      res.status(423).json({ error: "Account locked for 30 minutes due to 5 consecutive failed login attempts." });
-      return;
+    } catch (auditErr) {
+      logger.warn({ auditErr }, "Failed to write audit log for login failure");
     }
-
-    await db.update(usersTable).set({ failedLoginAttempts: newAttempts }).where(eq(usersTable.id, user.id));
-    await writeAuditLog({
-      performedById: user.id,
-      performedByEmail: user.email,
-      targetUserId: user.id,
-      targetEmail: user.email,
-      actionType: "login_failure",
-      outcome: "rejected",
-      details: { attempts: newAttempts, remainingAttempts: 5 - newAttempts },
-      agencyId: user.agencyId,
-    });
     res.status(401).json({ error: `Invalid credentials. ${5 - newAttempts} attempt(s) remaining before account lockout.` });
     return;
   }
 
   // Reset lockout counters on success and record login
-  await db
-    .update(usersTable)
-    .set({ failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() })
-    .where(eq(usersTable.id, user.id));
+  try {
+    await db
+      .update(usersTable)
+      .set({ failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+  } catch (resetErr) {
+    logger.warn({ resetErr }, "Failed to reset login attempt counters");
+  }
 
-  await writeAuditLog({
-    performedById: user.id,
-    performedByEmail: user.email,
-    targetUserId: user.id,
-    targetEmail: user.email,
-    actionType: "login_success",
-    outcome: "success",
-    agencyId: user.agencyId,
-  });
+  try {
+    await writeAuditLog({
+      performedById: user.id,
+      performedByEmail: user.email,
+      targetUserId: user.id,
+      targetEmail: user.email,
+      actionType: "login_success",
+      outcome: "success",
+      agencyId: user.agencyId,
+    });
+  } catch (auditErr) {
+    logger.warn({ auditErr }, "Failed to write login success audit log");
+  }
 
   let roleName: string | null = null;
   if (user.roleId) {
-    const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId));
-    if (roles.length > 0) roleName = roles[0].name;
+    try {
+      const roles = await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId));
+      if (roles.length > 0) roleName = roles[0].name;
+    } catch (roleErr) {
+      logger.warn({ roleErr }, "Failed to lookup role name for user at login");
+    }
   }
 
-  // Link candidate records for applicant
+  // Link candidate records for applicant safely
   if (roleName === "applicant") {
-    const linked = await db
-      .update(candidatesTable)
-      .set({ userId: user.id })
-      .where(and(eq(candidatesTable.email, user.email), isNull(candidatesTable.userId)))
-      .returning({ id: candidatesTable.id });
-    if (linked.length > 0) {
-      logger.info({ userId: user.id, candidateIds: linked.map((c) => c.id) }, "Linked candidate records to user account at login");
+    try {
+      const linked = await db
+        .update(candidatesTable)
+        .set({ userId: user.id })
+        .where(and(eq(candidatesTable.email, user.email), isNull(candidatesTable.userId)))
+        .returning({ id: candidatesTable.id });
+      if (linked.length > 0) {
+        logger.info({ userId: user.id, candidateIds: linked.map((c) => c.id) }, "Linked candidate records to user account at login");
+      }
+    } catch (candidateErr) {
+      logger.warn({ candidateErr }, "Non-fatal: failed to link candidate records at login");
     }
   }
 
@@ -301,8 +366,25 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   } catch (err: any) {
     logger.error(err, "Login internal error occurred");
     console.error("DETAILED LOGIN ERROR:", err);
-    // Do not reveal database, provider or configuration details to a login
-    // caller. Full diagnostics remain in structured server logs.
+
+    const isDbUnavailable =
+      err?.code === "ECONNREFUSED" ||
+      err?.code === "ETIMEDOUT" ||
+      err?.code === "57P01" ||
+      err?.code === "28P01" ||
+      err?.message?.includes("Connection terminated") ||
+      err?.message?.includes("connection") ||
+      err?.message?.includes("password authentication failed") ||
+      err?.message?.includes("database");
+
+    if (isDbUnavailable) {
+      res.status(503).json({
+        error: "Database service is temporarily unavailable. The server is reconnecting — please try again in a few moments.",
+        code: "DATABASE_UNAVAILABLE",
+      });
+      return;
+    }
+
     res.status(500).json({ error: "Unable to sign in at this time. Please try again later." });
   }
 });

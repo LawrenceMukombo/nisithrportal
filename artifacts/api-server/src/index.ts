@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist, ensureUserSecurityColumnsExist, ensureAdminUserExists, ensureClockingTablesExist } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
@@ -26,6 +28,51 @@ const RESET_TOKEN_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // every 24 hours
 const SAVED_JOB_CLOSING_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 const APPROVAL_ESCALATION_INTERVAL_MS = 60 * 60 * 1000; // every hour
 
+async function runSelfHealingMigrations(): Promise<boolean> {
+  try {
+    await db.execute(sql`SELECT 1`);
+  } catch (err: any) {
+    logger.warn({ err: err?.message || err }, "Database not ready yet for startup self-healing routines; will retry");
+    return false;
+  }
+
+  try {
+    if (process.env["SEED_ON_STARTUP"] !== "false") {
+      await seedInitialData().catch((e) => logger.error(e, "Seed error"));
+    }
+
+    // Ensure WhatsApp-style messaging tables exist
+    await ensureChatTablesExist().catch((e) => logger.error(e, "ensureChatTablesExist failed"));
+
+    // Ensure contract contents columns exist
+    await ensureContractColumnsExist().catch((e) => logger.error(e, "ensureContractColumnsExist failed"));
+
+    // Ensure expanded leave tables and columns exist
+    await ensureLeaveTablesAndColumnsExist().catch((e) => logger.error(e, "ensureLeaveTablesAndColumnsExist failed"));
+
+    // Ensure user security and lockout columns exist
+    await ensureUserSecurityColumnsExist().catch((e) => logger.error(e, "ensureUserSecurityColumnsExist failed"));
+
+    // Guarantee that default administrator and core service accounts exist, are active, and have known credentials
+    await ensureAdminUserExists().catch((e) => logger.error(e, "ensureAdminUserExists failed"));
+
+    // Ensure biometric and clocking hardware interoperability tables exist
+    await ensureClockingTablesExist().catch((e) => logger.error(e, "ensureClockingTablesExist failed"));
+
+    // Always run legacy job backfill (idempotent)
+    await backfillMissingJobFields().catch((e) => logger.error(e, "backfillMissingJobFields failed"));
+
+    // Link legacy candidate records to user accounts
+    await backfillCandidateUserIds().catch((e) => logger.error(e, "backfillCandidateUserIds failed"));
+
+    logger.info("Startup self-healing database routines and administrator verification completed successfully");
+    return true;
+  } catch (err) {
+    logger.error(err, "Self-healing database routine encountered an unexpected error");
+    return false;
+  }
+}
+
 app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -43,55 +90,23 @@ app.listen(port, (err) => {
     logger.error(e, "Startup SMTP verification failed"),
   );
 
-  if (process.env["SEED_ON_STARTUP"] !== "false") {
-    seedInitialData().catch((e) => logger.error(e, "Seed error"));
-  }
+  // Run self-healing routines immediately, and retry if database was temporarily offline during boot
+  let migrationsDone = false;
+  const executeMigrations = async () => {
+    if (migrationsDone) return;
+    migrationsDone = await runSelfHealingMigrations();
+    if (migrationsDone && migrationRetryTimer) {
+      clearInterval(migrationRetryTimer);
+    }
+  };
 
-  // Ensure WhatsApp-style messaging tables exist
-  ensureChatTablesExist().catch((e) =>
-    logger.error(e, "ensureChatTablesExist failed"),
-  );
+  executeMigrations().catch((e) => logger.error(e, "Initial migration execution failed"));
 
-  // Ensure contract contents columns (salary, duties, specialConditions, etc.) exist
-  ensureContractColumnsExist().catch((e) =>
-    logger.error(e, "ensureContractColumnsExist failed"),
-  );
-
-  // Ensure expanded leave tables (public holidays, balance adjustments, handover columns) exist
-  ensureLeaveTablesAndColumnsExist().catch((e) =>
-    logger.error(e, "ensureLeaveTablesAndColumnsExist failed"),
-  );
-
-  // Ensure user security and lockout columns exist
-  ensureUserSecurityColumnsExist().catch((e) =>
-    logger.error(e, "ensureUserSecurityColumnsExist failed"),
-  );
-
-  // Guarantee that default administrator and core service accounts exist, are active, and have known credentials
-  ensureAdminUserExists().catch((e) =>
-    logger.error(e, "ensureAdminUserExists failed"),
-  );
-
-  // Ensure biometric and clocking hardware interoperability tables exist
-  ensureClockingTablesExist().catch((e) =>
-    logger.error(e, "ensureClockingTablesExist failed"),
-  );
-
-  // Always run the legacy job back-fill, independent of SEED_ON_STARTUP.
-  // It is idempotent (only updates rows where employmentType/province IS NULL)
-  // so it is safe to run on every boot, including in production where seeding
-  // is disabled.
-  backfillMissingJobFields().catch((e) =>
-    logger.error(e, "backfillMissingJobFields failed"),
-  );
-
-  // Link legacy candidate records (created before Task #71) to their user
-  // accounts by email. Idempotent — only touches rows with NULL user_id — so
-  // it is safe to run on every boot. Reduces reliance on the slower email
-  // fallback in /applications/my for existing users.
-  backfillCandidateUserIds().catch((e) =>
-    logger.error(e, "backfillCandidateUserIds failed"),
-  );
+  const migrationRetryTimer = setInterval(() => {
+    if (!migrationsDone) {
+      executeMigrations().catch((e) => logger.error(e, "Retry migration execution failed"));
+    }
+  }, 10000);
 
   // Run an initial contract expiry check on startup, then every 6 hours.
   triggerContractExpiryNotifications().catch((e) =>

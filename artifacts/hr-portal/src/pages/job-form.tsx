@@ -579,6 +579,32 @@ export default function JobFormPage() {
     }
   }, [existingJob, form]);
 
+  useEffect(() => {
+    if (!isEdit && typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const title = searchParams.get("title");
+      const deptId = searchParams.get("departmentId");
+      const grade = searchParams.get("gradeLevel");
+      const reportsTo = searchParams.get("reportsTo");
+      const jobDesc = searchParams.get("jobDescription");
+
+      if (title || deptId || grade || reportsTo) {
+        if (title) form.setValue("title", title);
+        if (deptId && !isNaN(Number(deptId))) form.setValue("departmentId", Number(deptId));
+        if (grade) form.setValue("gradeBand", grade);
+        if (reportsTo) form.setValue("reportingLine", reportsTo);
+        form.setValue("province", form.getValues("province") || "National Capital District");
+        form.setValue("officeSite", form.getValues("officeSite") || "NISIT Headquarters, Port Moresby");
+        form.setValue("employmentType", form.getValues("employmentType") || "full_time");
+        form.setValue("workArrangement", form.getValues("workArrangement") || "on_site");
+        if (jobDesc) {
+          form.setValue("jobSummary", jobDesc);
+          form.setValue("description", jobDesc);
+        }
+      }
+    }
+  }, [isEdit, form]);
+
   const buildPayload = (values: FormValues) => ({
     title: values.title,
     description: values.description ?? "",

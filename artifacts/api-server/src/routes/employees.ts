@@ -6,6 +6,7 @@ import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { writeAuditLog } from "../lib/audit";
 import { canReadEmployee } from "../lib/employee-access";
 import { logger } from "../lib/logger";
+import { getPayGradeScale } from "../lib/payrollEngine";
 
 const router: IRouter = Router();
 
@@ -523,6 +524,25 @@ async function handleUpdateEmployee(req: any, res: any): Promise<void> {
         notes: `Updated to ${updated.gradeLevel || "Standard Grade"} in department #${updated.departmentId}`,
         changedByUserId: req.user?.userId || null,
       });
+
+      // Automatically keep salary profile grade level & tied base salary in sync
+      if (updated.gradeLevel && updated.gradeLevel !== existing.gradeLevel) {
+        try {
+          const scale = getPayGradeScale(updated.gradeLevel);
+          await db.execute(sql`
+            UPDATE employee_salary_profiles
+            SET 
+              grade_level = ${scale.grade},
+              annual_base_salary = ${scale.annualBaseSalary},
+              fortnightly_base_salary = ${scale.fortnightlyBase},
+              hourly_rate = ${scale.hourlyRate},
+              updated_at = NOW()
+            WHERE employee_id = ${id}
+          `);
+        } catch (err: any) {
+          logger.warn({ err }, "Could not auto-sync salary profile on employee grade change");
+        }
+      }
 
       await writeAuditLog({
         performedById: req.user?.userId ?? null,

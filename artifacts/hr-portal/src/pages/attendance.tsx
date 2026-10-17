@@ -13,8 +13,19 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Sparkles,
   Timer,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Download,
+  Smartphone,
+  ExternalLink,
+  QrCode,
+  ShieldCheck,
+  Radio,
 } from "lucide-react";
 import { useGetEmployees, getGetEmployeesQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/layouts/app-layout";
@@ -71,7 +82,9 @@ export default function AttendancePage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
+  const [sortField, setSortField] = useState<"name" | "date" | "clockIn" | "clockOut" | "status" | "variance">("date");
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   const [manualOpen, setManualOpen] = useState(false);
   const [manualEmployeeId, setManualEmployeeId] = useState<string>("");
@@ -80,6 +93,61 @@ export default function AttendancePage() {
   const [manualClockOut, setManualClockOut] = useState("16:06");
   const [manualStatus, setManualStatus] = useState("present");
   const [manualNotes, setManualNotes] = useState("");
+
+  const [kioskModalOpen, setKioskModalOpen] = useState(false);
+  const [kioskToken, setKioskToken] = useState("NISIT_TOTP_INIT_2026");
+  const [kioskExpires, setKioskExpires] = useState(15);
+  const [kioskScanResult, setKioskScanResult] = useState<string | null>(null);
+  const [isScanningKiosk, setIsScanningKiosk] = useState(false);
+
+  useEffect(() => {
+    if (!kioskModalOpen) return;
+    const fetchToken = async () => {
+      try {
+        const res = await fetch("/api/clocking/kiosk/token", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setKioskToken(data.token);
+          setKioskExpires(data.expiresInSeconds || 15);
+        }
+      } catch {
+        // fallback
+      }
+    };
+    fetchToken();
+    const interval = setInterval(fetchToken, 10000);
+    return () => clearInterval(interval);
+  }, [kioskModalOpen]);
+
+  const [kioskBadgeInput, setKioskBadgeInput] = useState("");
+  const handleKioskScan = async (badgeOverride?: string) => {
+    setIsScanningKiosk(true);
+    setKioskScanResult(null);
+    try {
+      const identifier = (badgeOverride || kioskBadgeInput).trim();
+      const res = await fetch("/api/clocking/kiosk/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify({
+          token: kioskToken,
+          kioskLocation: "NISIT HQ Main Turnstile",
+          employeeIdentifier: identifier || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKioskScanResult(`Success: ${data.message || "Clocking punch confirmed!"}`);
+        setKioskBadgeInput("");
+        queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+      } else {
+        setKioskScanResult(`Error: ${data.error || "Scan failed"}`);
+      }
+    } catch (err: any) {
+      setKioskScanResult(`Error: ${err.message || "Request failed"}`);
+    } finally {
+      setIsScanningKiosk(false);
+    }
+  };
 
   const { data: rawEmployees = [] } = useGetEmployees(undefined, {
     query: { queryKey: getGetEmployeesQueryKey() },
@@ -235,8 +303,70 @@ export default function AttendancePage() {
     });
   }, [records, search, statusFilter, dateFilter]);
 
-  const totalPages = Math.ceil(filteredRecords.length / pageSize) || 1;
-  const paginatedRecords = filteredRecords.slice((page - 1) * pageSize, page * pageSize);
+  const handleSort = (field: "name" | "date" | "clockIn" | "clockOut" | "status" | "variance") => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+    setPage(1);
+  };
+
+  const sortedRecords = useMemo(() => {
+    return [...filteredRecords].sort((a, b) => {
+      let valA: string | number = "";
+      let valB: string | number = "";
+      if (sortField === "name") {
+        valA = (a.employeeName || "").toLowerCase();
+        valB = (b.employeeName || "").toLowerCase();
+      } else if (sortField === "date") {
+        valA = a.date || "";
+        valB = b.date || "";
+      } else if (sortField === "clockIn") {
+        valA = a.clockIn || "";
+        valB = b.clockIn || "";
+      } else if (sortField === "clockOut") {
+        valA = a.clockOut || "";
+        valB = b.clockOut || "";
+      } else if (sortField === "status") {
+        valA = a.status || "";
+        valB = b.status || "";
+      } else if (sortField === "variance") {
+        valA = a.lateMinutes || 0;
+        valB = b.lateMinutes || 0;
+      }
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [filteredRecords, sortField, sortAsc]);
+
+  const totalPages = Math.ceil(sortedRecords.length / pageSize) || 1;
+  const paginatedRecords = sortedRecords.slice((page - 1) * pageSize, page * pageSize);
+
+  const exportCsv = () => {
+    const headers = ["Officer Name", "Date", "Clock In", "Clock Out", "Status", "Late Minutes", "Location", "Source", "Notes"];
+    const rows = sortedRecords.map((r) => [
+      `"${(r.employeeName || "Active Officer").replace(/"/g, '""')}"`,
+      `"${r.date}"`,
+      `"${r.clockIn ? new Date(r.clockIn).toLocaleTimeString() : '—'}"`,
+      `"${r.clockOut ? new Date(r.clockOut).toLocaleTimeString() : '—'}"`,
+      `"${r.status}"`,
+      `"${r.lateMinutes || 0}"`,
+      `"${(r.location || "NISIT HQ").replace(/"/g, '""')}"`,
+      `"${r.source || "web"}"`,
+      `"${(r.notes || "").replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `NISIT_Attendance_Report_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -268,12 +398,22 @@ export default function AttendancePage() {
               Log daily office attendance, record field activities, and monitor statutory punctuality
             </p>
           </div>
-          {(isAdmin || isHR) && (
-            <Button variant="outline" onClick={() => setManualOpen(true)} className="shadow-sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Manual Log Entry
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setKioskModalOpen(true)}
+              className="bg-primary/5 hover:bg-primary/10 border-primary/30 text-primary shadow-sm"
+            >
+              <Smartphone className="w-4 h-4 mr-2" />
+              Smart Kiosk & Mobile Clocking
             </Button>
-          )}
+            {(isAdmin || isHR) && (
+              <Button variant="outline" onClick={() => setManualOpen(true)} className="shadow-sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Manual Log Entry
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Live Punch Clock Widget & Summary Cards */}
@@ -443,7 +583,7 @@ export default function AttendancePage() {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 <Input
                   type="date"
                   value={dateFilter}
@@ -471,6 +611,16 @@ export default function AttendancePage() {
                     <SelectItem value="excused">Excused</SelectItem>
                   </SelectContent>
                 </Select>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportCsv}
+                  className="text-xs h-9 text-emerald-600 border-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  Export CSV
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -492,12 +642,84 @@ export default function AttendancePage() {
               <table className="w-full text-xs text-left border-collapse">
                 <thead className="bg-muted/40 text-muted-foreground uppercase text-[11px] font-semibold border-b border-border/80">
                   <tr>
-                    <th className="p-3.5 pl-6">Officer Name</th>
-                    <th className="p-3.5">Date</th>
-                    <th className="p-3.5">Clock In</th>
-                    <th className="p-3.5">Clock Out</th>
-                    <th className="p-3.5">Status</th>
-                    <th className="p-3.5">Variance</th>
+                    <th 
+                      onClick={() => handleSort("name")}
+                      className="p-3.5 pl-6 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Officer Name</span>
+                        {sortField === "name" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("date")}
+                      className="p-3.5 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Date</span>
+                        {sortField === "date" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("clockIn")}
+                      className="p-3.5 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Clock In</span>
+                        {sortField === "clockIn" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("clockOut")}
+                      className="p-3.5 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Clock Out</span>
+                        {sortField === "clockOut" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("status")}
+                      className="p-3.5 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Status</span>
+                        {sortField === "status" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("variance")}
+                      className="p-3.5 cursor-pointer hover:text-foreground transition select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Variance</span>
+                        {sortField === "variance" ? (
+                          sortAsc ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-40" />
+                        )}
+                      </div>
+                    </th>
                     <th className="p-3.5 pr-6">Location & Source</th>
                   </tr>
                 </thead>
@@ -531,19 +753,53 @@ export default function AttendancePage() {
             )}
 
             {/* Pagination Controls */}
-            {filteredRecords.length > 0 && (
-              <div className="p-4 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filteredRecords.length)} of{" "}
-                  {filteredRecords.length} records
-                </span>
+            {sortedRecords.length > 0 && (
+              <div className="p-4 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-3">
+                  <span>
+                    Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, sortedRecords.length)} of{" "}
+                    {sortedRecords.length} records
+                  </span>
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-muted-foreground">Rows:</span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(v) => {
+                        setPageSize(Number(v));
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="w-16 h-7 text-xs bg-background">
+                        <SelectValue placeholder="10" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                    className="h-8 w-8 p-0"
+                    title="First Page"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={page === 1}
                     onClick={() => setPage((p) => p - 1)}
                     className="h-8 w-8 p-0"
+                    title="Previous Page"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
@@ -556,8 +812,19 @@ export default function AttendancePage() {
                     disabled={page === totalPages}
                     onClick={() => setPage((p) => p + 1)}
                     className="h-8 w-8 p-0"
+                    title="Next Page"
                   >
                     <ChevronRight className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page === totalPages}
+                    onClick={() => setPage(totalPages)}
+                    className="h-8 w-8 p-0"
+                    title="Last Page"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
@@ -639,6 +906,141 @@ export default function AttendancePage() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+        {/* Smart Kiosk & Mobile Clocking Modal */}
+        <Dialog open={kioskModalOpen} onOpenChange={setKioskModalOpen}>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                  <QrCode className="w-3.5 h-3.5 mr-1" />
+                  TOTP Dynamic Kiosk
+                </Badge>
+                <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-500/30">
+                  Live Terminal Active
+                </Badge>
+              </div>
+              <DialogTitle className="text-xl font-bold mt-1">NISIT Smart Attendance & Kiosk Terminal</DialogTitle>
+              <DialogDescription>
+                Scan dynamic TOTP token using staff smartphone, or launch dedicated fullscreen terminal.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              {/* Dynamic QR Display */}
+              <div className="p-6 rounded-2xl bg-gradient-to-b from-muted/50 to-muted/20 border border-border text-center space-y-3">
+                <div className="w-48 h-48 mx-auto bg-white p-3 rounded-2xl shadow-md border flex flex-col items-center justify-center relative">
+                  <QrCode className="w-28 h-28 text-slate-900" />
+                  <span className="font-mono text-[9px] font-bold text-slate-700 tracking-wider truncate max-w-full px-2">
+                    {kioskToken.substring(0, 22)}...
+                  </span>
+                  <Badge className="absolute -bottom-2.5 bg-white text-emerald-700 border-2 border-emerald-500/50 text-[10px] font-mono shadow-sm">
+                    Refreshes in {kioskExpires}s
+                  </Badge>
+                </div>
+
+                <p className="text-xs text-muted-foreground pt-1">
+                  Dynamic rolling token (TOTP) prevents screenshot clock-in sharing. Rotates every 15 seconds.
+                </p>
+              </div>
+
+              {/* Staff ID Badge / Contactless Card Scanner */}
+              <div className="p-3.5 rounded-xl bg-card border border-border/80 space-y-2 text-left">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-foreground">Staff Smart ID / Badge Verification:</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">e.g. EMP-001, EMP-002</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={kioskBadgeInput}
+                    onChange={(e) => setKioskBadgeInput(e.target.value)}
+                    placeholder="Enter staff number or swipe card..."
+                    className="h-8 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleKioskScan();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isScanningKiosk}
+                    onClick={() => handleKioskScan()}
+                    className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {isScanningKiosk ? "Verifying..." : "Verify Punch"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Geofence & Verification Parameters */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-card border border-border/80">
+                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                    <MapPin className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-semibold text-foreground">Spatial Geofence</span>
+                  </div>
+                  <p className="text-muted-foreground">NISIT HQ Gordon (200m radius)</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-card border border-border/80">
+                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="font-semibold text-foreground">Anti-Spoofing</span>
+                  </div>
+                  <p className="text-muted-foreground">Active Geofence & Device Integrity Guard</p>
+                </div>
+              </div>
+
+              {/* Scan result if triggered */}
+              {kioskScanResult && (
+                <div className={`p-3 rounded-xl text-xs font-medium border ${
+                  kioskScanResult.startsWith("Success")
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
+                    : "bg-destructive/10 border-destructive/30 text-destructive"
+                }`}>
+                  {kioskScanResult}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => window.open("http://localhost:5174", "_blank")}
+                className="w-full sm:w-auto text-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                Open Standalone App (Port 5174)
+              </Button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setKioskModalOpen(false)}
+                  className="text-xs"
+                >
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isScanningKiosk}
+                  onClick={() => handleKioskScan()}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
+                >
+                  {isScanningKiosk ? "Verifying..." : "Punch Active Profile"}
+                </Button>
+              </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

@@ -31,6 +31,14 @@ import {
   GitFork,
   UserCog,
   Edit3,
+  ListOrdered,
+  RotateCcw,
+  Trash2,
+  SlidersHorizontal,
+  Download,
+  CornerDownRight,
+  GitCommit,
+  Split,
 } from "lucide-react";
 import { AppLayout } from "@/layouts/app-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -59,7 +68,7 @@ import { useRole } from "@/contexts/use-auth";
 import { getToken, getAuthHeader } from "@/lib/api-config";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
-interface IncumbentEmployee {
+export interface IncumbentEmployee {
   id: number;
   employeeNumber: string;
   name: string;
@@ -71,11 +80,18 @@ interface IncumbentEmployee {
   startDate: string | null;
 }
 
-interface OrgChartPosition {
+export interface OrgChartPosition {
   id: number;
   title: string;
   code: string;
+  positionCode?: string;
+  departmentId?: number;
   gradeLevel: string;
+  parentPositionId?: number | null;
+  parentPositionCode?: string | null;
+  parentPositionTitle?: string | null;
+  reportsToTitle?: string | null;
+  jobDescription?: string | null;
   filledCount: number;
   totalCount: number;
   vacantCount: number;
@@ -83,7 +99,7 @@ interface OrgChartPosition {
   incumbents: IncumbentEmployee[];
 }
 
-interface OrgChartDepartment {
+export interface OrgChartDepartment {
   id: number;
   name: string;
   code: string;
@@ -103,7 +119,7 @@ interface OrgChartDepartment {
   positions: OrgChartPosition[];
 }
 
-interface OrgChartData {
+export interface OrgChartData {
   agency: {
     id: number;
     name: string;
@@ -133,6 +149,389 @@ interface OrgChartData {
     departmentId?: number | null;
     positionId?: number | null;
   }>;
+}
+
+export function getHierarchyTier(grade: string, title: string) {
+  const g = grade ? grade.trim() : "";
+  const t = title ? title.toLowerCase() : "";
+  if (g === "Grade 20" || t.includes("director general")) {
+    return {
+      level: 1,
+      label: "Apex / Chief Executive",
+      badgeClass: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/40 dark:text-purple-300",
+    };
+  }
+  if (g === "Grade 18" || t.startsWith("executive manager") || t.includes("director -")) {
+    return {
+      level: 2,
+      label: "Division Head / Director",
+      badgeClass: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/40 dark:text-blue-300",
+    };
+  }
+  if (g === "Grade 16" || t.startsWith("manager")) {
+    return {
+      level: 3,
+      label: "Branch Manager",
+      badgeClass: "bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/40 dark:text-indigo-300",
+    };
+  }
+  if (
+    g === "Grade 14" ||
+    g === "Grade 15" ||
+    t.startsWith("senior") ||
+    t.includes("executive officer") ||
+    t.includes("legal officer") ||
+    t.includes("internal auditor")
+  ) {
+    return {
+      level: 4,
+      label: "Senior Specialist / Auditor",
+      badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300",
+    };
+  }
+  if (g === "Grade 12" || g === "Grade 13") {
+    return {
+      level: 5,
+      label: "Technical Officer",
+      badgeClass: "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950/40 dark:text-teal-300",
+    };
+  }
+  return {
+    level: 6,
+    label: "Support & Operations",
+    badgeClass: "bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-900 dark:text-slate-300",
+  };
+}
+
+export interface FlatPositionRow {
+  id: number;
+  title: string;
+  code: string;
+  positionCode: string;
+  departmentId: number;
+  departmentName: string;
+  departmentCode: string;
+  gradeLevel: string;
+  parentPositionId: number | null;
+  parentPositionCode: string | null;
+  parentPositionTitle: string | null;
+  reportsToTitle: string;
+  tierLevel: number;
+  tierLabel: string;
+  tierBadgeClass: string;
+  totalCount: number;
+  filledCount: number;
+  vacantCount: number;
+  occupancyRate: number;
+  status: "filled" | "partially_filled" | "vacant";
+  incumbents: IncumbentEmployee[];
+  jobDescription?: string | null;
+}
+
+export interface PositionTreeNode {
+  position: OrgChartPosition;
+  children: PositionTreeNode[];
+  depth: number;
+}
+
+export function buildDivisionHierarchyTree(positions: OrgChartPosition[]): {
+  roots: PositionTreeNode[];
+} {
+  const nodeMap = new Map<number, PositionTreeNode>();
+  positions.forEach((pos) => {
+    nodeMap.set(pos.id, { position: pos, children: [], depth: 0 });
+  });
+
+  const roots: PositionTreeNode[] = [];
+  const localIds = new Set(positions.map((p) => p.id));
+
+  positions.forEach((pos) => {
+    const node = nodeMap.get(pos.id)!;
+    const parentId = pos.parentPositionId;
+
+    if (!parentId || !localIds.has(parentId)) {
+      roots.push(node);
+    } else {
+      const parentNode = nodeMap.get(parentId);
+      if (parentNode) {
+        parentNode.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+  });
+
+  function setDepths(nodes: PositionTreeNode[], currentDepth: number, visited = new Set<number>()) {
+    nodes.forEach((n) => {
+      if (visited.has(n.position.id)) return;
+      visited.add(n.position.id);
+      n.depth = currentDepth;
+      n.children.sort((a, b) => {
+        const tierA = getHierarchyTier(a.position.gradeLevel, a.position.title).level;
+        const tierB = getHierarchyTier(b.position.gradeLevel, b.position.title).level;
+        if (tierA !== tierB) return tierA - tierB;
+        return a.position.title.localeCompare(b.position.title);
+      });
+      setDepths(n.children, currentDepth + 1, visited);
+    });
+  }
+
+  roots.sort((a, b) => {
+    const tierA = getHierarchyTier(a.position.gradeLevel, a.position.title).level;
+    const tierB = getHierarchyTier(b.position.gradeLevel, b.position.title).level;
+    if (tierA !== tierB) return tierA - tierB;
+    return a.position.title.localeCompare(b.position.title);
+  });
+
+  setDepths(roots, 0);
+
+  return { roots };
+}
+
+interface PositionTreeBranchProps {
+  node: PositionTreeNode;
+  deptId: number;
+  deptCode: string;
+  isAdmin: boolean;
+  isHR: boolean;
+  onEditPosition: (pos: OrgChartPosition, deptId: number) => void;
+  onAddSubordinate: (parentPosId: number) => void;
+}
+
+function PositionTreeBranch({
+  node,
+  deptId,
+  deptCode,
+  isAdmin,
+  isHR,
+  onEditPosition,
+  onAddSubordinate,
+}: PositionTreeBranchProps) {
+  const { position, children, depth } = node;
+  const tier = getHierarchyTier(position.gradeLevel, position.title);
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  const hasChildren = children.length > 0;
+  const isDirectSupport =
+    position.title.toLowerCase().includes("executive assistant") ||
+    position.title.toLowerCase().includes("driver") ||
+    position.title.toLowerCase().includes("janitor");
+
+  return (
+    <div className="relative group/branch">
+      {/* Position Node Card */}
+      <div
+        className={`p-3 rounded-xl border transition-all ${
+          tier.level === 1
+            ? "bg-purple-50/60 border-purple-300 dark:bg-purple-950/20 dark:border-purple-800 shadow-xs"
+            : tier.level === 2
+            ? "bg-blue-50/60 border-blue-300 dark:bg-blue-950/20 dark:border-blue-800 shadow-xs"
+            : tier.level === 3
+            ? "bg-indigo-50/40 border-indigo-300/80 dark:bg-indigo-950/20 dark:border-indigo-800 shadow-2xs"
+            : position.isVacant && position.filledCount === 0
+            ? "bg-amber-50/40 border-amber-300 dark:bg-amber-950/20 dark:border-amber-800"
+            : "bg-card border-border/80 hover:border-primary/40 shadow-2xs"
+        }`}
+      >
+        {/* Hierarchy Level & Reports To Link */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 pb-2 mb-2 border-b border-border/40">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="outline" className={`text-[9px] font-semibold py-0 px-1.5 border ${tier.badgeClass}`}>
+              Tier {tier.level}: {tier.label}
+            </Badge>
+
+            {isDirectSupport && (
+              <Badge variant="secondary" className="text-[9px] py-0 px-1 bg-muted/80 text-muted-foreground font-medium">
+                Direct Support
+              </Badge>
+            )}
+
+            {position.reportsToTitle && depth > 0 && (
+              <div
+                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md font-medium border border-border/50"
+                title={`Reports to: ${position.reportsToTitle}`}
+              >
+                <CornerDownRight className="w-3 h-3 text-primary shrink-0" />
+                <span className="truncate max-w-48">
+                  {position.parentPositionCode ? `[${position.parentPositionCode}] ` : ""}
+                  {position.reportsToTitle}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Badge
+              variant="outline"
+              className={`text-[10px] ${
+                position.vacantCount > 0
+                  ? "border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 font-semibold"
+                  : "border-emerald-400 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30"
+              }`}
+            >
+              {position.filledCount}/{position.totalCount} {position.vacantCount > 0 ? "Vacant" : "Filled"}
+            </Badge>
+
+            {(isAdmin || isHR) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditPosition(position, deptId);
+                }}
+                title="Configure position reporting line & ceiling"
+              >
+                <Edit3 className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Position Title & Code */}
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-bold text-xs text-foreground leading-tight">{position.title}</p>
+            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground font-mono">
+              <span className="font-semibold text-primary">{position.code}</span>
+              <span>•</span>
+              <Badge variant="secondary" className="text-[10px] py-0 px-1 font-semibold">
+                {position.gradeLevel}
+              </Badge>
+            </div>
+          </div>
+
+          {/* Subordinate count badge & branch toggle */}
+          {hasChildren && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-1.5 text-[10px] font-mono gap-1 shrink-0 bg-background/90"
+              onClick={() => setIsExpanded(!isExpanded)}
+              title={isExpanded ? "Collapse reporting line" : "Expand reporting line"}
+            >
+              <Split className="w-3 h-3 text-primary rotate-180" />
+              <span>{children.length} {children.length === 1 ? "report" : "reports"}</span>
+              {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </Button>
+          )}
+        </div>
+
+        {/* Assigned Incumbents List */}
+        <div className="pt-2 space-y-1.5">
+          {position.incumbents.map((incumbent) => (
+            <Link key={incumbent.id} href={`/employees/${incumbent.id}`}>
+              <div className="flex items-center justify-between p-1.5 rounded-lg bg-muted/40 hover:bg-primary/5 hover:border-primary/30 border border-transparent transition-colors cursor-pointer group">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                    {incumbent.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-xs text-foreground group-hover:text-primary transition-colors">
+                      {incumbent.name}
+                    </p>
+                    <p className="text-[10px] font-mono text-muted-foreground">
+                      {incumbent.employeeNumber}
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[9px] py-0 px-1 text-emerald-600 border-emerald-300">
+                  Active
+                </Badge>
+              </div>
+            </Link>
+          ))}
+
+          {/* Vacant Card Slot */}
+          {position.vacantCount > 0 && (
+            <div className="p-2 rounded-lg border border-dashed border-amber-400 bg-amber-50/60 dark:bg-amber-950/30 text-xs flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <UserX className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-bold text-[10px] text-amber-800 dark:text-amber-300">
+                    VACANT ({position.vacantCount} Slot{position.vacantCount > 1 ? "s" : ""})
+                  </p>
+                  <p className="text-[9px] text-muted-foreground">Approved 2024 establishment quota</p>
+                </div>
+              </div>
+
+              {(isAdmin || isHR) && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Link
+                    href={`/jobs/new?positionId=${position.id}&departmentId=${deptId}&title=${encodeURIComponent(
+                      position.title
+                    )}&gradeLevel=${encodeURIComponent(position.gradeLevel)}&reportsTo=${encodeURIComponent(
+                      position.reportsToTitle || ""
+                    )}`}
+                  >
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] px-2 border-amber-500 text-amber-700 hover:bg-amber-100 dark:text-amber-300 shrink-0 font-medium"
+                      title="Post a job vacancy requisition to recruit for this position"
+                    >
+                      <Briefcase className="w-3 h-3 mr-1" />
+                      Recruit
+                    </Button>
+                  </Link>
+
+                  <Link href={`/employees/new?departmentId=${deptId}&positionId=${position.id}`}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] px-2 border-emerald-500 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 shrink-0 font-medium"
+                      title="Directly appoint or onboard an officer to this vacant establishment position"
+                    >
+                      <UserPlus className="w-3 h-3 mr-1" />
+                      Assign
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Add Subordinate under this position */}
+        {(isAdmin || isHR) && (
+          <div className="mt-2 pt-1.5 border-t border-border/30 flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[9px] text-muted-foreground hover:text-primary hover:bg-primary/5"
+              onClick={() => onAddSubordinate(position.id)}
+              title={`Add new subordinate position reporting directly to ${position.title}`}
+            >
+              <Plus className="w-2.5 h-2.5 mr-0.5" />
+              Add Subordinate
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Children Tree Branch with Visual Connector Line */}
+      {hasChildren && isExpanded && (
+        <div className="ml-3 sm:ml-5 pl-2.5 sm:pl-3 border-l-2 border-primary/30 space-y-2.5 mt-2.5 relative">
+          {children.map((childNode) => (
+            <div key={childNode.position.id} className="relative">
+              {/* Horizontal line stub connecting to branch */}
+              <div className="absolute -left-2.75 sm:-left-3.25 top-4 w-2.5 sm:w-3 h-0.5 bg-primary/30" />
+              <PositionTreeBranch
+                node={childNode}
+                deptId={deptId}
+                deptCode={deptCode}
+                isAdmin={isAdmin}
+                isHR={isHR}
+                onEditPosition={onEditPosition}
+                onAddSubordinate={onAddSubordinate}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function OrgChartPage() {
@@ -167,13 +566,35 @@ export default function OrgChartPage() {
   // Add Department Modal
   const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
+  const [newDeptCode, setNewDeptCode] = useState("");
 
   // Add Position Modal
   const [isAddPosOpen, setIsAddPosOpen] = useState(false);
   const [targetDeptForPos, setTargetDeptForPos] = useState<number | null>(null);
   const [newPosTitle, setNewPosTitle] = useState("");
+  const [newPosCode, setNewPosCode] = useState("");
   const [newPosCount, setNewPosCount] = useState("1");
-  const [newPosGrade, setNewPosGrade] = useState("Grade 10");
+  const [newPosGrade, setNewPosGrade] = useState("Grade 12");
+  const [newPosReportsTo, setNewPosReportsTo] = useState("");
+  const [newPosParentPositionId, setNewPosParentPositionId] = useState<string>("none");
+
+  // Edit Position Modal
+  const [isEditPosOpen, setIsEditPosOpen] = useState(false);
+  const [editingPosId, setEditingPosId] = useState<number | null>(null);
+  const [editPosTitle, setEditPosTitle] = useState("");
+  const [editPosCode, setEditPosCode] = useState("");
+  const [editPosDeptId, setEditPosDeptId] = useState<string>("1");
+  const [editPosGrade, setEditPosGrade] = useState("Grade 12");
+  const [editPosCount, setEditPosCount] = useState("1");
+  const [editPosReportsTo, setEditPosReportsTo] = useState("");
+  const [editPosParentPositionId, setEditPosParentPositionId] = useState<string>("none");
+  const [editPosIncumbentCount, setEditPosIncumbentCount] = useState(0);
+
+  // Positions Register Table State (Rule 24 Enterprise-Grade Table)
+  const [posTableSearch, setPosTableSearch] = useState("");
+  const [posDeptFilter, setPosDeptFilter] = useState<string>("all");
+  const [posGradeFilter, setPosGradeFilter] = useState<string>("all");
+  const [posStatusFilter, setPosStatusFilter] = useState<string>("all");
 
   const { data, isLoading } = useQuery<OrgChartData>({
     queryKey: ["/api/org-chart"],
@@ -364,6 +785,175 @@ export default function OrgChartPage() {
     },
   });
 
+  const handleOpenEditPosition = (pos: OrgChartPosition, deptId: number) => {
+    setEditingPosId(pos.id);
+    setEditPosTitle(pos.title);
+    setEditPosCode(pos.code || (pos as any).positionCode || "");
+    setEditPosDeptId(String(deptId));
+    setEditPosGrade(pos.gradeLevel || "Grade 12");
+    setEditPosCount(String(pos.totalCount || 1));
+    setEditPosParentPositionId(pos.parentPositionId ? String(pos.parentPositionId) : "none");
+    setEditPosReportsTo((pos as any).reportsToTitle || "");
+    setEditPosIncumbentCount(pos.filledCount || 0);
+    setIsEditPosOpen(true);
+  };
+
+  const handleOpenAddPosition = (deptId: number, defaultParentPosId?: number) => {
+    setTargetDeptForPos(deptId);
+    setNewPosTitle("");
+    setNewPosCode("");
+    setNewPosGrade("Grade 12");
+    setNewPosCount("1");
+    if (defaultParentPosId) {
+      setNewPosParentPositionId(String(defaultParentPosId));
+      const parent = allPositionsFlat.find((p) => p.id === defaultParentPosId);
+      setNewPosReportsTo(parent?.title || "");
+    } else {
+      const deptHead = allPositionsFlat.find(
+        (p) => p.departmentId === deptId && (p.tierLevel === 2 || p.tierLevel === 1)
+      );
+      if (deptHead) {
+        setNewPosParentPositionId(String(deptHead.id));
+        setNewPosReportsTo(deptHead.title);
+      } else {
+        setNewPosParentPositionId("none");
+        setNewPosReportsTo("NISIT Council");
+      }
+    }
+    setIsAddPosOpen(true);
+  };
+
+  const updatePositionMutation = useMutation({
+    mutationFn: async (payload: { id: number; data: any }) => {
+      const res = await fetch(`/api/org-chart/positions/${payload.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload.data),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update position");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/positions"] });
+      toast({
+        title: "Position Updated",
+        description: "Establishment position specifications and ceiling updated successfully.",
+      });
+      setIsEditPosOpen(false);
+      setEditingPosId(null);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Update Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deletePositionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/org-chart/positions/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeader(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete position");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/positions"] });
+      toast({
+        title: "Position Removed",
+        description: "Vacant establishment position has been deleted.",
+      });
+      setIsEditPosOpen(false);
+      setEditingPosId(null);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Deletion Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createPositionMutation = useMutation({
+    mutationFn: async (payload: {
+      title: string;
+      positionCode?: string;
+      departmentId: number;
+      gradeLevel: string;
+      totalCount: number;
+      reportsToTitle?: string;
+      parentPositionId?: number | null;
+    }) => {
+      const res = await fetch("/api/org-chart/positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create position");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/positions"] });
+      toast({
+        title: "Position Registered",
+        description: `Added "${newPosTitle.trim()}" (${newPosGrade}) to establishment ceiling.`,
+      });
+      setNewPosTitle("");
+      setNewPosCount("1");
+      setNewPosCode("");
+      setNewPosReportsTo("");
+      setNewPosParentPositionId("none");
+      setIsAddPosOpen(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Creation Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createDepartmentMutation = useMutation({
+    mutationFn: async (payload: { name: string; code?: string }) => {
+      const res = await fetch("/api/org-chart/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create division");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      toast({
+        title: "Division Created",
+        description: "New organizational unit established successfully.",
+      });
+      setIsAddDeptOpen(false);
+      setNewDeptName("");
+      setNewDeptCode("");
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Creation Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   useEffect(() => {
     if (data?.departments) {
       setCustomDepts(data.departments);
@@ -428,6 +1018,391 @@ export default function OrgChartPage() {
         };
       });
   }, [data, search, filterMode, selectedDeptId]);
+
+  // Flatten all positions across departments into an enterprise tabular dataset
+  const allPositionsFlat = useMemo<FlatPositionRow[]>(() => {
+    if (!data?.departments) return [];
+    const rows: FlatPositionRow[] = [];
+    for (const dept of data.departments) {
+      for (const pos of dept.positions) {
+        const totalCount = pos.totalCount || 1;
+        const filledCount = pos.filledCount || 0;
+        const vacantCount = Math.max(0, totalCount - filledCount);
+        const occupancyRate = Math.round((filledCount / totalCount) * 100);
+        const status: "filled" | "partially_filled" | "vacant" =
+          filledCount === 0
+            ? "vacant"
+            : filledCount >= totalCount
+            ? "filled"
+            : "partially_filled";
+
+        const tier = getHierarchyTier(pos.gradeLevel, pos.title);
+        rows.push({
+          id: pos.id,
+          title: pos.title,
+          code: pos.positionCode || pos.code || `POS-${pos.id}`,
+          positionCode: pos.positionCode || pos.code || `POS-${pos.id}`,
+          departmentId: dept.id,
+          departmentName: dept.name,
+          departmentCode: dept.code,
+          gradeLevel: pos.gradeLevel || "Grade 12",
+          parentPositionId: pos.parentPositionId ?? null,
+          parentPositionCode: pos.parentPositionCode ?? null,
+          parentPositionTitle: pos.parentPositionTitle ?? null,
+          reportsToTitle: pos.reportsToTitle || "Director General, NISIT",
+          tierLevel: tier.level,
+          tierLabel: tier.label,
+          tierBadgeClass: tier.badgeClass,
+          totalCount,
+          filledCount,
+          vacantCount,
+          occupancyRate,
+          status,
+          incumbents: pos.incumbents || [],
+          jobDescription: pos.jobDescription,
+        });
+      }
+    }
+    return rows;
+  }, [data?.departments]);
+
+  // Aggregate KPI stats for Positions Register
+  const positionStats = useMemo(() => {
+    const totalPositions = allPositionsFlat.length;
+    const totalCeiling = allPositionsFlat.reduce((acc, p) => acc + p.totalCount, 0);
+    const totalFilled = allPositionsFlat.reduce((acc, p) => acc + p.filledCount, 0);
+    const totalVacant = allPositionsFlat.reduce((acc, p) => acc + p.vacantCount, 0);
+    const fillRate = totalCeiling > 0 ? Math.round((totalFilled / totalCeiling) * 100) : 0;
+    return { totalPositions, totalCeiling, totalFilled, totalVacant, fillRate };
+  }, [allPositionsFlat]);
+
+  // Filter positions table rows by search, division, grade, and occupancy status
+  const filteredPositions = useMemo(() => {
+    return allPositionsFlat.filter((row) => {
+      if (posDeptFilter !== "all" && String(row.departmentId) !== posDeptFilter) {
+        return false;
+      }
+      if (posGradeFilter !== "all" && row.gradeLevel !== posGradeFilter) {
+        return false;
+      }
+      if (posStatusFilter !== "all") {
+        if (posStatusFilter === "filled" && row.status !== "filled") return false;
+        if (posStatusFilter === "partially_filled" && row.status !== "partially_filled") return false;
+        if (posStatusFilter === "vacant" && row.status !== "vacant") return false;
+        if (posStatusFilter === "has_vacancies" && row.vacantCount === 0) return false;
+      }
+      if (posTableSearch.trim()) {
+        const q = posTableSearch.toLowerCase();
+        const matchCode = row.code.toLowerCase().includes(q);
+        const matchTitle = row.title.toLowerCase().includes(q);
+        const matchDept =
+          row.departmentName.toLowerCase().includes(q) || row.departmentCode.toLowerCase().includes(q);
+        const matchGrade = row.gradeLevel.toLowerCase().includes(q);
+        const matchReports = row.reportsToTitle.toLowerCase().includes(q);
+        const matchIncumbents = row.incumbents.some(
+          (i) => i.name.toLowerCase().includes(q) || i.employeeNumber.toLowerCase().includes(q)
+        );
+        if (!matchCode && !matchTitle && !matchDept && !matchGrade && !matchReports && !matchIncumbents) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [allPositionsFlat, posDeptFilter, posGradeFilter, posStatusFilter, posTableSearch]);
+
+  // Enterprise Table Columns following Rule 24
+  const positionColumns: DataTableColumn<FlatPositionRow>[] = useMemo(
+    () => [
+      {
+        key: "code",
+        label: "Position Code",
+        sortable: true,
+        minWidth: 150,
+        sortValue: (row) => row.code,
+        exportValue: (row) => row.code,
+        render: (row) => (
+          <span className="font-mono font-bold text-xs bg-muted/70 text-primary px-2 py-0.5 rounded border border-border/60">
+            {row.code}
+          </span>
+        ),
+      },
+      {
+        key: "title",
+        label: "Position Title",
+        sortable: true,
+        minWidth: 230,
+        sortValue: (row) => row.title,
+        exportValue: (row) => row.title,
+        render: (row) => (
+          <div>
+            <p className="font-semibold text-xs text-foreground leading-tight">{row.title}</p>
+            {row.jobDescription ? (
+              <p className="text-[10px] text-muted-foreground truncate max-w-xs mt-0.5">{row.jobDescription}</p>
+            ) : (
+              <p className="text-[10px] text-muted-foreground mt-0.5">Approved 2024 Establishment Position</p>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "hierarchyTier",
+        label: "Hierarchy Level",
+        sortable: true,
+        minWidth: 175,
+        sortValue: (row) => row.tierLevel,
+        exportValue: (row) => `Tier ${row.tierLevel}: ${row.tierLabel}`,
+        render: (row) => (
+          <Badge variant="outline" className={`text-[10px] font-semibold border ${row.tierBadgeClass}`}>
+            Tier {row.tierLevel}: {row.tierLabel}
+          </Badge>
+        ),
+      },
+      {
+        key: "department",
+        label: "Division / Department",
+        sortable: true,
+        minWidth: 200,
+        sortValue: (row) => row.departmentName,
+        exportValue: (row) => `${row.departmentName} (${row.departmentCode})`,
+        render: (row) => (
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline" className="text-[10px] font-mono shrink-0">
+              {row.departmentCode}
+            </Badge>
+            <span className="text-xs text-foreground font-medium">{row.departmentName}</span>
+          </div>
+        ),
+      },
+      {
+        key: "gradeLevel",
+        label: "Substantive Grade",
+        sortable: true,
+        minWidth: 140,
+        sortValue: (row) => parseInt(row.gradeLevel.replace(/\D/g, "")) || 0,
+        exportValue: (row) => row.gradeLevel,
+        render: (row) => {
+          const gradeNum = parseInt(row.gradeLevel.replace(/\D/g, "")) || 10;
+          const colorClass =
+            gradeNum >= 20
+              ? "border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30"
+              : gradeNum >= 18
+              ? "border-purple-400 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/30"
+              : gradeNum >= 15
+              ? "border-blue-400 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30"
+              : gradeNum >= 13
+              ? "border-indigo-400 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30"
+              : "border-slate-300 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/40";
+          return (
+            <Badge variant="outline" className={`text-xs font-semibold ${colorClass}`}>
+              {row.gradeLevel}
+            </Badge>
+          );
+        },
+      },
+      {
+        key: "reportsTo",
+        label: "Reports To (Supervisor)",
+        sortable: true,
+        minWidth: 230,
+        sortValue: (row) => row.reportsToTitle,
+        exportValue: (row) =>
+          row.parentPositionCode ? `[${row.parentPositionCode}] ${row.reportsToTitle}` : row.reportsToTitle,
+        render: (row) => (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5 text-xs text-foreground font-medium">
+              <Network className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+              <span className="truncate max-w-56" title={row.reportsToTitle}>
+                {row.reportsToTitle}
+              </span>
+            </div>
+            {row.parentPositionCode && (
+              <span className="font-mono text-[10px] text-muted-foreground ml-5">
+                [{row.parentPositionCode}]
+              </span>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "ceiling",
+        label: "Ceiling (Quota)",
+        sortable: true,
+        minWidth: 110,
+        sortValue: (row) => row.totalCount,
+        exportValue: (row) => String(row.totalCount),
+        render: (row) => (
+          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted/80 text-foreground">
+            {row.totalCount}
+          </span>
+        ),
+      },
+      {
+        key: "filled",
+        label: "Filled",
+        sortable: true,
+        minWidth: 90,
+        sortValue: (row) => row.filledCount,
+        exportValue: (row) => String(row.filledCount),
+        render: (row) => (
+          <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+            {row.filledCount}
+          </span>
+        ),
+      },
+      {
+        key: "vacant",
+        label: "Vacancies",
+        sortable: true,
+        minWidth: 90,
+        sortValue: (row) => row.vacantCount,
+        exportValue: (row) => String(row.vacantCount),
+        render: (row) =>
+          row.vacantCount > 0 ? (
+            <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
+              {row.vacantCount}
+            </span>
+          ) : (
+            <span className="font-mono text-xs text-muted-foreground">0</span>
+          ),
+      },
+      {
+        key: "status",
+        label: "Occupancy Status",
+        sortable: true,
+        minWidth: 150,
+        sortValue: (row) => row.occupancyRate,
+        exportValue: (row) => `${row.status} (${row.occupancyRate}%)`,
+        render: (row) => {
+          if (row.status === "filled") {
+            return (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-emerald-400 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 flex items-center gap-1 w-fit"
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                Fully Filled (100%)
+              </Badge>
+            );
+          }
+          if (row.status === "partially_filled") {
+            return (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-blue-400 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 flex items-center gap-1 w-fit"
+              >
+                <AlertCircle className="w-3 h-3 text-blue-600" />
+                Partial ({row.occupancyRate}%)
+              </Badge>
+            );
+          }
+          return (
+            <Badge
+              variant="outline"
+              className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-1 w-fit font-semibold"
+            >
+              <UserX className="w-3 h-3 text-amber-600" />
+              Vacant (0%)
+            </Badge>
+          );
+        },
+      },
+      {
+        key: "incumbents",
+        label: "Current Incumbents",
+        sortable: false,
+        minWidth: 220,
+        exportValue: (row) =>
+          row.incumbents.map((i) => `${i.name} [${i.employeeNumber}]`).join("; ") || "Vacant",
+        render: (row) => {
+          if (!row.incumbents || row.incumbents.length === 0) {
+            return <span className="text-xs text-muted-foreground italic">No active incumbent</span>;
+          }
+          return (
+            <div className="flex flex-wrap gap-1.5 py-0.5">
+              {row.incumbents.map((incumbent) => (
+                <Link key={incumbent.id} href={`/employees/${incumbent.id}`}>
+                  <div
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 hover:bg-primary/10 hover:border-primary/40 border border-border/60 text-xs transition-colors cursor-pointer group"
+                    title={`${incumbent.name} (${incumbent.employeeNumber}) - ${incumbent.gradeLevel}`}
+                  >
+                    <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[9px]">
+                      {incumbent.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                      {incumbent.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      ({incumbent.employeeNumber})
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          );
+        },
+      },
+      {
+        key: "actions",
+        label: "Actions",
+        sortable: false,
+        resizable: false,
+        minWidth: 100,
+        render: (row) => (
+          <div className="flex items-center gap-1">
+            {(isAdmin || isHR) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                onClick={() => {
+                  const posObj: OrgChartPosition = {
+                    id: row.id,
+                    title: row.title,
+                    code: row.code,
+                    positionCode: row.positionCode,
+                    departmentId: row.departmentId,
+                    gradeLevel: row.gradeLevel,
+                    reportsToTitle: row.reportsToTitle,
+                    jobDescription: row.jobDescription,
+                    filledCount: row.filledCount,
+                    totalCount: row.totalCount,
+                    vacantCount: row.vacantCount,
+                    isVacant: row.vacantCount > 0,
+                    incumbents: row.incumbents,
+                  };
+                  handleOpenEditPosition(posObj, row.departmentId);
+                }}
+                title="Edit position specifications & ceiling"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+
+            {(isAdmin || isHR) && row.filledCount === 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Are you sure you want to delete "${row.title}" (${row.code}) from the establishment register?`
+                    )
+                  ) {
+                    deletePositionMutation.mutate(row.id);
+                  }
+                }}
+                title="Delete vacant establishment position"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [isAdmin, isHR, deletePositionMutation]
+  );
 
   // Drag and Drop Handlers
   const handleDragStart = (type: "position" | "member", sourceDeptId: number, item: any) => {
@@ -504,66 +1479,24 @@ export default function OrgChartPage() {
   const handleAddDepartment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDeptName.trim()) return;
-
-    const newId = Date.now();
-    const newDept: OrgChartDepartment = {
-      id: newId,
+    createDepartmentMutation.mutate({
       name: newDeptName.trim(),
-      code: `DIV-${newDeptName.trim().slice(0, 3).toUpperCase()}`,
-      headcount: 0,
-      positionsCount: 0,
-      lead: null,
-      members: [],
-      positions: [],
-    };
-
-    setCustomDepts((prev) => [...prev, newDept]);
-    toast({
-      title: "Division Created",
-      description: `Registered new organizational unit "${newDeptName.trim()}".`,
+      code: newDeptCode.trim() || undefined,
     });
-    setNewDeptName("");
-    setIsAddDeptOpen(false);
   };
 
   const handleAddPosition = (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetDeptForPos || !newPosTitle.trim()) return;
-
-    const totalCount = parseInt(newPosCount, 10) || 1;
-    const newPos: OrgChartPosition = {
-      id: Date.now(),
+    createPositionMutation.mutate({
       title: newPosTitle.trim(),
-      code: `POS-${String(Date.now()).slice(-4)}`,
+      positionCode: newPosCode.trim() || undefined,
+      departmentId: targetDeptForPos,
       gradeLevel: newPosGrade,
-      filledCount: 0,
-      totalCount,
-      vacantCount: totalCount,
-      isVacant: true,
-      incumbents: [],
-    };
-
-    setCustomDepts((prev) =>
-      prev.map((d) => {
-        if (d.id === targetDeptForPos) {
-          const positions = [...d.positions, newPos];
-          return {
-            ...d,
-            positions,
-            positionsCount: positions.length,
-          };
-        }
-        return d;
-      })
-    );
-
-    toast({
-      title: "Position Registered",
-      description: `Added "${newPosTitle.trim()}" (${newPosGrade}) to establishment ceiling.`,
+      totalCount: parseInt(newPosCount, 10) || 1,
+      parentPositionId: newPosParentPositionId !== "none" ? Number(newPosParentPositionId) : null,
+      reportsToTitle: newPosReportsTo.trim() || undefined,
     });
-    setNewPosTitle("");
-    setNewPosCount("1");
-    setIsAddPosOpen(false);
   };
 
   const handleSaveStructure = () => {
@@ -597,9 +1530,34 @@ export default function OrgChartPage() {
               Statutory hierarchy of the National Institute of Standards & Industrial Technology (NISIT) showing filled incumbents and establishment vacancies
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" />
+          <div className="flex flex-wrap items-center gap-2">
+            {(isAdmin || isHR) && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddDeptOpen(true)}
+                  className="text-xs"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add Division
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    setTargetDeptForPos(data?.departments?.[0]?.id || 1);
+                    setIsAddPosOpen(true);
+                  }}
+                  className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add Position
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={() => window.print()} className="text-xs">
+              <Printer className="w-4 h-4 mr-1.5" />
               Print Chart
             </Button>
           </div>
@@ -667,17 +1625,33 @@ export default function OrgChartPage() {
         {/* Main Tabs: Visual Tree Diagram vs Grid Roster vs Drag & Drop Builder */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-3">
-            <TabsList className="grid w-full sm:w-auto grid-cols-3">
+            <TabsList className="grid w-full sm:w-auto grid-cols-2 md:grid-cols-4">
               <TabsTrigger value="diagram" className="flex items-center gap-2">
                 <GitFork className="h-4 w-4" /> Org Chart Diagram
               </TabsTrigger>
               <TabsTrigger value="roster" className="flex items-center gap-2">
                 <LayoutGrid className="h-4 w-4" /> Department Rosters
               </TabsTrigger>
+              <TabsTrigger value="positions" className="flex items-center gap-2">
+                <ListOrdered className="h-4 w-4" /> All Positions Register
+              </TabsTrigger>
               <TabsTrigger value="builder" className="flex items-center gap-2">
-                <Move className="h-4 w-4" /> Structure Builder (Drag & Drop)
+                <Move className="h-4 w-4" /> Structure Builder
               </TabsTrigger>
             </TabsList>
+
+            {activeTab === "positions" && (isAdmin || isHR) && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setTargetDeptForPos(data?.departments?.[0]?.id || 1);
+                  setIsAddPosOpen(true);
+                }}
+                className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Position
+              </Button>
+            )}
 
             {activeTab === "builder" && (isAdmin || isHR) && (
               <div className="flex items-center gap-2">
@@ -865,14 +1839,31 @@ export default function OrgChartPage() {
                                     <span className="text-[10px] font-mono text-muted-foreground uppercase">{dept.code}</span>
                                   </div>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0 text-muted-foreground"
-                                  onClick={(event) => { event.stopPropagation(); toggleDeptCollapse(dept.id); }}
-                                >
-                                  {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  {(isAdmin || isHR) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-1.5 text-[10px] text-primary hover:bg-primary/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenAddPosition(dept.id);
+                                      }}
+                                      title="Add new position to this division"
+                                    >
+                                      <Plus className="h-3 w-3 mr-0.5" />
+                                      Position
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-muted-foreground"
+                                    onClick={(event) => { event.stopPropagation(); toggleDeptCollapse(dept.id); }}
+                                  >
+                                    {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                  </Button>
+                                </div>
                               </div>
 
                               {/* Department Capacity Stats */}
@@ -887,106 +1878,28 @@ export default function OrgChartPage() {
                               </div>
                             </CardHeader>
 
-                            {/* Position Nodes & Incumbents */}
+                            {/* Position Nodes & Authentic Hierarchical Tree Branches */}
                             {!isCollapsed && (
-                              <CardContent className="p-3.5 space-y-3 flex-1">
+                              <CardContent className="p-3.5 space-y-3.5 flex-1">
                                 {dept.positions.length === 0 ? (
                                   <div className="p-4 text-center text-xs text-muted-foreground italic bg-muted/20 rounded-lg">
                                     No positions matching current filter.
                                   </div>
                                 ) : (
-                                  dept.positions.map((pos) => (
-                                    <div
-                                      key={pos.id}
-                                      className={`p-3 rounded-xl border transition-all ${
-                                        pos.isVacant && pos.filledCount === 0
-                                          ? "bg-amber-50/40 border-amber-300 dark:bg-amber-950/20 dark:border-amber-800"
-                                          : "bg-card border-border/80 hover:border-primary/40 shadow-2xs"
-                                      }`}
-                                    >
-                                      {/* Position Title & Capacity */}
-                                      <div className="flex items-start justify-between gap-2 pb-2 border-b border-border/40">
-                                        <div>
-                                          <p className="font-bold text-xs text-foreground leading-tight">{pos.title}</p>
-                                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground font-mono">
-                                            <span>{pos.code}</span>
-                                            <span>•</span>
-                                            <Badge variant="secondary" className="text-[10px] py-0 px-1 font-normal">
-                                              {pos.gradeLevel}
-                                            </Badge>
-                                          </div>
-                                        </div>
-
-                                        <Badge
-                                          variant="outline"
-                                          className={`text-[10px] shrink-0 ${
-                                            pos.vacantCount > 0
-                                              ? "border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 font-semibold"
-                                              : "border-emerald-400 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30"
-                                          }`}
-                                        >
-                                          {pos.filledCount}/{pos.totalCount} {pos.vacantCount > 0 ? "Vacancies" : "Filled"}
-                                        </Badge>
-                                      </div>
-
-                                      {/* List Assigned Officers / Incumbents */}
-                                      <div className="pt-2 space-y-2">
-                                        {pos.incumbents.map((incumbent) => (
-                                          <Link key={incumbent.id} href={`/employees/${incumbent.id}`}>
-                                            <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 hover:bg-primary/5 hover:border-primary/30 border border-transparent transition-colors cursor-pointer group">
-                                              <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
-                                                  {incumbent.name.slice(0, 2).toUpperCase()}
-                                                </div>
-                                                <div>
-                                                  <p className="font-semibold text-xs text-foreground group-hover:text-primary transition-colors">
-                                                    {incumbent.name}
-                                                  </p>
-                                                  <p className="text-[10px] font-mono text-muted-foreground">
-                                                    {incumbent.employeeNumber}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                              <Badge variant="outline" className="text-[9px] py-0 px-1 text-emerald-600 border-emerald-300">
-                                                Active
-                                              </Badge>
-                                            </div>
-                                          </Link>
-                                        ))}
-
-                                        {/* Vacancy Card Slot */}
-                                        {pos.vacantCount > 0 && (
-                                          <div className="p-2.5 rounded-lg border border-dashed border-amber-400 bg-amber-50/60 dark:bg-amber-950/30 text-xs flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2">
-                                              <UserX className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                                              <div>
-                                                <p className="font-bold text-[11px] text-amber-800 dark:text-amber-300">
-                                                  VACANT ({pos.vacantCount} Open Slot{pos.vacantCount > 1 ? "s" : ""})
-                                                </p>
-                                                <p className="text-[10px] text-muted-foreground">Establishment ceiling approved</p>
-                                              </div>
-                                            </div>
-
-                                            {(isAdmin || isHR) && (
-                                              <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-6 text-[10px] px-2 border-amber-500 text-amber-700 hover:bg-amber-100 dark:text-amber-300 shrink-0"
-                                                onClick={() => {
-                                                  const qs = new URLSearchParams();
-                                                  qs.set("departmentId", String(dept.id));
-                                                  qs.set("positionId", String(pos.id));
-                                                  setLocation(`/employees/new?${qs.toString()}`);
-                                                }}
-                                              >
-                                                <UserPlus className="w-3 h-3 mr-1" /> Assign Officer
-                                              </Button>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))
+                                  <div className="space-y-3.5">
+                                    {buildDivisionHierarchyTree(dept.positions).roots.map((rootNode) => (
+                                      <PositionTreeBranch
+                                        key={rootNode.position.id}
+                                        node={rootNode}
+                                        deptId={dept.id}
+                                        deptCode={dept.code}
+                                        isAdmin={isAdmin}
+                                        isHR={isHR}
+                                        onEditPosition={handleOpenEditPosition}
+                                        onAddSubordinate={(parentPosId) => handleOpenAddPosition(dept.id, parentPosId)}
+                                      />
+                                    ))}
+                                  </div>
                                 )}
                               </CardContent>
                             )}
@@ -1141,9 +2054,25 @@ export default function OrgChartPage() {
                                   <GripVertical className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                                   <span className="font-medium text-foreground">{pos.title}</span>
                                 </div>
-                                <Badge variant="outline" className="text-[10px] py-0 px-1.5">
-                                  Cap: {pos.totalCount}
-                                </Badge>
+                                <div className="flex items-center gap-1">
+                                  <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                    Cap: {pos.totalCount}
+                                  </Badge>
+                                  {(isAdmin || isHR) && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-5 w-5 p-0 text-muted-foreground hover:text-primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditPosition(pos, dept.id);
+                                      }}
+                                      title="Edit position specifications"
+                                    >
+                                      <Edit3 className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1189,6 +2118,174 @@ export default function OrgChartPage() {
               })}
             </div>
           </TabsContent>
+
+          {/* TAB 4: ALL POSITIONS REGISTER (RULE 24 ENTERPRISE TABLE) */}
+          <TabsContent value="positions" className="space-y-4 mt-0">
+            {/* Positions KPI Summary Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <Card className="p-3 border-l-4 border-l-primary bg-card shadow-2xs">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Approved Positions</p>
+                <p className="text-xl font-bold mt-0.5">{positionStats.totalPositions}</p>
+                <p className="text-[10px] text-muted-foreground">Unique establishment titles</p>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-blue-500 bg-card shadow-2xs">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Ceiling Quota</p>
+                <p className="text-xl font-bold mt-0.5 text-blue-600 dark:text-blue-400">{positionStats.totalCeiling}</p>
+                <p className="text-[10px] text-muted-foreground">Authorized headcount cap</p>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-emerald-500 bg-card shadow-2xs">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Filled Headcount</p>
+                <p className="text-xl font-bold mt-0.5 text-emerald-600 dark:text-emerald-400">{positionStats.totalFilled}</p>
+                <p className="text-[10px] text-muted-foreground">Substantive incumbents</p>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-amber-500 bg-card shadow-2xs">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Open Vacancies</p>
+                <p className="text-xl font-bold mt-0.5 text-amber-600 dark:text-amber-400">{positionStats.totalVacant}</p>
+                <p className="text-[10px] text-muted-foreground">Unfilled establishment slots</p>
+              </Card>
+              <Card className="p-3 border-l-4 border-l-indigo-500 bg-card shadow-2xs">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Establishment Fill Rate</p>
+                <p className="text-xl font-bold mt-0.5 text-indigo-600 dark:text-indigo-400">{positionStats.fillRate}%</p>
+                <p className="text-[10px] text-muted-foreground">Capacity utilization</p>
+              </Card>
+            </div>
+
+            {/* Filter & Action Controls Card */}
+            <Card className="p-4 shadow-2xs">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                {/* Global Filter Search */}
+                <div className="flex-1 max-w-md relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by code, title, division, grade, supervisor, or incumbent..."
+                    value={posTableSearch}
+                    onChange={(e) => setPosTableSearch(e.target.value)}
+                    className="pl-9 h-9 text-xs bg-card"
+                  />
+                </div>
+
+                {/* Select Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Division Filter */}
+                  <Select value={posDeptFilter} onValueChange={setPosDeptFilter}>
+                    <SelectTrigger className="h-9 text-xs w-45">
+                      <SelectValue placeholder="All Divisions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Divisions</SelectItem>
+                      {data?.departments?.map((dept) => (
+                        <SelectItem key={dept.id} value={String(dept.id)}>
+                          {dept.code} - {dept.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* Grade Filter */}
+                  <Select value={posGradeFilter} onValueChange={setPosGradeFilter}>
+                    <SelectTrigger className="h-9 text-xs w-32.5">
+                      <SelectValue placeholder="All Grades" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Grades</SelectItem>
+                      <SelectItem value="Grade 20">Grade 20 (CEO)</SelectItem>
+                      <SelectItem value="Grade 18">Grade 18 (Director)</SelectItem>
+                      <SelectItem value="Grade 16">Grade 16 (Manager)</SelectItem>
+                      <SelectItem value="Grade 15">Grade 15 (Sr Officer)</SelectItem>
+                      <SelectItem value="Grade 14">Grade 14 (Specialist)</SelectItem>
+                      <SelectItem value="Grade 13">Grade 13 (Coordinator)</SelectItem>
+                      <SelectItem value="Grade 12">Grade 12 (Officer)</SelectItem>
+                      <SelectItem value="Grade 11">Grade 11 (Assistant)</SelectItem>
+                      <SelectItem value="Grade 10">Grade 10 (Support)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Occupancy Status Filter */}
+                  <Select value={posStatusFilter} onValueChange={setPosStatusFilter}>
+                    <SelectTrigger className="h-9 text-xs w-37.5">
+                      <SelectValue placeholder="All Occupancies" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="filled">Fully Filled (100%)</SelectItem>
+                      <SelectItem value="partially_filled">Partially Filled</SelectItem>
+                      <SelectItem value="has_vacancies">Has Open Vacancies</SelectItem>
+                      <SelectItem value="vacant">Fully Vacant (0%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Reset Filters Button */}
+                  {(posTableSearch || posDeptFilter !== "all" || posGradeFilter !== "all" || posStatusFilter !== "all") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setPosTableSearch("");
+                        setPosDeptFilter("all");
+                        setPosGradeFilter("all");
+                        setPosStatusFilter("all");
+                      }}
+                      className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      title="Reset all table filters"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      Reset
+                    </Button>
+                  )}
+
+                  {/* Add Position Action */}
+                  {(isAdmin || isHR) && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTargetDeptForPos(data?.departments?.[0]?.id || 1);
+                        setIsAddPosOpen(true);
+                      }}
+                      className="h-9 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      Add Position
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Enterprise Grade Positions Table */}
+            <DataTable<FlatPositionRow>
+              columns={positionColumns}
+              rows={filteredPositions}
+              getRowId={(row) => row.id}
+              isLoading={isLoading}
+              tableId="org-chart-positions-register"
+              exportFilename="nisit_establishment_positions_register"
+              data-testid="table-org-chart-positions"
+              emptyState={
+                <div className="py-8 text-center space-y-2">
+                  <Briefcase className="h-10 w-10 mx-auto text-muted-foreground/40" />
+                  <p className="font-semibold text-sm text-foreground">No establishment positions found</p>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    No positions match your current search query or filter selection.
+                  </p>
+                  {(posTableSearch || posDeptFilter !== "all" || posGradeFilter !== "all" || posStatusFilter !== "all") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs mt-2"
+                      onClick={() => {
+                        setPosTableSearch("");
+                        setPosDeptFilter("all");
+                        setPosGradeFilter("all");
+                        setPosStatusFilter("all");
+                      }}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset Filters
+                    </Button>
+                  )}
+                </div>
+              }
+            />
+          </TabsContent>
         </Tabs>
 
         {/* Modal: Add Department / Division */}
@@ -1204,12 +2301,20 @@ export default function OrgChartPage() {
 
               <div className="space-y-3 py-4 text-xs">
                 <div>
-                  <label className="font-medium text-foreground block mb-1">Division / Unit Name *</label>
+                  <label className="font-semibold text-foreground block mb-1">Division / Unit Name *</label>
                   <Input
                     placeholder="e.g. Conformity Assessment & Testing Division"
                     value={newDeptName}
                     onChange={(e) => setNewDeptName(e.target.value)}
                     required
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-foreground block mb-1">Division Code (Optional)</label>
+                  <Input
+                    placeholder="e.g. DIV-CAT"
+                    value={newDeptCode}
+                    onChange={(e) => setNewDeptCode(e.target.value)}
                   />
                 </div>
               </div>
@@ -1218,7 +2323,9 @@ export default function OrgChartPage() {
                 <Button type="button" variant="outline" onClick={() => setIsAddDeptOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Create Division</Button>
+                <Button type="submit" disabled={createDepartmentMutation.isPending} className="bg-primary">
+                  {createDepartmentMutation.isPending ? "Creating..." : "Create Division"}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -1231,13 +2338,13 @@ export default function OrgChartPage() {
               <DialogHeader>
                 <DialogTitle>Add Position to Establishment</DialogTitle>
                 <DialogDescription>
-                  Create an approved position ceiling for the selected division.
+                  Create an approved position ceiling and statutory grade for the establishment.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-3 py-4 text-xs">
                 <div>
-                  <label className="font-medium text-foreground block mb-1">Position Title *</label>
+                  <label className="font-semibold text-foreground block mb-1">Position Title *</label>
                   <Input
                     placeholder="e.g. Senior Calibration Metrologist"
                     value={newPosTitle}
@@ -1248,24 +2355,58 @@ export default function OrgChartPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="font-medium text-foreground block mb-1">Grade Level</label>
+                    <label className="font-semibold text-foreground block mb-1">Position Code</label>
+                    <Input
+                      placeholder="e.g. NISIT-POS-MET-003"
+                      value={newPosCode}
+                      onChange={(e) => setNewPosCode(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Target Division *</label>
+                    <Select
+                      value={targetDeptForPos ? String(targetDeptForPos) : "1"}
+                      onValueChange={(val) => setTargetDeptForPos(Number(val))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Division" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(data?.departments || []).map((d) => (
+                          <SelectItem key={d.id} value={String(d.id)}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Grade Level</label>
                     <Select value={newPosGrade} onValueChange={setNewPosGrade}>
                       <SelectTrigger>
                         <SelectValue placeholder="Grade" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Grade 10">Grade 10 (Entry Officer)</SelectItem>
-                        <SelectItem value="Grade 12">Grade 12 (Specialist Officer)</SelectItem>
-                        <SelectItem value="Grade 14">Grade 14 (Senior Specialist)</SelectItem>
-                        <SelectItem value="Grade 16">Grade 16 (Principal / Manager)</SelectItem>
+                        <SelectItem value="Grade 10">Grade 10 (Junior Officer)</SelectItem>
+                        <SelectItem value="Grade 11">Grade 11 (Administrative Specialist)</SelectItem>
+                        <SelectItem value="Grade 12">Grade 12 (Technical Officer)</SelectItem>
+                        <SelectItem value="Grade 13">Grade 13 (Senior Technical Officer)</SelectItem>
+                        <SelectItem value="Grade 14">Grade 14 (Principal Specialist)</SelectItem>
+                        <SelectItem value="Grade 15">Grade 15 (Senior Principal Officer)</SelectItem>
+                        <SelectItem value="Grade 16">Grade 16 (Divisional Manager)</SelectItem>
+                        <SelectItem value="Grade 17">Grade 17 (Senior Divisional Manager)</SelectItem>
                         <SelectItem value="Grade 18">Grade 18 (Divisional Director)</SelectItem>
-                        <SelectItem value="Grade 20">Grade 20 (Director General)</SelectItem>
+                        <SelectItem value="Grade 20">Grade 20 (Director General / CEO)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div>
-                    <label className="font-medium text-foreground block mb-1">Approved Headcount</label>
+                    <label className="font-semibold text-foreground block mb-1">Approved Headcount *</label>
                     <Input
                       type="number"
                       min="1"
@@ -1275,13 +2416,227 @@ export default function OrgChartPage() {
                     />
                   </div>
                 </div>
+
+                <div className="min-w-0">
+                  <label className="font-semibold text-foreground block mb-1">Reports To (Supervisory Position)</label>
+                  <Select
+                    value={newPosParentPositionId}
+                    onValueChange={(val) => {
+                      setNewPosParentPositionId(val);
+                      if (val === "none") {
+                        setNewPosReportsTo("NISIT Council");
+                      } else {
+                        const parent = allPositionsFlat.find((p) => String(p.id) === val);
+                        if (parent) setNewPosReportsTo(parent.title);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full min-w-0">
+                      <SelectValue placeholder="Select Direct Supervisor" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      <SelectItem value="none">
+                        ⭐ Apex / Direct to NISIT Council (No Supervisor)
+                      </SelectItem>
+                      {allPositionsFlat.map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          <span className="font-mono text-[10px] text-muted-foreground mr-1.5">[{p.code}]</span>
+                          <span className="font-medium">{p.title}</span>
+                          <span className="text-[10px] text-muted-foreground ml-1.5">({p.gradeLevel}) • {p.departmentCode}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                    Supervisor: <span className="font-semibold text-foreground">{newPosReportsTo || "None (Apex Council)"}</span>
+                  </p>
+                </div>
               </div>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsAddPosOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Add Position</Button>
+                <Button type="submit" disabled={createPositionMutation.isPending} className="bg-primary">
+                  {createPositionMutation.isPending ? "Creating..." : "Add Position"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Edit Position Details & Establishment Ceiling */}
+        <Dialog open={isEditPosOpen} onOpenChange={setIsEditPosOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editingPosId) return;
+                updatePositionMutation.mutate({
+                  id: editingPosId,
+                  data: {
+                    title: editPosTitle.trim(),
+                    positionCode: editPosCode.trim(),
+                    departmentId: Number(editPosDeptId),
+                    gradeLevel: editPosGrade,
+                    totalCount: Math.max(1, Number(editPosCount) || 1),
+                    parentPositionId: editPosParentPositionId !== "none" ? Number(editPosParentPositionId) : null,
+                    reportsToTitle: editPosReportsTo.trim() || null,
+                  },
+                });
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-primary" />
+                  Configure Establishment Position
+                </DialogTitle>
+                <DialogDescription>
+                  Update statutory position specifications, substantive pay grade, divisional assignment, and establishment ceiling.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4 text-xs">
+                <div>
+                  <label className="font-semibold text-foreground block mb-1">Position Title *</label>
+                  <Input
+                    value={editPosTitle}
+                    onChange={(e) => setEditPosTitle(e.target.value)}
+                    placeholder="e.g. Senior Standards & Metrology Officer"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Position Code *</label>
+                    <Input
+                      value={editPosCode}
+                      onChange={(e) => setEditPosCode(e.target.value)}
+                      placeholder="e.g. NISIT-POS-STD-002"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Division / Department *</label>
+                    <Select value={editPosDeptId} onValueChange={setEditPosDeptId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(data?.departments || []).map((d) => (
+                          <SelectItem key={d.id} value={String(d.id)}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Substantive Pay Grade *</label>
+                    <Select value={editPosGrade} onValueChange={setEditPosGrade}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Grade" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Grade 10">Grade 10 (Junior Officer)</SelectItem>
+                        <SelectItem value="Grade 11">Grade 11 (Administrative Specialist)</SelectItem>
+                        <SelectItem value="Grade 12">Grade 12 (Technical Officer)</SelectItem>
+                        <SelectItem value="Grade 13">Grade 13 (Senior Technical Officer)</SelectItem>
+                        <SelectItem value="Grade 14">Grade 14 (Principal Specialist)</SelectItem>
+                        <SelectItem value="Grade 15">Grade 15 (Senior Principal Officer)</SelectItem>
+                        <SelectItem value="Grade 16">Grade 16 (Divisional Manager)</SelectItem>
+                        <SelectItem value="Grade 17">Grade 17 (Senior Divisional Manager)</SelectItem>
+                        <SelectItem value="Grade 18">Grade 18 (Divisional Director)</SelectItem>
+                        <SelectItem value="Grade 20">Grade 20 (Director General / CEO)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-foreground block mb-1">Establishment Ceiling (Headcount) *</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={editPosCount}
+                      onChange={(e) => setEditPosCount(e.target.value)}
+                      required
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Current Incumbents: {editPosIncumbentCount} filled
+                    </p>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="font-semibold text-foreground block mb-1">Reports To (Supervisory Position)</label>
+                  <Select
+                    value={editPosParentPositionId}
+                    onValueChange={(val) => {
+                      setEditPosParentPositionId(val);
+                      if (val === "none") {
+                        setEditPosReportsTo("NISIT Council");
+                      } else {
+                        const parent = allPositionsFlat.find((p) => String(p.id) === val);
+                        if (parent) setEditPosReportsTo(parent.title);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full min-w-0">
+                      <SelectValue placeholder="Select Direct Supervisor" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      <SelectItem value="none">
+                        ⭐ Apex / Direct to NISIT Council (No Supervisor)
+                      </SelectItem>
+                      {allPositionsFlat
+                        .filter((p) => p.id !== editingPosId)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)}>
+                            <span className="font-mono text-[10px] text-muted-foreground mr-1.5">[{p.code}]</span>
+                            <span className="font-medium">{p.title}</span>
+                            <span className="text-[10px] text-muted-foreground ml-1.5">({p.gradeLevel}) • {p.departmentCode}</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                    Supervisor: <span className="font-semibold text-foreground">{editPosReportsTo || "None (Apex Council)"}</span>
+                  </p>
+                </div>
+              </div>
+
+              <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
+                <div>
+                  {editPosIncumbentCount === 0 && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={deletePositionMutation.isPending}
+                      onClick={() => {
+                        if (confirm(`Are you sure you want to delete "${editPosTitle}" from the establishment register?`)) {
+                          deletePositionMutation.mutate(editingPosId!);
+                        }
+                      }}
+                    >
+                      Delete Position
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => setIsEditPosOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={updatePositionMutation.isPending} className="bg-primary">
+                    {updatePositionMutation.isPending ? "Saving..." : "Save Position Changes"}
+                  </Button>
+                </div>
               </DialogFooter>
             </form>
           </DialogContent>

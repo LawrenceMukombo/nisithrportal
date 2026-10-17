@@ -13,6 +13,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Building2,
+  FileText,
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { AppLayout } from "@/layouts/app-layout";
@@ -23,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthHeader } from "@/lib/api-config";
+import { PeriodStatementView } from "@/components/payroll/period-statement-view";
 
 interface OverviewReport {
   headcount: number;
@@ -201,6 +203,9 @@ export default function ReportsPage() {
             <TabsTrigger value="leave" className="text-xs font-semibold">
               <Calendar className="w-3.5 h-3.5 mr-1.5" /> Leave Utilisation
             </TabsTrigger>
+            <TabsTrigger value="period-statement" className="text-xs font-semibold">
+              <FileText className="w-3.5 h-3.5 mr-1.5 text-primary" /> Employee Period Statement
+            </TabsTrigger>
           </TabsList>
 
           {/* Department Distribution Tab */}
@@ -346,6 +351,11 @@ export default function ReportsPage() {
                 </table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Employee Period Statement Tab */}
+          <TabsContent value="period-statement" className="space-y-4">
+            <PeriodStatementView embeddedInReports={true} />
           </TabsContent>
         </Tabs>
       </div>

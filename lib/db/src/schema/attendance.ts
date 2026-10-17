@@ -37,6 +37,21 @@ export const clockingRawPunchesTable = pgTable("clocking_raw_punches", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const geofenceZonesTable = pgTable("geofence_zones", {
+  id: serial("id").primaryKey(),
+  agencyId: integer("agency_id").references(() => agenciesTable.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  code: text("code").unique().notNull(),
+  latitude: text("latitude").notNull(),
+  longitude: text("longitude").notNull(),
+  radiusMeters: integer("radius_meters").notNull().default(150),
+  address: text("address"),
+  province: text("province").notNull().default("National Capital District"),
+  isActive: text("is_active").notNull().default("true"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const attendanceRecordsTable = pgTable("attendance_records", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").references(() => employeesTable.id).notNull(),
@@ -47,14 +62,29 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   lateMinutes: integer("late_minutes").default(0),
   earlyDepartureMinutes: integer("early_departure_minutes").default(0),
   location: text("location").default("NISIT HQ Port Moresby"),
-  source: text("source").default("web"), // web, biometric_terminal, rfid_card, csv_import, manual
+  source: text("source").default("web"), // web, mobile_gps, qr_kiosk, biometric_terminal, rfid_card, manual
   deviceId: integer("device_id").references(() => clockingDevicesTable.id, { onDelete: "set null" }),
   rawPunchInId: integer("raw_punch_in_id").references(() => clockingRawPunchesTable.id, { onDelete: "set null" }),
   rawPunchOutId: integer("raw_punch_out_id").references(() => clockingRawPunchesTable.id, { onDelete: "set null" }),
+  geofenceZoneId: integer("geofence_zone_id").references(() => geofenceZonesTable.id, { onDelete: "set null" }),
+  punchInLatitude: text("punch_in_latitude"),
+  punchInLongitude: text("punch_in_longitude"),
+  punchInAccuracy: text("punch_in_accuracy"),
+  punchOutLatitude: text("punch_out_latitude"),
+  punchOutLongitude: text("punch_out_longitude"),
+  punchOutAccuracy: text("punch_out_accuracy"),
+  verificationMethod: text("verification_method").default("web"), // mobile_gps, qr_kiosk, biometric_face, biometric_fingerprint, web
+  selfPhotoUrl: text("self_photo_url"),
+  overtimeMinutes: integer("overtime_minutes").default(0),
+  overtimeStatus: text("overtime_status").default("none"), // none, pending_approval, approved, rejected
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const insertGeofenceZoneSchema = createInsertSchema(geofenceZonesTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertGeofenceZone = z.infer<typeof insertGeofenceZoneSchema>;
+export type GeofenceZone = typeof geofenceZonesTable.$inferSelect;
 
 export const insertClockingDeviceSchema = createInsertSchema(clockingDevicesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertClockingDevice = z.infer<typeof insertClockingDeviceSchema>;

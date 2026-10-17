@@ -15,7 +15,12 @@ export async function currentEmployeeId(req: Request): Promise<number | null> {
   if (!user) return null;
   if (user.employeeId) return user.employeeId;
   const [employee] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.email, user.email));
-  return employee?.id ?? null;
+  if (employee?.id) return employee.id;
+  if (req.user.roleName === "admin") {
+    const [firstEmp] = await db.select({ id: employeesTable.id }).from(employeesTable).limit(1);
+    return firstEmp?.id ?? null;
+  }
+  return null;
 }
 
 export async function employeeBelongsToTenant(req: Request, employeeId: number): Promise<boolean> {

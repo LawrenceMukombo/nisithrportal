@@ -50,12 +50,18 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  let token: string | null = null;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7);
+  } else if (typeof req.query.token === "string" && req.query.token.trim().length > 0) {
+    token = req.query.token.trim();
+  }
+
+  if (!token) {
     res.status(401).json({ error: "Unauthorized: No token provided" });
     return;
   }
 
-  const token = authHeader.slice(7);
   try {
     const payload = jwt.verify(token, effectiveSecret) as JwtPayload;
 

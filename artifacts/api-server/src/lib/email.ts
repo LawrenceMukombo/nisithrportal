@@ -252,3 +252,109 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     }
   }
 }
+
+export interface SendPayslipEmailParams {
+  to: string;
+  employeeName: string;
+  periodName: string;
+  periodCode: string;
+  payDate: string;
+  netPay: string;
+  currency: string;
+  passwordHint: string;
+  pdfBuffer: Buffer;
+  payslipNumber: string;
+}
+
+export async function sendPasswordProtectedPayslipEmail(params: SendPayslipEmailParams): Promise<{ delivered: boolean; mode: "smtp" | "simulated" }> {
+  const { to, employeeName, periodName, periodCode, payDate, netPay, currency, passwordHint, pdfBuffer, payslipNumber } = params;
+
+  const subject = `PNG NISIT Remuneration Advice: ${periodName} (${periodCode}) — ${employeeName}`;
+  const filename = `NISIT-Payslip-${periodCode}-${payslipNumber}.pdf`;
+
+  const text = `Dear ${employeeName},\n\nYour official remuneration advice / payslip for ${periodName} (Pay Date: ${payDate}) is attached.\n\nNet Take-Home Pay: ${currency} ${netPay}\n\nIMPORTANT SECURITY NOTICE:\nFor your privacy and statutory compliance, the attached PDF is encrypted.\nPassword Requirement: ${passwordHint}\n\nIf you have questions regarding your remuneration or deductions, please contact the NISIT Human Resources & Finance Division at hr@nisit.gov.pg.\n\nRegards,\nHuman Resources Directorate\nPNG National Institute of Standards & Industrial Technology (NISIT)`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #ffffff;">
+      <div style="background: #003082; padding: 24px; text-align: left;">
+        <h3 style="color: #ffffff; margin: 0; font-size: 15px; letter-spacing: 0.5px; text-transform: uppercase;">Independent State of Papua New Guinea</h3>
+        <h2 style="color: #f0c040; margin: 6px 0 0 0; font-size: 18px; font-weight: 700;">PNG National Institute of Standards & Technology</h2>
+        <p style="color: #cbd5e1; margin: 4px 0 0 0; font-size: 12px;">Human Resources & Remuneration Directorate • Confidential Salary Advice</p>
+      </div>
+
+      <div style="padding: 24px;">
+        <p style="font-size: 15px; color: #1e293b; margin-top: 0;">Dear <strong>${employeeName}</strong>,</p>
+        <p style="font-size: 14px; color: #334155; line-height: 1.5;">
+          Please find attached your official, confidential remuneration advice for <strong>${periodName}</strong> (Pay Date: <strong>${payDate}</strong>).
+        </p>
+
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin: 20px 0; text-align: center;">
+          <span style="font-size: 12px; font-weight: 600; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">Net Disbursed Take-Home Pay</span>
+          <div style="font-size: 26px; font-weight: 800; color: #15803d; margin: 6px 0 2px 0;">${currency} ${netPay}</div>
+          <span style="font-size: 12px; color: #15803d;">Credited to your registered bank account via electronic credit</span>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 16px; margin: 20px 0;">
+          <strong style="color: #92400e; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">🔐 Password Protection Notice</strong>
+          <p style="font-size: 13px; color: #78350f; margin: 6px 0 8px 0; line-height: 1.4;">
+            For your personal privacy and statutory compliance under PNG regulations, this PDF document is encrypted with standard security.
+          </p>
+          <div style="background: #ffffff; border: 1px dashed #f59e0b; border-radius: 4px; padding: 10px 14px; font-size: 13px; color: #b45309; font-weight: 600;">
+            🔑 Password Requirement: <span style="color: #78350f;">${passwordHint}</span>
+          </div>
+        </div>
+
+        <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+          You can open the attached file using Adobe Acrobat Reader, Google Chrome, Safari, Apple Books, or any standard PDF viewing application on desktop or mobile by entering the required password above.
+        </p>
+
+        <p style="font-size: 13px; color: #64748b; margin-top: 24px;">
+          For inquiries regarding salary computations, tax deductions, or superannuation contributions, please contact the <strong>NISIT Payroll Division</strong> at <a href="mailto:payroll@nisit.gov.pg" style="color: #003082;">payroll@nisit.gov.pg</a>.
+        </p>
+
+        <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+          <p style="font-size: 13px; color: #334155; margin: 0;"><strong>Human Resources Directorate</strong></p>
+          <p style="font-size: 12px; color: #64748b; margin: 2px 0 0 0;">PNG National Institute of Standards and Industrial Technology (NISIT)</p>
+          <p style="font-size: 11px; color: #94a3b8; margin: 2px 0 0 0;">Corner of Spring Garden Rd & Godwit Rd, Gordon, Port Moresby, NCD, Papua New Guinea</p>
+        </div>
+      </div>
+
+      <div style="background: #f8fafc; padding: 12px 24px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center;">
+        Confidential Document #${payslipNumber} • Transmitted to registered private address ${to}
+      </div>
+    </div>
+  `;
+
+  const transport = createTransport();
+
+  if (transport) {
+    try {
+      await transport.sendMail({
+        from: process.env.SMTP_FROM ?? `"PNG NISIT Payroll Office" <payroll@nisit.gov.pg>`,
+        to,
+        subject,
+        text,
+        html,
+        attachments: [
+          {
+            filename,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      logger.info({ to, payslipNumber, periodCode }, "sendPasswordProtectedPayslipEmail: encrypted payslip email dispatched successfully via SMTP");
+      return { delivered: true, mode: "smtp" };
+    } catch (err) {
+      logger.error({ err, to, payslipNumber }, "sendPasswordProtectedPayslipEmail: failed to send payslip email via SMTP");
+      throw err;
+    }
+  } else {
+    logger.info({ to, payslipNumber, periodCode }, "sendPasswordProtectedPayslipEmail: SMTP not configured — encrypted payslip prepared and logged (simulation mode)");
+    if (!IS_PRODUCTION) {
+      logger.info(`[dev] Successfully prepared password-protected payslip ${filename} for ${employeeName} sent to private email ${to}`);
+    }
+    return { delivered: true, mode: "simulated" };
+  }
+}
+

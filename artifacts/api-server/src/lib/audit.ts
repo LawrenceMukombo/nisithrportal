@@ -19,7 +19,11 @@ export type AuditActionType =
   | "account_unlocked"
   | "employee_create"
   | "employee_update"
-  | "employee_position_change";
+  | "employee_position_change"
+  | "position_create"
+  | "position_update"
+  | "position_delete"
+  | "department_create";
 
 export type AuditOutcome = "success" | "rejected";
 

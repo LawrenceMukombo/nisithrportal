@@ -1,6 +1,7 @@
 import { and, eq, count, isNull, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, rolesTable, agenciesTable, departmentsTable, jobsTable, usersTable, candidatesTable, permissionsTable, rolePermissionsTable, wikiArticlesTable } from "@workspace/db";
+import crypto from "crypto";
+import { db, rolesTable, agenciesTable, departmentsTable, positionsTable, jobsTable, usersTable, candidatesTable, permissionsTable, rolePermissionsTable, wikiArticlesTable, employeesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { seedCompleteData, seedPrdReferenceData } from "./seed-data";
 
@@ -1231,6 +1232,29 @@ export async function ensureAdminUserExists(): Promise<void> {
         })
         .where(eq(usersTable.id, adminUser.id));
       logger.info({ adminId: adminUser.id, email: ADMIN_EMAIL }, "ensureAdminUserExists: synchronized and unlocked admin user");
+
+      // Ensure admin user is linked to an employee profile
+      let [adminEmp] = await db.select().from(employeesTable).where(eq(employeesTable.email, ADMIN_EMAIL)).limit(1);
+      if (!adminEmp) {
+        const [newEmp] = await db
+          .insert(employeesTable)
+          .values({
+            agencyId: agency.id,
+            name: "NISIT Administrator",
+            email: ADMIN_EMAIL,
+            division: "Executive Management",
+            liveAttendanceStatus: "out_of_office",
+          })
+          .returning();
+        adminEmp = newEmp;
+      }
+      if (adminEmp) {
+        await db
+          .update(usersTable)
+          .set({ employeeId: adminEmp.id })
+          .where(eq(usersTable.id, adminUser.id));
+        logger.info({ adminId: adminUser.id, employeeId: adminEmp.id }, "ensureAdminUserExists: linked admin to employee profile");
+      }
     }
 
     // 4. Ensure secondary default accounts from DEPLOYMENT_SOP exist and are active
@@ -1461,4 +1485,999 @@ export async function ensureClockingTablesExist(): Promise<void> {
   }
 }
 
+export async function ensureGeofenceAndSmartAttendanceTablesExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS geofence_zones (
+        id SERIAL PRIMARY KEY,
+        agency_id INTEGER NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        code TEXT UNIQUE NOT NULL,
+        latitude TEXT NOT NULL,
+        longitude TEXT NOT NULL,
+        radius_meters INTEGER NOT NULL DEFAULT 150,
+        address TEXT,
+        province TEXT NOT NULL DEFAULT 'National Capital District',
+        is_active TEXT NOT NULL DEFAULT 'true',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
 
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS live_attendance_status TEXT NOT NULL DEFAULT 'out_of_office';`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_clock_in_at TIMESTAMPTZ;`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_clock_out_at TIMESTAMPTZ;`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS punctuality_score TEXT DEFAULT '100.0';`);
+
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS geofence_zone_id INTEGER REFERENCES geofence_zones(id) ON DELETE SET NULL;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_in_latitude TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_in_longitude TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_in_accuracy TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_out_latitude TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_out_longitude TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS punch_out_accuracy TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS verification_method TEXT DEFAULT 'web';`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS self_photo_url TEXT;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_minutes INTEGER DEFAULT 0;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_status TEXT DEFAULT 'none';`);
+
+    const [agency] = await db.select().from(agenciesTable).limit(1);
+    if (agency) {
+      const existing = await db.execute(sql`SELECT COUNT(*)::int as count FROM geofence_zones WHERE agency_id = ${agency.id}`);
+      const count = Number((existing.rows[0] as any)?.count || 0);
+      if (count === 0) {
+        await db.execute(sql`
+          INSERT INTO geofence_zones (agency_id, name, code, latitude, longitude, radius_meters, address, province, is_active) VALUES
+          (${agency.id}, 'NISIT HQ Port Moresby', 'GEO-HQ-POM', '-9.431284', '147.185293', 200, 'Corner of Spring Garden Rd & Godwit Rd, Gordon, Port Moresby', 'National Capital District', 'true'),
+          (${agency.id}, 'Lae Standards & Metrology Testing Wing', 'GEO-LAE-002', '-6.726514', '146.997218', 250, 'Industrial Estate, Section 12, Lot 4, Lae', 'Morobe', 'true'),
+          (${agency.id}, 'Jacksons Airport Standards Cargo Wing', 'GEO-JAX-003', '-9.444211', '147.214532', 300, 'Jacksons International Airport Freight Terminal', 'National Capital District', 'true');
+        `);
+      }
+    }
+
+    logger.info("ensureGeofenceAndSmartAttendanceTablesExist: verified geofence zones and smart attendance columns");
+  } catch (error) {
+    logger.error({ err: error }, "ensureGeofenceAndSmartAttendanceTablesExist failed");
+  }
+}
+
+export async function ensurePayrollTablesExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS payroll_periods (
+        id SERIAL PRIMARY KEY,
+        agency_id INTEGER NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+        period_code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        cycle_type TEXT NOT NULL DEFAULT 'fortnightly',
+        year INTEGER NOT NULL DEFAULT 2026,
+        period_number INTEGER NOT NULL DEFAULT 1,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        pay_date DATE NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        total_gross NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_taxable NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_irc_tax NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_super_employee NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_super_employer NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_allowances NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_deductions NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        total_net NUMERIC(14, 2) NOT NULL DEFAULT 0,
+        employee_count INTEGER NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'PGK',
+        approved_by_user_id INTEGER REFERENCES users(id),
+        approved_at TIMESTAMPTZ,
+        disbursed_at TIMESTAMPTZ,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS employee_salary_profiles (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+        grade_level TEXT NOT NULL DEFAULT 'Grade 10',
+        annual_base_salary NUMERIC(12, 2) NOT NULL DEFAULT 45000.00,
+        fortnightly_base_salary NUMERIC(12, 2) NOT NULL DEFAULT 1730.77,
+        hourly_rate NUMERIC(10, 2) NOT NULL DEFAULT 21.63,
+        pay_cycle TEXT NOT NULL DEFAULT 'fortnightly',
+        payment_method TEXT NOT NULL DEFAULT 'bank_transfer',
+        bank_name TEXT NOT NULL DEFAULT 'BSP Financial Group',
+        bank_branch TEXT DEFAULT 'Port Moresby Commercial Branch',
+        bank_account_number TEXT DEFAULT '1002938471',
+        bank_account_name TEXT,
+        tin TEXT DEFAULT '500123987',
+        tax_code TEXT NOT NULL DEFAULT 'primary',
+        super_fund TEXT NOT NULL DEFAULT 'Nasfund',
+        super_member_number TEXT DEFAULT 'NF-98214',
+        super_voluntary_rate NUMERIC(5, 2) DEFAULT 0.00,
+        housing_allowance NUMERIC(10, 2) DEFAULT 350.00,
+        utility_allowance NUMERIC(10, 2) DEFAULT 120.00,
+        transport_allowance NUMERIC(10, 2) DEFAULT 150.00,
+        representation_allowance NUMERIC(10, 2) DEFAULT 0.00,
+        other_allowances NUMERIC(10, 2) DEFAULT 0.00,
+        union_dues NUMERIC(10, 2) DEFAULT 15.00,
+        insurance_deduction NUMERIC(10, 2) DEFAULT 25.00,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS payroll_items (
+        id SERIAL PRIMARY KEY,
+        period_id INTEGER NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        payslip_number TEXT NOT NULL UNIQUE,
+        base_salary NUMERIC(12, 2) NOT NULL,
+        regular_hours_worked NUMERIC(6, 2) NOT NULL DEFAULT 80.00,
+        overtime_hours_15 NUMERIC(6, 2) NOT NULL DEFAULT 0.00,
+        overtime_hours_20 NUMERIC(6, 2) NOT NULL DEFAULT 0.00,
+        overtime_pay NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+        allowances_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+        total_allowances NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+        gross_pay NUMERIC(12, 2) NOT NULL,
+        taxable_income NUMERIC(12, 2) NOT NULL,
+        irc_tax NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+        superannuation_employee NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+        superannuation_employer NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+        deductions_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
+        total_deductions NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+        net_pay NUMERIC(12, 2) NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'PGK',
+        payment_status TEXT NOT NULL DEFAULT 'pending',
+        payment_method TEXT NOT NULL DEFAULT 'bank_transfer',
+        bank_name TEXT,
+        bank_account_number TEXT,
+        attendance_days_present INTEGER DEFAULT 10,
+        leave_days_taken NUMERIC(4, 1) DEFAULT 0.0,
+        unpaid_leave_days NUMERIC(4, 1) DEFAULT 0.0,
+        unpaid_leave_deduction NUMERIC(10, 2) DEFAULT 0.00,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS payroll_adjustments (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        period_id INTEGER REFERENCES payroll_periods(id) ON DELETE SET NULL,
+        type TEXT NOT NULL DEFAULT 'allowance',
+        category TEXT NOT NULL,
+        amount NUMERIC(10, 2) NOT NULL,
+        taxable BOOLEAN NOT NULL DEFAULT true,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'approved',
+        requested_by_user_id INTEGER REFERENCES users(id),
+        approved_by_user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS payroll_audit_logs (
+        id SERIAL PRIMARY KEY,
+        period_id INTEGER REFERENCES payroll_periods(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        performed_by_user_id INTEGER REFERENCES users(id),
+        details JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_payroll_items_period_id ON payroll_items(period_id);
+      CREATE INDEX IF NOT EXISTS idx_payroll_items_employee_id ON payroll_items(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_payroll_periods_agency_id ON payroll_periods(agency_id);
+      CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_period_id ON payroll_adjustments(period_id);
+      CREATE INDEX IF NOT EXISTS idx_employee_salary_profiles_employee_id ON employee_salary_profiles(employee_id);
+
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS private_email TEXT;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS payslip_password_pin TEXT;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS payslip_password_type TEXT NOT NULL DEFAULT 'dob_or_pin';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS superannuation_type TEXT NOT NULL DEFAULT 'percentage';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS superannuation_fixed_amount NUMERIC(10, 2) DEFAULT 0.00;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS housing_allowance_type TEXT NOT NULL DEFAULT 'fixed';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS housing_allowance_rate NUMERIC(6, 2) DEFAULT 0.00;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS utility_allowance_type TEXT NOT NULL DEFAULT 'fixed';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS utility_allowance_rate NUMERIC(6, 2) DEFAULT 0.00;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS transport_allowance_type TEXT NOT NULL DEFAULT 'fixed';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS transport_allowance_rate NUMERIC(6, 2) DEFAULT 0.00;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS representation_allowance_type TEXT NOT NULL DEFAULT 'fixed';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS representation_allowance_rate NUMERIC(6, 2) DEFAULT 0.00;
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS other_allowances_type TEXT NOT NULL DEFAULT 'fixed';
+      ALTER TABLE employee_salary_profiles ADD COLUMN IF NOT EXISTS other_allowances_rate NUMERIC(6, 2) DEFAULT 0.00;
+
+      ALTER TABLE payroll_items ADD COLUMN IF NOT EXISTS email_delivery_status TEXT NOT NULL DEFAULT 'not_sent';
+      ALTER TABLE payroll_items ADD COLUMN IF NOT EXISTS email_sent_to TEXT;
+      ALTER TABLE payroll_items ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
+      ALTER TABLE payroll_items ADD COLUMN IF NOT EXISTS email_delivery_error TEXT;
+    `);
+
+    // Ensure staff have realistic registered private personal emails for payslip delivery
+    await db.execute(sql`
+      UPDATE employee_salary_profiles prof
+      SET private_email = LOWER(REPLACE(TRIM(e.name), ' ', '.')) || '@gmail.com'
+      FROM employees e
+      WHERE e.id = prof.employee_id AND (prof.private_email IS NULL OR prof.private_email = '');
+    `);
+
+    // Ensure all existing employees have a salary profile
+    const existingEmployees = await db.select().from(employeesTable);
+    if (existingEmployees.length > 0) {
+      const existingProfiles = await db.execute(sql`SELECT employee_id FROM employee_salary_profiles`);
+      const existingIds = new Set((existingProfiles.rows as any[]).map((r) => r.employee_id));
+
+      const banks = ["BSP Financial Group", "Kina Bank", "Westpac PNG", "ANZ PNG"];
+      const superFunds = ["Nasfund", "Nambawan Super"];
+
+      for (let i = 0; i < existingEmployees.length; i++) {
+        const emp = existingEmployees[i];
+        if (existingIds.has(emp.id)) continue;
+
+        let annual = 48000;
+        let grade = emp.gradeLevel || "Grade 11";
+        if (grade.includes("18") || grade.includes("Director") || grade.includes("Executive")) {
+          annual = 110000;
+          grade = "Grade 18";
+        } else if (grade.includes("16") || grade.includes("Manager")) {
+          annual = 85000;
+          grade = "Grade 16";
+        } else if (grade.includes("14") || grade.includes("Senior") || grade.includes("Lead")) {
+          annual = 68000;
+          grade = "Grade 14";
+        } else if (grade.includes("12")) {
+          annual = 54000;
+          grade = "Grade 12";
+        } else {
+          annual = 42000;
+          grade = "Grade 10";
+        }
+
+        const fortnightly = Math.round((annual / 26) * 100) / 100;
+        const hourly = Math.round((fortnightly / 80) * 100) / 100;
+        const bankName = banks[i % banks.length];
+        const superFund = superFunds[i % superFunds.length];
+        const accNum = `100${String(1200000 + (emp.id * 8371)).slice(0, 7)}`;
+        const tinNum = `500${String(819200 + (emp.id * 1423)).slice(0, 6)}`;
+        const superNum = `${superFund === "Nasfund" ? "NF" : "NS"}-${29100 + emp.id}`;
+
+        const housing = grade.includes("18") ? 750 : grade.includes("16") ? 550 : 350;
+        const utility = grade.includes("18") ? 200 : 120;
+        const transport = grade.includes("18") ? 300 : 150;
+        const rep = grade.includes("18") ? 400 : 0;
+
+        await db.execute(sql`
+          INSERT INTO employee_salary_profiles (
+            employee_id, grade_level, annual_base_salary, fortnightly_base_salary, hourly_rate,
+            pay_cycle, payment_method, bank_name, bank_branch, bank_account_number, bank_account_name,
+            tin, tax_code, super_fund, super_member_number, super_voluntary_rate,
+            superannuation_type, superannuation_fixed_amount,
+            housing_allowance, housing_allowance_type, housing_allowance_rate,
+            utility_allowance, utility_allowance_type, utility_allowance_rate,
+            transport_allowance, transport_allowance_type, transport_allowance_rate,
+            representation_allowance, representation_allowance_type, representation_allowance_rate,
+            union_dues, insurance_deduction, is_active
+          ) VALUES (
+            ${emp.id}, ${grade}, ${annual}, ${fortnightly}, ${hourly},
+            'fortnightly', 'bank_transfer', ${bankName}, 'Port Moresby Commercial Branch', ${accNum}, ${emp.name},
+            ${tinNum}, 'primary', ${superFund}, ${superNum}, 0.00,
+            'percentage', 0.00,
+            ${housing}, 'fixed', ${fortnightly > 0 ? Math.round((housing / fortnightly) * 10000) / 100 : 0},
+            ${utility}, 'fixed', ${fortnightly > 0 ? Math.round((utility / fortnightly) * 10000) / 100 : 0},
+            ${transport}, 'fixed', ${fortnightly > 0 ? Math.round((transport / fortnightly) * 10000) / 100 : 0},
+            ${rep}, 'fixed', ${fortnightly > 0 ? Math.round((rep / fortnightly) * 10000) / 100 : 0},
+            15.00, 25.00, true
+          ) ON CONFLICT (employee_id) DO NOTHING;
+        `);
+      }
+    }
+
+    // Ensure default 2026 Pay Periods exist
+    const [agency] = await db.select().from(agenciesTable).limit(1);
+    if (agency) {
+      const periodsCountResult = await db.execute(sql`SELECT COUNT(*)::int as count FROM payroll_periods WHERE agency_id = ${agency.id}`);
+      const periodsCount = Number((periodsCountResult.rows[0] as any)?.count || 0);
+
+      if (periodsCount === 0) {
+        const [fn13Result] = (await db.execute(sql`
+          INSERT INTO payroll_periods (
+            agency_id, period_code, name, cycle_type, year, period_number,
+            start_date, end_date, pay_date, status, currency, notes
+          ) VALUES (
+            ${agency.id}, '2026-FN13', 'Fortnight 13 (June 2026)', 'fortnightly', 2026, 13,
+            '2026-06-15', '2026-06-28', '2026-07-02', 'disbursed', 'PGK', 'Statutory remuneration run for Fortnight 13/2026 — Completed and disbursed via BSP & Kina Bank EFT'
+          ) RETURNING id;
+        `)).rows as any[];
+
+        const [fn14Result] = (await db.execute(sql`
+          INSERT INTO payroll_periods (
+            agency_id, period_code, name, cycle_type, year, period_number,
+            start_date, end_date, pay_date, status, currency, notes
+          ) VALUES (
+            ${agency.id}, '2026-FN14', 'Fortnight 14 (July 2026)', 'fortnightly', 2026, 14,
+            '2026-06-29', '2026-07-12', '2026-07-16', 'approved', 'PGK', 'Current active statutory remuneration run for Fortnight 14/2026 — Ready for executive disbursement'
+          ) RETURNING id;
+        `)).rows as any[];
+
+        await db.execute(sql`
+          INSERT INTO payroll_periods (
+            agency_id, period_code, name, cycle_type, year, period_number,
+            start_date, end_date, pay_date, status, currency, notes
+          ) VALUES (
+            ${agency.id}, '2026-FN15', 'Fortnight 15 (July 2026)', 'fortnightly', 2026, 15,
+            '2026-07-13', '2026-07-26', '2026-07-30', 'draft', 'PGK', 'Upcoming pay fortnight — In preparation'
+          );
+        `);
+
+        const fn13Id = fn13Result?.id;
+        const fn14Id = fn14Result?.id;
+
+        const profiles = (await db.execute(sql`
+          SELECT p.*, e.name as employee_name, e.employee_number 
+          FROM employee_salary_profiles p 
+          JOIN employees e ON e.id = p.employee_id
+        `)).rows as any[];
+
+        const calculateItem = (prof: any, periodId: number, periodCode: string, isFn14: boolean) => {
+          const annual = Number(prof.annual_base_salary) || 45000;
+          const fortnightly = Number(prof.fortnightly_base_salary) || (annual / 26);
+          const hourly = Number(prof.hourly_rate) || (fortnightly / 80);
+          const housing = Number(prof.housing_allowance) || 0;
+          const utility = Number(prof.utility_allowance) || 0;
+          const transport = Number(prof.transport_allowance) || 0;
+          const rep = Number(prof.representation_allowance) || 0;
+
+          const otHours15 = isFn14 && (prof.grade_level.includes("10") || prof.grade_level.includes("12")) ? 6 : 0;
+          const otPay = otHours15 * hourly * 1.5;
+
+          const totalAllowances = housing + utility + transport + rep;
+          const gross = fortnightly + otPay + totalAllowances;
+          const taxable = gross;
+
+          const annualTaxable = taxable * 26;
+          let annualTax = 0;
+          if (annualTaxable <= 20000) annualTax = 0;
+          else if (annualTaxable <= 33000) annualTax = (annualTaxable - 20000) * 0.22;
+          else if (annualTaxable <= 70000) annualTax = 2860 + (annualTaxable - 33000) * 0.30;
+          else if (annualTaxable <= 250000) annualTax = 2860 + 11100 + (annualTaxable - 70000) * 0.35;
+          else annualTax = 2860 + 11100 + 63000 + (annualTaxable - 250000) * 0.40;
+
+          const ircTax = Math.round((annualTax / 26) * 100) / 100;
+          const superEmployee = Math.round((fortnightly * 0.06) * 100) / 100;
+          const superEmployer = Math.round((fortnightly * 0.084) * 100) / 100;
+          const unionDues = Number(prof.union_dues) || 15;
+          const insurance = Number(prof.insurance_deduction) || 25;
+
+          const totalDeductions = Math.round((ircTax + superEmployee + unionDues + insurance) * 100) / 100;
+          const net = Math.round((gross - totalDeductions) * 100) / 100;
+          const psNumber = `NISIT-PS-${periodCode}-${String(100 + prof.employee_id)}`;
+
+          return {
+            periodId,
+            employeeId: prof.employee_id,
+            payslipNumber: psNumber,
+            baseSalary: fortnightly,
+            otHours15,
+            otPay,
+            allowancesBreakdown: JSON.stringify({ housing, utility, transport, representation: rep }),
+            totalAllowances,
+            gross,
+            taxable,
+            ircTax,
+            superEmployee,
+            superEmployer,
+            deductionsBreakdown: JSON.stringify({ ircTax, superannuation: superEmployee, unionDues, insurance }),
+            totalDeductions,
+            net,
+            bankName: prof.bank_name,
+            bankAccountNumber: prof.bank_account_number,
+          };
+        };
+
+        let fn13Gross = 0, fn13Tax = 0, fn13SupEmp = 0, fn13SupOrg = 0, fn13All = 0, fn13Ded = 0, fn13Net = 0;
+        let fn14Gross = 0, fn14Tax = 0, fn14SupEmp = 0, fn14SupOrg = 0, fn14All = 0, fn14Ded = 0, fn14Net = 0;
+
+        for (const prof of profiles) {
+          if (fn13Id) {
+            const item13 = calculateItem(prof, fn13Id, "2026-FN13", false);
+            fn13Gross += item13.gross;
+            fn13Tax += item13.ircTax;
+            fn13SupEmp += item13.superEmployee;
+            fn13SupOrg += item13.superEmployer;
+            fn13All += item13.totalAllowances;
+            fn13Ded += item13.totalDeductions;
+            fn13Net += item13.net;
+
+            await db.execute(sql`
+              INSERT INTO payroll_items (
+                period_id, employee_id, payslip_number, base_salary, regular_hours_worked,
+                overtime_hours_15, overtime_hours_20, overtime_pay, allowances_breakdown,
+                total_allowances, gross_pay, taxable_income, irc_tax, superannuation_employee,
+                superannuation_employer, deductions_breakdown, total_deductions, net_pay,
+                currency, payment_status, payment_method, bank_name, bank_account_number
+              ) VALUES (
+                ${item13.periodId}, ${item13.employeeId}, ${item13.payslipNumber}, ${item13.baseSalary}, 80.00,
+                ${item13.otHours15}, 0.00, ${item13.otPay}, ${item13.allowancesBreakdown}::jsonb,
+                ${item13.totalAllowances}, ${item13.gross}, ${item13.taxable}, ${item13.ircTax}, ${item13.superEmployee},
+                ${item13.superEmployer}, ${item13.deductionsBreakdown}::jsonb, ${item13.totalDeductions}, ${item13.net},
+                'PGK', 'cleared', 'bank_transfer', ${item13.bankName}, ${item13.bankAccountNumber}
+              );
+            `);
+          }
+
+          if (fn14Id) {
+            const item14 = calculateItem(prof, fn14Id, "2026-FN14", true);
+            fn14Gross += item14.gross;
+            fn14Tax += item14.ircTax;
+            fn14SupEmp += item14.superEmployee;
+            fn14SupOrg += item14.superEmployer;
+            fn14All += item14.totalAllowances;
+            fn14Ded += item14.totalDeductions;
+            fn14Net += item14.net;
+
+            await db.execute(sql`
+              INSERT INTO payroll_items (
+                period_id, employee_id, payslip_number, base_salary, regular_hours_worked,
+                overtime_hours_15, overtime_hours_20, overtime_pay, allowances_breakdown,
+                total_allowances, gross_pay, taxable_income, irc_tax, superannuation_employee,
+                superannuation_employer, deductions_breakdown, total_deductions, net_pay,
+                currency, payment_status, payment_method, bank_name, bank_account_number
+              ) VALUES (
+                ${item14.periodId}, ${item14.employeeId}, ${item14.payslipNumber}, ${item14.baseSalary}, 80.00,
+                ${item14.otHours15}, 0.00, ${item14.otPay}, ${item14.allowancesBreakdown}::jsonb,
+                ${item14.totalAllowances}, ${item14.gross}, ${item14.taxable}, ${item14.ircTax}, ${item14.superEmployee},
+                ${item14.superEmployer}, ${item14.deductionsBreakdown}::jsonb, ${item14.totalDeductions}, ${item14.net},
+                'PGK', 'pending', 'bank_transfer', ${item14.bankName}, ${item14.bankAccountNumber}
+              );
+            `);
+          }
+        }
+
+        if (fn13Id) {
+          await db.execute(sql`
+            UPDATE payroll_periods SET
+              total_gross = ${fn13Gross},
+              total_taxable = ${fn13Gross},
+              total_irc_tax = ${fn13Tax},
+              total_super_employee = ${fn13SupEmp},
+              total_super_employer = ${fn13SupOrg},
+              total_allowances = ${fn13All},
+              total_deductions = ${fn13Ded},
+              total_net = ${fn13Net},
+              employee_count = ${profiles.length},
+              disbursed_at = '2026-07-02 10:30:00+10'
+            WHERE id = ${fn13Id};
+          `);
+        }
+
+        if (fn14Id) {
+          await db.execute(sql`
+            UPDATE payroll_periods SET
+              total_gross = ${fn14Gross},
+              total_taxable = ${fn14Gross},
+              total_irc_tax = ${fn14Tax},
+              total_super_employee = ${fn14SupEmp},
+              total_super_employer = ${fn14SupOrg},
+              total_allowances = ${fn14All},
+              total_deductions = ${fn14Ded},
+              total_net = ${fn14Net},
+              employee_count = ${profiles.length},
+              approved_at = '2026-07-13 14:00:00+10'
+            WHERE id = ${fn14Id};
+          `);
+        }
+      }
+    }
+
+    logger.info("ensurePayrollTablesExist: verified enterprise payroll tables and statutory baseline data exist");
+  } catch (error) {
+    logger.error({ err: error }, "ensurePayrollTablesExist failed");
+  }
+}
+
+export async function ensureTemporalLedgerTablesExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS temporal_transaction_snapshots (
+        id SERIAL PRIMARY KEY,
+        transaction_number TEXT UNIQUE NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        entity_reference TEXT,
+        entity_name TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_title TEXT NOT NULL,
+        change_summary TEXT NOT NULL,
+        valid_from TIMESTAMPTZ NOT NULL,
+        valid_to TIMESTAMPTZ,
+        recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        actor_name TEXT NOT NULL DEFAULT 'System Authority',
+        actor_role TEXT DEFAULT 'hr_officer',
+        agency_id INTEGER REFERENCES agencies(id) ON DELETE SET NULL,
+        previous_state JSONB,
+        snapshot_state JSONB NOT NULL,
+        diff JSONB DEFAULT '{}'::jsonb,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        checksum TEXT,
+        is_locked BOOLEAN NOT NULL DEFAULT TRUE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_temporal_entity ON temporal_transaction_snapshots(entity_type, entity_id);
+      CREATE INDEX IF NOT EXISTS idx_temporal_valid_range ON temporal_transaction_snapshots(valid_from, valid_to);
+      CREATE INDEX IF NOT EXISTS idx_temporal_recorded_at ON temporal_transaction_snapshots(recorded_at);
+      CREATE INDEX IF NOT EXISTS idx_temporal_event_type ON temporal_transaction_snapshots(event_type);
+    `);
+
+    const countRes = await db.execute(sql`SELECT count(*)::int as count FROM temporal_transaction_snapshots;`);
+    const count = (countRes.rows[0] as any)?.count || 0;
+
+    if (count === 0) {
+      // Fetch seeded employees to generate rich multi-epoch history spanning from hire date to present
+      const emps = (await db.execute(sql`
+        SELECT 
+          e.id, e.employee_number, e.name, e.email, e.start_date, e.grade_level,
+          d.name as department_name, p.title as position_title,
+          c.type as contract_type, c.salary as contract_salary, c.start_date as contract_start,
+          prof.annual_base_salary, prof.housing_allowance, prof.utility_allowance, prof.transport_allowance,
+          prof.housing_allowance_type, prof.housing_allowance_rate, prof.super_fund, prof.tin
+        FROM employees e
+        LEFT JOIN departments d ON d.id = e.department_id
+        LEFT JOIN positions p ON p.id = e.position_id
+        LEFT JOIN contracts c ON c.employee_id = e.id
+        LEFT JOIN employee_salary_profiles prof ON prof.employee_id = e.id
+        ORDER BY e.id ASC;
+      `)).rows as any[];
+
+      for (const emp of emps) {
+        const empCode = emp.employee_number || `EMP${String(emp.id).padStart(4, "0")}`;
+        const startDate = emp.start_date ? new Date(emp.start_date) : new Date("2020-01-01");
+        
+        // 1. Initial Appointment Transaction (Inception / Time Immemorial)
+        const initialDate = startDate.toISOString();
+        const initialGrade = "Grade 10";
+        const initialSalary = 36000;
+        const initialDept = emp.department_name || "Corporate Services";
+        const initialTitle = `Assistant ${emp.position_title || "Officer"}`;
+        
+        const initialSnapshot = {
+          name: emp.name,
+          employeeNumber: empCode,
+          email: emp.email,
+          positionTitle: initialTitle,
+          departmentName: initialDept,
+          gradeLevel: initialGrade,
+          annualBaseSalary: initialSalary,
+          fortnightlyBase: Math.round((initialSalary / 26) * 100) / 100,
+          status: "active",
+          employmentType: "probationary",
+          housingAllowance: 250,
+          housingAllowanceType: "fixed",
+          utilityAllowance: 80,
+          utilityAllowanceType: "fixed",
+          transportAllowance: 100,
+          transportAllowanceType: "fixed",
+          superFund: "Nasfund",
+          tin: emp.tin || "500123987",
+        };
+
+        const txn1 = `TXN-${startDate.getFullYear()}-EMP-${emp.id}-001`;
+        const checksum1 = crypto.createHash("sha256").update(`${txn1}|employee|${emp.id}|${initialDate}`).digest("hex");
+
+        // Intermediate Promotion / Contract Extension Date (2.5 years after start)
+        const intermediateDateObj = new Date(startDate.getTime() + 1000 * 60 * 60 * 24 * 365 * 2.5);
+        if (intermediateDateObj.getFullYear() > 2024) {
+          intermediateDateObj.setFullYear(2024);
+        }
+        const intermediateDate = intermediateDateObj.toISOString();
+
+        // Insert initial hire epoch
+        await db.execute(sql`
+          INSERT INTO temporal_transaction_snapshots (
+            transaction_number, entity_type, entity_id, entity_reference, entity_name,
+            event_type, event_title, change_summary, valid_from, valid_to,
+            recorded_at, actor_name, actor_role, snapshot_state, diff, metadata, checksum, is_locked
+          ) VALUES (
+            ${txn1}, 'employee', ${emp.id}, ${empCode}, ${emp.name},
+            'initial_hire', ${'Gazetted Public Service Appointment & Induction'},
+            ${`Initial statutory appointment as ${initialTitle} in ${initialDept} on ${startDate.toLocaleDateString('en-PG')}`},
+            ${initialDate}::timestamptz, ${intermediateDate}::timestamptz,
+            ${initialDate}::timestamptz, 'National Public Service Commission', 'commissioner',
+            ${JSON.stringify(initialSnapshot)}::jsonb,
+            ${JSON.stringify({ event: 'Initial gazetted appointment under Public Services Management Act' })}::jsonb,
+            ${JSON.stringify({ gazetteNotice: `PNG-GZ-${startDate.getFullYear()}-${emp.id * 107}`, salaryScale: initialGrade })}::jsonb,
+            ${checksum1}, TRUE
+          );
+        `);
+
+        // 2. Promotion & Reclassification Transaction
+        const intermediateSalary = Math.round(initialSalary * 1.35);
+        const intermediateSnapshot = {
+          ...initialSnapshot,
+          positionTitle: emp.position_title || "Technical Officer",
+          gradeLevel: emp.grade_level || "Grade 12",
+          annualBaseSalary: intermediateSalary,
+          fortnightlyBase: Math.round((intermediateSalary / 26) * 100) / 100,
+          employmentType: emp.contract_type || "permanent",
+          housingAllowance: 400,
+          housingAllowanceType: "fixed",
+          utilityAllowance: 120,
+          utilityAllowanceType: "fixed",
+          transportAllowance: 150,
+          transportAllowanceType: "fixed",
+        };
+
+        const txn2 = `TXN-${intermediateDateObj.getFullYear()}-EMP-${emp.id}-002`;
+        const checksum2 = crypto.createHash("sha256").update(`${txn2}|employee|${emp.id}|${intermediateDate}`).digest("hex");
+        
+        // 3. Current Active Epoch (Effective 2026-01-01)
+        const currentEffectiveDate = '2026-01-01T00:00:00Z';
+
+        await db.execute(sql`
+          INSERT INTO temporal_transaction_snapshots (
+            transaction_number, entity_type, entity_id, entity_reference, entity_name,
+            event_type, event_title, change_summary, valid_from, valid_to,
+            recorded_at, actor_name, actor_role, previous_state, snapshot_state, diff, metadata, checksum, is_locked
+          ) VALUES (
+            ${txn2}, 'employee', ${emp.id}, ${empCode}, ${emp.name},
+            'promotion', ${'Merit Promotion & Classification Progression'},
+            ${`Promoted to ${emp.position_title || 'Officer'} (Grade Level ${emp.grade_level || 'Grade 12'}) following staff appraisal review`},
+            ${intermediateDate}::timestamptz, ${currentEffectiveDate}::timestamptz,
+            ${intermediateDate}::timestamptz, 'NISIT Staff Appointment & Promotion Committee', 'executive',
+            ${JSON.stringify(initialSnapshot)}::jsonb,
+            ${JSON.stringify(intermediateSnapshot)}::jsonb,
+            ${JSON.stringify({
+              annualBaseSalary: { from: initialSalary, to: intermediateSalary },
+              gradeLevel: { from: initialGrade, to: emp.grade_level || "Grade 12" },
+              positionTitle: { from: initialTitle, to: emp.position_title }
+            })}::jsonb,
+            ${JSON.stringify({ appraisalScore: "94.5%", promotionCommitteeRef: `SAPC-${intermediateDateObj.getFullYear()}-${emp.id}` })}::jsonb,
+            ${checksum2}, TRUE
+          );
+        `);
+
+        // 4. Current State (Valid from 2026-01-01 into Present / Time Immemorial forward)
+        const currentSalary = Number(emp.annual_base_salary) > 0 ? Number(emp.annual_base_salary) : (emp.contract_salary ? Number(emp.contract_salary) : 54000);
+        const currentSnapshot = {
+          name: emp.name,
+          employeeNumber: empCode,
+          email: emp.email,
+          positionTitle: emp.position_title,
+          departmentName: emp.department_name,
+          gradeLevel: emp.grade_level || "Grade 12",
+          annualBaseSalary: currentSalary,
+          fortnightlyBase: Math.round((currentSalary / 26) * 100) / 100,
+          status: "active",
+          employmentType: emp.contract_type || "permanent",
+          housingAllowance: Number(emp.housing_allowance) || 400,
+          housingAllowanceType: emp.housing_allowance_type || "fixed",
+          housingAllowanceRate: emp.housing_allowance_rate || "15",
+          utilityAllowance: Number(emp.utility_allowance) || 120,
+          utilityAllowanceType: "fixed",
+          transportAllowance: Number(emp.transport_allowance) || 150,
+          transportAllowanceType: "fixed",
+          superFund: emp.super_fund || "Nasfund",
+          tin: emp.tin || "500123987",
+        };
+
+        const txn3 = `TXN-2026-EMP-${emp.id}-003`;
+        const checksum3 = crypto.createHash("sha256").update(`${txn3}|employee|${emp.id}|${currentEffectiveDate}`).digest("hex");
+
+        await db.execute(sql`
+          INSERT INTO temporal_transaction_snapshots (
+            transaction_number, entity_type, entity_id, entity_reference, entity_name,
+            event_type, event_title, change_summary, valid_from, valid_to,
+            recorded_at, actor_name, actor_role, previous_state, snapshot_state, diff, metadata, checksum, is_locked
+          ) VALUES (
+            ${txn3}, 'employee', ${emp.id}, ${empCode}, ${emp.name},
+            'allowance_configured', ${'Public Service General Orders Remuneration Alignment & Allowance Modernization'},
+            ${`Modernized remuneration package with configurable allowance model (${currentSnapshot.housingAllowanceType === 'percentage' ? `${currentSnapshot.housingAllowanceRate}%` : `K${currentSnapshot.housingAllowance}`} housing) and base salary K${currentSalary.toLocaleString()}`},
+            ${currentEffectiveDate}::timestamptz, NULL,
+            '2026-01-01 08:00:00+10'::timestamptz, 'Director General NISIT', 'executive',
+            ${JSON.stringify(intermediateSnapshot)}::jsonb,
+            ${JSON.stringify(currentSnapshot)}::jsonb,
+            ${JSON.stringify({
+              annualBaseSalary: { from: intermediateSalary, to: currentSalary },
+              housingAllowance: { from: 400, to: currentSnapshot.housingAllowance },
+              allowanceModel: { from: "fixed", to: currentSnapshot.housingAllowanceType }
+            })}::jsonb,
+            ${JSON.stringify({ determinationOrder: "NISIT-DOR-2026-01", statutoryGazette: "PNG-GZ-2026-N44" })}::jsonb,
+            ${checksum3}, TRUE
+          );
+        `);
+      }
+    }
+
+    logger.info("ensureTemporalLedgerTablesExist: verified temporal transaction ledger and multi-epoch history");
+  } catch (error) {
+    logger.error({ err: error }, "ensureTemporalLedgerTablesExist failed");
+  }
+}
+
+export async function alignOrganizationalPositionsAndHierarchy(): Promise<void> {
+  try {
+    const [agency] = await db.select().from(agenciesTable).limit(1);
+    const agencyId = agency?.id || 1;
+
+    // 1. Ensure all 7 official 2024 statutory divisions exist
+    const deptDefs = [
+      { id: 1, name: "Office of the Director General", code: "DIV-ODG" },
+      { id: 2, name: "Corporate Service Division", code: "DIV-CSD" },
+      { id: 3, name: "Accreditation Division", code: "DIV-ACD" },
+      { id: 4, name: "Certification Division", code: "DIV-CRD" },
+      { id: 5, name: "Standards Development Division", code: "DIV-SDD" },
+      { id: 6, name: "Metrology Division", code: "DIV-MD" },
+      { id: 7, name: "Radiation Safety & Control Division", code: "DIV-RSD" },
+    ];
+
+    for (const d of deptDefs) {
+      const [existing] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, d.id));
+      if (existing) {
+        await db.update(departmentsTable).set({ name: d.name, code: d.code, agencyId }).where(eq(departmentsTable.id, d.id));
+      } else {
+        await db.insert(departmentsTable).values({ id: d.id, name: d.name, code: d.code, agencyId });
+      }
+    }
+
+    // 2. Upsert all 131 establishment position specifications according to 2024 Organizational Structure
+    const establishmentPositions: Array<{ positionCode: string; title: string; departmentId: number; gradeLevel: string; totalCount: number; reportsToTitle: string }> = [
+      { positionCode: "NISIT-POS-ODG-001", title: "Director General, NISIT", departmentId: 1, gradeLevel: "Grade 20", totalCount: 1, reportsToTitle: "NISIT Council" },
+      { positionCode: "NISIT-POS-ODG-002", title: "Executive Officer", departmentId: 1, gradeLevel: "Grade 15", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-003", title: "Legal Officer", departmentId: 1, gradeLevel: "Grade 15", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-004", title: "Internal Auditor", departmentId: 1, gradeLevel: "Grade 15", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-005", title: "Media and Public Relations Officer", departmentId: 1, gradeLevel: "Grade 13", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-006", title: "Executive Secretary", departmentId: 1, gradeLevel: "Grade 13", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-007", title: "Driver", departmentId: 1, gradeLevel: "Grade 10", totalCount: 1, reportsToTitle: "Executive Secretary" },
+      { positionCode: "NISIT-POS-ODG-008", title: "Manager Compliance and Enforcement", departmentId: 1, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ODG-009", title: "Compliance Officer", departmentId: 1, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Manager Compliance and Enforcement" },
+      { positionCode: "NISIT-POS-ODG-010", title: "Enforcement Officer", departmentId: 1, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Manager Compliance and Enforcement" },
+      { positionCode: "NISIT-POS-CSD-001", title: "Executive Manager, Corporate Service Division", departmentId: 2, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-CSD-002", title: "Executive Assistant", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Corporate Service Division" },
+      { positionCode: "NISIT-POS-CSD-003", title: "Manager, Human Resource and Administration", departmentId: 2, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Corporate Service Division" },
+      { positionCode: "NISIT-POS-CSD-004", title: "Senior HR Officer", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Human Resource and Administration" },
+      { positionCode: "NISIT-POS-CSD-005", title: "HR Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior HR Officer" },
+      { positionCode: "NISIT-POS-CSD-006", title: "Assistant HR Officer", departmentId: 2, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "HR Officer" },
+      { positionCode: "NISIT-POS-CSD-007", title: "Staff Training and Development Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior HR Officer" },
+      { positionCode: "NISIT-POS-CSD-008", title: "HR Payroll Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior HR Officer" },
+      { positionCode: "NISIT-POS-CSD-009", title: "Senior Administration Officer", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Human Resource and Administration" },
+      { positionCode: "NISIT-POS-CSD-010", title: "Administration Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Administration Officer" },
+      { positionCode: "NISIT-POS-CSD-011", title: "Janitor, Male", departmentId: 2, gradeLevel: "Grade 10", totalCount: 1, reportsToTitle: "Administration Officer" },
+      { positionCode: "NISIT-POS-CSD-012", title: "Janitor, Female", departmentId: 2, gradeLevel: "Grade 10", totalCount: 1, reportsToTitle: "Administration Officer" },
+      { positionCode: "NISIT-POS-CSD-013", title: "Receptionist", departmentId: 2, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "Senior Administration Officer" },
+      { positionCode: "NISIT-POS-CSD-014", title: "Driver", departmentId: 2, gradeLevel: "Grade 10", totalCount: 1, reportsToTitle: "Senior Administration Officer" },
+      { positionCode: "NISIT-POS-CSD-015", title: "Senior Business Development Officer", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Human Resource and Administration" },
+      { positionCode: "NISIT-POS-CSD-016", title: "Marketing Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Business Development Officer" },
+      { positionCode: "NISIT-POS-CSD-017", title: "Manager, Finance", departmentId: 2, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Corporate Service Division" },
+      { positionCode: "NISIT-POS-CSD-018", title: "Senior Accountant", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Finance" },
+      { positionCode: "NISIT-POS-CSD-019", title: "Accounts Payable", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Accountant" },
+      { positionCode: "NISIT-POS-CSD-020", title: "Accounts Receivable", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Accountant" },
+      { positionCode: "NISIT-POS-CSD-021", title: "Asset Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Accountant" },
+      { positionCode: "NISIT-POS-CSD-022", title: "Senior Information Technology Officer", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Finance" },
+      { positionCode: "NISIT-POS-CSD-023", title: "Information Technology Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Information Technology Officer" },
+      { positionCode: "NISIT-POS-CSD-024", title: "Senior Information Officer", departmentId: 2, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Finance" },
+      { positionCode: "NISIT-POS-CSD-025", title: "Publication and Sales Officer", departmentId: 2, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Information Officer" },
+      { positionCode: "NISIT-POS-ACD-001", title: "Executive Manager, Accreditation Division", departmentId: 3, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-ACD-002", title: "Executive Assistant", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Accreditation Division" },
+      { positionCode: "NISIT-POS-ACD-003", title: "Manager, Laboratory Accreditation", departmentId: 3, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Accreditation Division" },
+      { positionCode: "NISIT-POS-ACD-004", title: "Senior Laboratory Accreditation Officer (Testing / Calibration)", departmentId: 3, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Laboratory Accreditation" },
+      { positionCode: "NISIT-POS-ACD-005", title: "Laboratory Accreditation Officer, Mechanical", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer (Testing / Calibration)" },
+      { positionCode: "NISIT-POS-ACD-006", title: "Assistant Laboratory Accreditation Officer, Mechanical", departmentId: 3, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "Laboratory Accreditation Officer, Mechanical" },
+      { positionCode: "NISIT-POS-ACD-007", title: "Laboratory Accreditation Officer, CMT", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer (Testing / Calibration)" },
+      { positionCode: "NISIT-POS-ACD-008", title: "Assistant Laboratory Accreditation Officer, CMT", departmentId: 3, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "Laboratory Accreditation Officer, CMT" },
+      { positionCode: "NISIT-POS-ACD-009", title: "Senior Laboratory Accreditation Officer (Medical / Biological)", departmentId: 3, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Laboratory Accreditation" },
+      { positionCode: "NISIT-POS-ACD-010", title: "Laboratory Accreditation Officer, Chemical", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer (Medical / Biological)" },
+      { positionCode: "NISIT-POS-ACD-011", title: "Assistant Laboratory Accreditation Officer, Chemical", departmentId: 3, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "Laboratory Accreditation Officer, Chemical" },
+      { positionCode: "NISIT-POS-ACD-012", title: "Laboratory Accreditation Officer, Biological", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer (Medical / Biological)" },
+      { positionCode: "NISIT-POS-ACD-013", title: "Assistant Laboratory Accreditation Officer, Biological", departmentId: 3, gradeLevel: "Grade 11", totalCount: 1, reportsToTitle: "Laboratory Accreditation Officer, Biological" },
+      { positionCode: "NISIT-POS-ACD-014", title: "Manager, Quality Assurance", departmentId: 3, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Accreditation Division" },
+      { positionCode: "NISIT-POS-ACD-015", title: "Senior Quality Assurance Officer", departmentId: 3, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Quality Assurance" },
+      { positionCode: "NISIT-POS-ACD-016", title: "Quality Assurance Officer", departmentId: 3, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Quality Assurance Officer" },
+      { positionCode: "NISIT-POS-ACD-017", title: "Manager, Accreditation of Conformity Assessment Bodies", departmentId: 3, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Accreditation Division" },
+      { positionCode: "NISIT-POS-ACD-018", title: "Senior Laboratory Accreditation Officer, CAB (Inspection)", departmentId: 3, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Accreditation of Conformity Assessment Bodies" },
+      { positionCode: "NISIT-POS-ACD-019", title: "Accreditation Officer, Inspection Bodies", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer, CAB (Inspection)" },
+      { positionCode: "NISIT-POS-ACD-020", title: "Accreditation Officer, GHG Validation Verification Body", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer, CAB (Inspection)" },
+      { positionCode: "NISIT-POS-ACD-021", title: "Senior Laboratory Accreditation Officer, CAB (Certification)", departmentId: 3, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Accreditation of Conformity Assessment Bodies" },
+      { positionCode: "NISIT-POS-ACD-022", title: "Accreditation Officer, Personnel Certification Body", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer, CAB (Certification)" },
+      { positionCode: "NISIT-POS-ACD-023", title: "Accreditation Officer, Management Certification Body", departmentId: 3, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Laboratory Accreditation Officer, CAB (Certification)" },
+      { positionCode: "NISIT-POS-CRD-001", title: "Executive Manager, Certification Division", departmentId: 4, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-CRD-002", title: "Executive Assistant", departmentId: 4, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Certification Division" },
+      { positionCode: "NISIT-POS-CRD-003", title: "Manager, Management Systems Certification", departmentId: 4, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Certification Division" },
+      { positionCode: "NISIT-POS-CRD-004", title: "Senior Auditor, QMS and FSMS", departmentId: 4, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Management Systems Certification" },
+      { positionCode: "NISIT-POS-CRD-005", title: "Auditor, QMS and FSMS", departmentId: 4, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Auditor, QMS and FSMS" },
+      { positionCode: "NISIT-POS-CRD-006", title: "Senior Auditor, FSMS", departmentId: 4, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Management Systems Certification" },
+      { positionCode: "NISIT-POS-CRD-007", title: "Auditor, FSMS", departmentId: 4, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Auditor, FSMS" },
+      { positionCode: "NISIT-POS-CRD-008", title: "Senior Auditor, Environment/Energy MS", departmentId: 4, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Management Systems Certification" },
+      { positionCode: "NISIT-POS-CRD-009", title: "Auditor, EMS", departmentId: 4, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Auditor, Environment/Energy MS" },
+      { positionCode: "NISIT-POS-CRD-010", title: "Auditor, EEMS", departmentId: 4, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Auditor, Environment/Energy MS" },
+      { positionCode: "NISIT-POS-CRD-011", title: "Manager, Product Certification", departmentId: 4, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Certification Division" },
+      { positionCode: "NISIT-POS-CRD-012", title: "Senior Product Certification Research Officer", departmentId: 4, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Product Certification" },
+      { positionCode: "NISIT-POS-CRD-013", title: "Product Certification Officer", departmentId: 4, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Product Certification Research Officer" },
+      { positionCode: "NISIT-POS-CRD-014", title: "Manager, Certification Standards and Training", departmentId: 4, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Certification Division" },
+      { positionCode: "NISIT-POS-CRD-015", title: "Senior Training Coordinator", departmentId: 4, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Certification Standards and Training" },
+      { positionCode: "NISIT-POS-CRD-016", title: "Training Coordinator", departmentId: 4, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Training Coordinator" },
+      { positionCode: "NISIT-POS-SDD-001", title: "Executive Manager, Standards Development Division", departmentId: 5, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-SDD-002", title: "Executive Assistant", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Standards Development Division" },
+      { positionCode: "NISIT-POS-SDD-003", title: "Manager, Infrastructure and Service Standards", departmentId: 5, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Standards Development Division" },
+      { positionCode: "NISIT-POS-SDD-004", title: "Senior Projects Coordinator, Building Standards", departmentId: 5, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Infrastructure and Service Standards" },
+      { positionCode: "NISIT-POS-SDD-005", title: "Project Coordinator, Service Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Building Standards" },
+      { positionCode: "NISIT-POS-SDD-006", title: "Project Coordinator, Construction Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Building Standards" },
+      { positionCode: "NISIT-POS-SDD-007", title: "Manager, Chemical and Biological Standards", departmentId: 5, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Standards Development Division" },
+      { positionCode: "NISIT-POS-SDD-008", title: "Senior Projects Coordinator, Food Standards", departmentId: 5, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Chemical and Biological Standards" },
+      { positionCode: "NISIT-POS-SDD-009", title: "Project Coordinator, Industrial Chemistry Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Food Standards" },
+      { positionCode: "NISIT-POS-SDD-010", title: "Project Coordinator, Organic Chemistry Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Food Standards" },
+      { positionCode: "NISIT-POS-SDD-011", title: "Project Coordinator, Biology Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Food Standards" },
+      { positionCode: "NISIT-POS-SDD-012", title: "Manager, Electrical and Mechanical Standards", departmentId: 5, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Standards Development Division" },
+      { positionCode: "NISIT-POS-SDD-013", title: "Senior Projects Coordinator, Electrical Appliance Standards", departmentId: 5, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Electrical and Mechanical Standards" },
+      { positionCode: "NISIT-POS-SDD-014", title: "Project Coordinator, Electronic and Renewable Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Electrical Appliance Standards" },
+      { positionCode: "NISIT-POS-SDD-015", title: "Project Coordinator, Mechanical Standards", departmentId: 5, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Projects Coordinator, Electrical Appliance Standards" },
+      { positionCode: "NISIT-POS-MD-001", title: "Executive Manager, Metrology Division", departmentId: 6, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-MD-002", title: "Executive Assistant", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Metrology Division" },
+      { positionCode: "NISIT-POS-MD-003", title: "Manager, Scientific & Industrial Metrology", departmentId: 6, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Metrology Division" },
+      { positionCode: "NISIT-POS-MD-004", title: "Senior SI Metrologist 1 (Physical / Mechanical)", departmentId: 6, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Scientific & Industrial Metrology" },
+      { positionCode: "NISIT-POS-MD-005", title: "Mass Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 1 (Physical / Mechanical)" },
+      { positionCode: "NISIT-POS-MD-006", title: "Pressure Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 1 (Physical / Mechanical)" },
+      { positionCode: "NISIT-POS-MD-007", title: "Force Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 1 (Physical / Mechanical)" },
+      { positionCode: "NISIT-POS-MD-008", title: "Torque Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 1 (Physical / Mechanical)" },
+      { positionCode: "NISIT-POS-MD-009", title: "Senior SI Metrologist 2 (Electrical / Thermal)", departmentId: 6, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Scientific & Industrial Metrology" },
+      { positionCode: "NISIT-POS-MD-010", title: "Electrical Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 2 (Electrical / Thermal)" },
+      { positionCode: "NISIT-POS-MD-011", title: "Temperature Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 2 (Electrical / Thermal)" },
+      { positionCode: "NISIT-POS-MD-012", title: "Length Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 2 (Electrical / Thermal)" },
+      { positionCode: "NISIT-POS-MD-013", title: "Volume/Flow Metrologist (SI)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior SI Metrologist 2 (Electrical / Thermal)" },
+      { positionCode: "NISIT-POS-MD-014", title: "Manager, Legal Metrology", departmentId: 6, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Metrology Division" },
+      { positionCode: "NISIT-POS-MD-015", title: "Senior Legal Metrologist 1 (Trade Measures)", departmentId: 6, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Legal Metrology" },
+      { positionCode: "NISIT-POS-MD-016", title: "Mass Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 1 (Trade Measures)" },
+      { positionCode: "NISIT-POS-MD-017", title: "Pressure Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 1 (Trade Measures)" },
+      { positionCode: "NISIT-POS-MD-018", title: "Force Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 1 (Trade Measures)" },
+      { positionCode: "NISIT-POS-MD-019", title: "Torque Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 1 (Trade Measures)" },
+      { positionCode: "NISIT-POS-MD-020", title: "Senior Legal Metrologist 2 (Verification)", departmentId: 6, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager, Legal Metrology" },
+      { positionCode: "NISIT-POS-MD-021", title: "Electrical Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 2 (Verification)" },
+      { positionCode: "NISIT-POS-MD-022", title: "Temperature Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 2 (Verification)" },
+      { positionCode: "NISIT-POS-MD-023", title: "Length Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 2 (Verification)" },
+      { positionCode: "NISIT-POS-MD-024", title: "Volume/Flow Metrologist (Legal)", departmentId: 6, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Legal Metrologist 2 (Verification)" },
+      { positionCode: "NISIT-POS-RSD-001", title: "Executive Manager, Radiation Safety & Control Division", departmentId: 7, gradeLevel: "Grade 18", totalCount: 1, reportsToTitle: "Director General, NISIT" },
+      { positionCode: "NISIT-POS-RSD-002", title: "Executive Assistant", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Executive Manager, Radiation Safety & Control Division" },
+      { positionCode: "NISIT-POS-RSD-003", title: "Manager - Notification & Authorisation", departmentId: 7, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Radiation Safety & Control Division" },
+      { positionCode: "NISIT-POS-RSD-004", title: "Senior Officer - Notification", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - Notification & Authorisation" },
+      { positionCode: "NISIT-POS-RSD-005", title: "Notification Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Notification" },
+      { positionCode: "NISIT-POS-RSD-006", title: "Senior Officer - Authorisation", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - Notification & Authorisation" },
+      { positionCode: "NISIT-POS-RSD-007", title: "Authorisation Officer - Registration", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Authorisation" },
+      { positionCode: "NISIT-POS-RSD-008", title: "Authorisation Officer - Licensing", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Authorisation" },
+      { positionCode: "NISIT-POS-RSD-009", title: "Manager - Inspection, Enforcement & Safeguards", departmentId: 7, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Radiation Safety & Control Division" },
+      { positionCode: "NISIT-POS-RSD-010", title: "Senior Officer - Inspection (Safety + Security)", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - Inspection, Enforcement & Safeguards" },
+      { positionCode: "NISIT-POS-RSD-011", title: "Inspection Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 2, reportsToTitle: "Senior Officer - Inspection (Safety + Security)" },
+      { positionCode: "NISIT-POS-RSD-012", title: "Senior Officer - Enforcement", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - Inspection, Enforcement & Safeguards" },
+      { positionCode: "NISIT-POS-RSD-013", title: "Enforcement Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Enforcement" },
+      { positionCode: "NISIT-POS-RSD-014", title: "Senior Officer - Safeguards & Security", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - Inspection, Enforcement & Safeguards" },
+      { positionCode: "NISIT-POS-RSD-015", title: "Safeguards & Security Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Safeguards & Security" },
+      { positionCode: "NISIT-POS-RSD-016", title: "Manager - R&D & Waste Management", departmentId: 7, gradeLevel: "Grade 16", totalCount: 1, reportsToTitle: "Executive Manager, Radiation Safety & Control Division" },
+      { positionCode: "NISIT-POS-RSD-017", title: "Senior Officer - R&D", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - R&D & Waste Management" },
+      { positionCode: "NISIT-POS-RSD-018", title: "R&D Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - R&D" },
+      { positionCode: "NISIT-POS-RSD-019", title: "Senior Officer - Waste Management & Emergency Prep.", departmentId: 7, gradeLevel: "Grade 14", totalCount: 1, reportsToTitle: "Manager - R&D & Waste Management" },
+      { positionCode: "NISIT-POS-RSD-020", title: "Waste & Emergency Preparedness Officer", departmentId: 7, gradeLevel: "Grade 12", totalCount: 1, reportsToTitle: "Senior Officer - Waste Management & Emergency Prep." },
+    ];
+
+    for (const p of establishmentPositions) {
+      const [existing] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, p.positionCode));
+      if (existing) {
+        await db.update(positionsTable).set({
+          title: p.title,
+          departmentId: p.departmentId,
+          gradeLevel: p.gradeLevel,
+          totalCount: p.totalCount,
+          reportsToTitle: p.reportsToTitle,
+          status: 'active',
+          updatedAt: new Date(),
+        }).where(eq(positionsTable.id, existing.id));
+      } else {
+        await db.insert(positionsTable).values({
+          positionCode: p.positionCode,
+          title: p.title,
+          departmentId: p.departmentId,
+          gradeLevel: p.gradeLevel,
+          totalCount: p.totalCount,
+          reportsToTitle: p.reportsToTitle,
+          status: 'active',
+        });
+      }
+    }
+
+    // 3. Map active incumbents to their corresponding substantive positions
+    const [dgPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-ODG-001'));
+    const [finMgrPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-CSD-017'));
+    const [hrOffPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-CSD-004'));
+    const [hraMgrPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-CSD-003'));
+    const [snrItPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-CSD-022'));
+    const [itOffPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-CSD-023'));
+    const [cabMgrPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-ACD-017'));
+    const [stdCoordPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-SDD-004'));
+    const [metroPos] = await db.select().from(positionsTable).where(eq(positionsTable.positionCode, 'NISIT-POS-MD-004'));
+
+    if (dgPos) await db.update(employeesTable).set({ positionId: dgPos.id, departmentId: 1, gradeLevel: dgPos.gradeLevel }).where(eq(employeesTable.id, 1));
+    if (finMgrPos) await db.update(employeesTable).set({ positionId: finMgrPos.id, departmentId: 2, gradeLevel: finMgrPos.gradeLevel }).where(eq(employeesTable.id, 2));
+    if (hrOffPos) await db.update(employeesTable).set({ positionId: hrOffPos.id, departmentId: 2, gradeLevel: hrOffPos.gradeLevel }).where(eq(employeesTable.id, 7));
+    if (hraMgrPos) await db.update(employeesTable).set({ positionId: hraMgrPos.id, departmentId: 2, gradeLevel: hraMgrPos.gradeLevel }).where(eq(employeesTable.id, 4));
+    if (snrItPos) await db.update(employeesTable).set({ positionId: snrItPos.id, departmentId: 2, gradeLevel: snrItPos.gradeLevel }).where(eq(employeesTable.id, 3));
+    if (itOffPos) {
+      await db.update(employeesTable).set({ positionId: itOffPos.id, departmentId: 2, gradeLevel: itOffPos.gradeLevel }).where(eq(employeesTable.id, 10));
+      await db.update(employeesTable).set({ positionId: itOffPos.id, departmentId: 2, gradeLevel: itOffPos.gradeLevel }).where(eq(employeesTable.id, 8));
+    }
+    if (cabMgrPos) await db.update(employeesTable).set({ positionId: cabMgrPos.id, departmentId: 3, gradeLevel: cabMgrPos.gradeLevel }).where(eq(employeesTable.id, 9));
+    if (stdCoordPos) await db.update(employeesTable).set({ positionId: stdCoordPos.id, departmentId: 5, gradeLevel: stdCoordPos.gradeLevel }).where(eq(employeesTable.id, 5));
+    if (metroPos) await db.update(employeesTable).set({ positionId: metroPos.id, departmentId: 6, gradeLevel: metroPos.gradeLevel }).where(eq(employeesTable.id, 6));
+
+    // 4. Update Director General Apex Executive Configuration
+    if (agency) {
+      const currentConfig = (agency.configuration as Record<string, any> | null) || {};
+      await db.update(agenciesTable).set({
+        configuration: {
+          ...currentConfig,
+          directorGeneral: {
+            name: 'Margaret Mala Tolo',
+            title: 'Director General, NISIT',
+            email: 'm.tolo@nisit.gov.pg',
+            gradeLevel: 'Grade 20',
+            employeeId: 1,
+          },
+        },
+        updatedAt: new Date(),
+      }).where(eq(agenciesTable.id, agency.id));
+    }
+
+    // 5. Recalculate filledCount on all positions and archive legacy unassigned boilerplate positions
+    const validCodes = establishmentPositions.map(p => p.positionCode);
+    const allEmps = await db.select().from(employeesTable).where(eq(employeesTable.status, 'active'));
+    const allPositions = await db.select().from(positionsTable);
+    for (const pos of allPositions) {
+      const filled = allEmps.filter(e => e.positionId === pos.id).length;
+      const isEstablishment = pos.positionCode && validCodes.includes(pos.positionCode);
+      const newStatus = isEstablishment ? 'active' : (filled > 0 ? 'active' : 'archived');
+      await db.update(positionsTable).set({ filledCount: filled, status: newStatus }).where(eq(positionsTable.id, pos.id));
+    }
+
+    // 6. Explicitly resolve and link parentPositionId on every establishment position
+    const activePositions = await db.select().from(positionsTable).where(eq(positionsTable.status, 'active'));
+    const titleToPosMap = new Map<string, typeof positionsTable.$inferSelect>();
+    for (const p of activePositions) {
+      titleToPosMap.set(p.title.toLowerCase().trim(), p);
+    }
+
+    for (const pos of activePositions) {
+      let parentId: number | null = null;
+      if (pos.reportsToTitle && pos.reportsToTitle.trim().toLowerCase() !== "nisit council") {
+        const parentPos = titleToPosMap.get(pos.reportsToTitle.trim().toLowerCase());
+        if (parentPos) {
+          parentId = parentPos.id;
+        } else {
+          for (const [key, p] of titleToPosMap.entries()) {
+            if (key.includes(pos.reportsToTitle.trim().toLowerCase()) || pos.reportsToTitle.trim().toLowerCase().includes(key)) {
+              parentId = p.id;
+              break;
+            }
+          }
+        }
+      }
+      await db.update(positionsTable).set({ parentPositionId: parentId }).where(eq(positionsTable.id, pos.id));
+    }
+
+    // 7. Align supervisory reporting lines for all active personnel in employeesTable
+    const allActiveEmps = await db.select().from(employeesTable).where(eq(employeesTable.status, 'active'));
+    const linkedPositions = await db.select().from(positionsTable);
+    for (const emp of allActiveEmps) {
+      if (!emp.positionId) continue;
+      const empPos = linkedPositions.find(p => p.id === emp.positionId);
+      if (empPos?.parentPositionId) {
+        const supervisorEmp = allActiveEmps.find(e => e.positionId === empPos.parentPositionId);
+        if (supervisorEmp) {
+          await db.update(employeesTable).set({ supervisorId: supervisorEmp.id }).where(eq(employeesTable.id, emp.id));
+        } else if (emp.id !== 1) {
+          // If direct supervisor position is vacant, fallback to Director General (id 1)
+          await db.update(employeesTable).set({ supervisorId: 1 }).where(eq(employeesTable.id, emp.id));
+        }
+      } else if (empPos?.reportsToTitle === "NISIT Council" || emp.id === 1) {
+        await db.update(employeesTable).set({ supervisorId: null }).where(eq(employeesTable.id, emp.id));
+      }
+    }
+
+    logger.info('alignOrganizationalPositionsAndHierarchy: successfully aligned NISIT 2024 establishment positions, reporting lines, and organizational hierarchy');
+  } catch (error) {
+    logger.error({ err: error }, 'alignOrganizationalPositionsAndHierarchy failed');
+  }
+}

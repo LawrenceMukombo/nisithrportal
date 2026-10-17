@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist, ensureUserSecurityColumnsExist, ensureAdminUserExists, ensureClockingTablesExist } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist, ensureUserSecurityColumnsExist, ensureAdminUserExists, ensureClockingTablesExist, ensureGeofenceAndSmartAttendanceTablesExist, ensurePayrollTablesExist, ensureTemporalLedgerTablesExist, alignOrganizationalPositionsAndHierarchy } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -58,6 +58,18 @@ async function runSelfHealingMigrations(): Promise<boolean> {
 
     // Ensure biometric and clocking hardware interoperability tables exist
     await ensureClockingTablesExist().catch((e) => logger.error(e, "ensureClockingTablesExist failed"));
+
+    // Ensure geofence zones and mobile/kiosk attendance columns exist
+    await ensureGeofenceAndSmartAttendanceTablesExist().catch((e) => logger.error(e, "ensureGeofenceAndSmartAttendanceTablesExist failed"));
+
+    // Ensure enterprise payroll and remuneration tables exist
+    await ensurePayrollTablesExist().catch((e) => logger.error(e, "ensurePayrollTablesExist failed"));
+
+    // Ensure temporal transaction snapshots and multi-epoch history ledger exist
+    await ensureTemporalLedgerTablesExist().catch((e) => logger.error(e, "ensureTemporalLedgerTablesExist failed"));
+
+    // Align statutory establishment positions, reporting lines, and organizational hierarchy
+    await alignOrganizationalPositionsAndHierarchy().catch((e) => logger.error(e, "alignOrganizationalPositionsAndHierarchy failed"));
 
     // Always run legacy job backfill (idempotent)
     await backfillMissingJobFields().catch((e) => logger.error(e, "backfillMissingJobFields failed"));

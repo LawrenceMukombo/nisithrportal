@@ -29,16 +29,31 @@ app.use(
     },
   }),
 );
-const configuredOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173")
+const envOrigins = (process.env.CORS_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const defaultAllowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+];
+
+const configuredOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envOrigins]));
+const isDev = process.env.NODE_ENV !== "production";
+
 app.use(cors({
   origin(origin, callback) {
     // Browsers omit Origin for same-origin and non-browser requests.
     if (!origin || configuredOrigins.includes(origin)) return callback(null, true);
+    if (isDev && (/^http:\/\/localhost(:\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))) {
+      return callback(null, true);
+    }
     return callback(new Error("Origin is not allowed by CORS policy"));
   },
+  credentials: true,
 }));
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");

@@ -373,3 +373,16 @@
     inset: -1px;
   }
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print, header, nav, aside, [role="navigation"], button:not(.print-include) {
+    display: none !important;
+  }
+  .print-page-break {
+    page-break-before: always;
+  }
+}

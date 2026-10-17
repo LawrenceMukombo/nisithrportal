@@ -51,6 +51,8 @@ import ReportsPage from "@/pages/reports";
 import ExecutiveDashboardPage from "@/pages/executive-dashboard";
 import HelpGuidePage from "@/pages/help-guide";
 import MessagesPage from "@/pages/messages";
+import PayrollPage from "@/pages/payroll";
+import TimeHistoryPage from "@/pages/time-history";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -75,6 +77,19 @@ function RedirectToLogin() {
   const [, setLocation] = useLocation();
   useEffect(() => { setLocation("/login"); }, [setLocation]);
   return null;
+}
+
+function RecruitmentRoute() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has("positionId")) {
+        setLocation(`/jobs/new${window.location.search}`);
+      }
+    }
+  }, [setLocation]);
+  return <JobsPage />;
 }
 
 function ProtectedRoute({ component: Component, roles }: { component: React.ComponentType; roles?: string[] }) {
@@ -123,6 +138,12 @@ function Router() {
       </Route>
       <Route path="/org-chart">
         {() => <ProtectedRoute component={OrgChartPage} />}
+      </Route>
+      <Route path="/recruitment">
+        {() => <ProtectedRoute component={RecruitmentRoute} roles={["admin", "hr_officer", "hiring_manager", "executive"]} />}
+      </Route>
+      <Route path="/recruitment/new">
+        {() => <ProtectedRoute component={JobFormPage} roles={["admin", "hr_officer"]} />}
       </Route>
       <Route path="/help">
         {() => <ProtectedRoute component={HelpGuidePage} />}
@@ -203,6 +224,12 @@ function Router() {
       </Route>
       <Route path="/housing">
         {() => <ProtectedRoute component={HousingPage} />}
+      </Route>
+      <Route path="/payroll">
+        {() => <ProtectedRoute component={PayrollPage} />}
+      </Route>
+      <Route path="/time-history">
+        {() => <ProtectedRoute component={TimeHistoryPage} />}
       </Route>
       <Route path="/messages/:id?">
         {() => <ProtectedRoute component={MessagesPage} />}

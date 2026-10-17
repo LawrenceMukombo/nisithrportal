@@ -44,6 +44,10 @@ export const employeesTable = pgTable("employees", {
   confirmationDate: date("confirmation_date"),
   separationDate: date("separation_date"),
   separationReason: text("separation_reason"),
+  liveAttendanceStatus: text("live_attendance_status").notNull().default("out_of_office"),
+  lastClockInAt: timestamp("last_clock_in_at", { withTimezone: true }),
+  lastClockOutAt: timestamp("last_clock_out_at", { withTimezone: true }),
+  punctualityScore: text("punctuality_score").default("100.0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

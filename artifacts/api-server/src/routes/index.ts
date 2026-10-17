@@ -33,6 +33,9 @@ import reportsRouter from "./reports";
 import workflowsRouter from "./workflows";
 import wikiRouter from "./wiki";
 import messagesRouter from "./messages";
+import clockingRouter from "./clocking";
+import payrollRouter from "./payroll";
+import temporalRouter from "./temporal";
 
 const router: IRouter = Router();
 
@@ -58,6 +61,7 @@ router.use(auditLogRouter);
 router.use(savedJobsRouter);
 router.use(leaveRouter);
 router.use(attendanceRouter);
+router.use(clockingRouter);
 router.use(onboardingRouter);
 router.use(offboardingRouter);
 router.use(performanceRouter);
@@ -70,5 +74,7 @@ router.use(reportsRouter);
 router.use(workflowsRouter);
 router.use(wikiRouter);
 router.use(messagesRouter);
+router.use(payrollRouter);
+router.use(temporalRouter);
 
 export default router;

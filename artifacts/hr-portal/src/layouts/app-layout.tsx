@@ -6,7 +6,7 @@ import {
   ScrollText, Building2, FolderKanban, Settings, LogOut,
   ChevronRight, ChevronDown, Menu, X, Moon, Sun, StarIcon, GitBranch, Puzzle, UserCog, Clock,
   Calendar, Timer, UserPlus, UserMinus, Target, GraduationCap, HeartHandshake, Home,
-  FolderLock, FileBadge, BarChart3, ShieldCheck, BookOpen, MessageSquare,
+  FolderLock, FileBadge, BarChart3, ShieldCheck, BookOpen, MessageSquare, Banknote, History,
 } from "lucide-react";
 import { useAuth, useRole } from "@/contexts/use-auth";
 import { cn } from "@/lib/utils";
@@ -99,6 +99,8 @@ function useNavItems() {
 
   // Employee Self-Service & Operations (for all internal staff)
   if (!isApplicant) {
+    items.push({ label: "Payroll & Remuneration", href: "/payroll", icon: Banknote });
+    items.push({ label: "Time in History", href: "/time-history", icon: History });
     items.push({ label: "Leave & Absence", href: "/leave", icon: Calendar });
     items.push({ label: "Attendance Clock", href: "/attendance", icon: Timer });
     items.push({ label: "Document Vault", href: "/documents", icon: FolderLock });
@@ -210,7 +212,7 @@ function groupNavItems(items: NavItem[]): NavGroup[] {
     ["Overview", ["/dashboard", "/executive-dashboard", "/org-chart", "/messages"]],
     ["Recruitment", ["/jobs", "/applications", "/shortlisted", "/candidates", "/workflow"]],
     ["People management", ["/employees", "/onboarding", "/contracts", "/offboarding"]],
-    ["Employee services", ["/leave", "/attendance", "/documents", "/hr-letters", "/performance", "/training", "/benefits", "/housing"]],
+    ["Employee services", ["/payroll", "/leave", "/attendance", "/documents", "/hr-letters", "/performance", "/training", "/benefits", "/housing"]],
     ["Administration", ["/departments", "/reports", "/users", "/integrations", "/settings/pipeline-sla"]],
     ["My profile", ["/account", "/my-applications", "/help"]],
   ];

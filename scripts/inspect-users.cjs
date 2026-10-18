@@ -50,6 +50,14 @@ async function main() {
   `);
   console.log("Verified users table security and preference columns exist.");
 
+  // Guarantee employee_number exists for all staff
+  await client.query(`
+    UPDATE employees 
+    SET employee_number = 'NISIT-EMP-' || (10000 + id)::text 
+    WHERE employee_number IS NULL OR employee_number = '';
+  `);
+  console.log("Verified all employees have statutory employeeNumber.");
+
   const hash = await bcrypt.hash("Admin123!", 10);
   const roleRes = await client.query("SELECT id FROM roles WHERE name = 'admin' LIMIT 1");
   const roleId = roleRes.rows[0]?.id || 1;

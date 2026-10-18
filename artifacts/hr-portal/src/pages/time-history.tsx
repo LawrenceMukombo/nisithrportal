@@ -103,15 +103,16 @@ export default function TimeHistoryPage() {
   const { data: employeeList = [] } = useQuery<EmployeeOption[]>({
     queryKey: ["/api/temporal/employees"],
     queryFn: async () => {
-      const res = await fetch("/api/payroll/employee-profiles", { headers: getAuthHeader() });
+      const res = await fetch("/api/payroll/employee-profiles?pageSize=100", { headers: getAuthHeader() });
       if (!res.ok) return [];
-      const data = await res.json();
-      return (data || []).map((e: any) => ({
-        id: e.employeeId,
-        fullName: `${e.firstName || ""} ${e.lastName || ""}`.trim() || `Officer #${e.employeeId}`,
-        payrollNumber: e.payrollNumber || `NISIT-EMP-${String(e.employeeId).padStart(4, "0")}`,
-        department: e.department || "Standards & Metrology",
-        position: e.jobTitle || "Technical Officer",
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json?.data || []);
+      return list.map((e: any) => ({
+        id: e.employeeId || e.id,
+        fullName: e.employeeName || `${e.firstName || ""} ${e.lastName || ""}`.trim() || `Officer #${e.employeeId || e.id}`,
+        payrollNumber: e.employeeNumber || e.payrollNumber || `NISIT-EMP-${String(e.employeeId || e.id).padStart(4, "0")}`,
+        department: e.departmentName || e.department || "Standards & Metrology",
+        position: e.positionTitle || e.position || e.jobTitle || "Technical Officer",
       }));
     },
   });
@@ -160,7 +161,12 @@ export default function TimeHistoryPage() {
         { headers: getAuthHeader() }
       );
       if (!res.ok) return [];
-      return res.json();
+      const json = await res.json();
+      if (Array.isArray(json)) return json;
+      if (Array.isArray(json?.data?.versions)) return json.data.versions;
+      if (Array.isArray(json?.data)) return json.data;
+      if (Array.isArray(json?.versions)) return json.versions;
+      return [];
     },
     enabled: !!effectiveEmployeeId,
   });

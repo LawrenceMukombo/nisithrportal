@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist, ensureUserSecurityColumnsExist, ensureAdminUserExists, ensureClockingTablesExist, ensureGeofenceAndSmartAttendanceTablesExist, ensurePayrollTablesExist, ensureTemporalLedgerTablesExist, alignOrganizationalPositionsAndHierarchy } from "./lib/seed";
+import { seedInitialData, backfillMissingJobFields, backfillCandidateUserIds, ensureChatTablesExist, ensureContractColumnsExist, ensureLeaveTablesAndColumnsExist, ensureUserSecurityColumnsExist, ensureAdminUserExists, ensureClockingTablesExist, ensureGeofenceAndSmartAttendanceTablesExist, ensurePayrollTablesExist, ensureTemporalLedgerTablesExist, alignOrganizationalPositionsAndHierarchy, ensureEmployeeNumbersExist } from "./lib/seed";
 import { triggerContractExpiryNotifications } from "./routes/contracts";
 import { cleanupExpiredResetTokens } from "./routes/auth";
 import { triggerSavedJobClosingNotifications } from "./routes/saved-jobs";
@@ -76,6 +76,9 @@ async function runSelfHealingMigrations(): Promise<boolean> {
 
     // Link legacy candidate records to user accounts
     await backfillCandidateUserIds().catch((e) => logger.error(e, "backfillCandidateUserIds failed"));
+
+    // Ensure all employees have a statutory employee number
+    await ensureEmployeeNumbersExist().catch((e) => logger.error(e, "ensureEmployeeNumbersExist failed"));
 
     logger.info("Startup self-healing database routines and administrator verification completed successfully");
     return true;

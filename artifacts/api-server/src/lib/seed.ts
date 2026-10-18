@@ -2481,3 +2481,17 @@ export async function alignOrganizationalPositionsAndHierarchy(): Promise<void> 
     logger.error({ err: error }, 'alignOrganizationalPositionsAndHierarchy failed');
   }
 }
+
+export async function ensureEmployeeNumbersExist(): Promise<void> {
+  try {
+    await db.execute(sql`
+      UPDATE employees 
+      SET employee_number = 'NISIT-EMP-' || (10000 + id)::text 
+      WHERE employee_number IS NULL OR employee_number = '';
+    `);
+    logger.info('ensureEmployeeNumbersExist: verified all personnel have statutory employee numbers');
+  } catch (error) {
+    logger.error({ err: error }, 'ensureEmployeeNumbersExist failed');
+  }
+}
+

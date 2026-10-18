@@ -170,7 +170,7 @@ router.get("/temporal/as-of", authMiddleware, async (req: Request, res: Response
   try {
     const entityType = String(req.query.entityType || "employee");
     let entityId = req.query.entityId ? parseInt(String(req.query.entityId), 10) : 0;
-    const asOfTimestamp = req.query.timestamp ? String(req.query.timestamp) : new Date().toISOString();
+    const asOfTimestamp = (req.query.timestamp || req.query.asOf) ? String(req.query.timestamp || req.query.asOf) : new Date().toISOString();
 
     if (!entityId) {
       const selfEmpId = await currentEmployeeId(req);
@@ -194,6 +194,11 @@ router.get("/temporal/as-of", authMiddleware, async (req: Request, res: Response
 
     res.json({
       success: true,
+      found: stateResult.found,
+      asOf: stateResult.asOfTimestamp,
+      asOfTimestamp: stateResult.asOfTimestamp,
+      snapshot: stateResult.snapshot,
+      state: stateResult.snapshot?.state || {},
       data: stateResult,
     });
   } catch (err: any) {
@@ -209,11 +214,11 @@ router.get("/temporal/compare", authMiddleware, async (req: Request, res: Respon
   try {
     const entityType = String(req.query.entityType || "employee");
     let entityId = req.query.entityId ? parseInt(String(req.query.entityId), 10) : 0;
-    const timestampA = req.query.timestampA ? String(req.query.timestampA) : null;
-    const timestampB = req.query.timestampB ? String(req.query.timestampB) : new Date().toISOString();
+    const timestampA = (req.query.timestampA || req.query.dateA) ? String(req.query.timestampA || req.query.dateA) : null;
+    const timestampB = (req.query.timestampB || req.query.dateB) ? String(req.query.timestampB || req.query.dateB) : new Date().toISOString();
 
     if (!timestampA) {
-      res.status(400).json({ success: false, message: "timestampA is required for comparative analysis" });
+      res.status(400).json({ success: false, message: "timestampA (or dateA) is required for comparative analysis" });
       return;
     }
 
@@ -240,6 +245,9 @@ router.get("/temporal/compare", authMiddleware, async (req: Request, res: Respon
     res.json({
       success: true,
       data: comparison,
+      ...comparison,
+      summary: Array.isArray(comparison.summary) ? comparison.summary.join(". ") : comparison.summary,
+      diff: comparison.delta,
     });
   } catch (err: any) {
     logger.error({ err }, "Failed to execute temporal comparison");

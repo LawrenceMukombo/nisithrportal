@@ -41,7 +41,7 @@ export async function sendOfferLetterEmail(to: string, candidateName: string, po
     <div style="font-family:sans-serif;max-width:540px;margin:auto">
       <div style="background:#003082;padding:18px 24px">
         <h2 style="color:#fff;margin:0;font-size:18px">Government of Papua New Guinea</h2>
-        <p style="color:#f0c040;margin:4px 0 0;font-size:13px">PNG National Information & Communications Technology Institute (NISIT)</p>
+        <p style="color:#f0c040;margin:4px 0 0;font-size:13px">National Institute of Standards & Industrial Technology (NISIT)</p>
       </div>
       <div style="padding:24px">
         <p>Dear <strong>${candidateName}</strong>,</p>

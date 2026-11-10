@@ -9,7 +9,7 @@ import {
   CreditCard, Radio, Fingerprint, ScanFace, KeyRound, Shield,
   UserCheck, BadgeCheck, Lock, X, Sun, Moon, Sparkles, Check,
   User, CheckCircle, ArrowRight, Maximize2, Minimize2, Volume2,
-  VolumeX, Activity, Zap, CheckCheck, Landmark
+  VolumeX, Activity, Zap, CheckCheck, Landmark, Copy
 } from "lucide-react";
 import { api, GeofenceZone, LiveStaffMember, MyAttendanceStats, getStoredToken, clearStoredToken } from "./lib/api";
 
@@ -92,6 +92,8 @@ export default function App() {
   // Authentication & Admin State
   const [token, setToken] = useState<string | null>(getStoredToken());
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [showApkModal, setShowApkModal] = useState<boolean>(false);
+  const [copiedApkUrl, setCopiedApkUrl] = useState<boolean>(false);
   const [loginEmail, setLoginEmail] = useState("admin@nisit.gov.pg");
   const [loginPassword, setLoginPassword] = useState("admin123");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -901,17 +903,17 @@ export default function App() {
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
 
-            {/* Android Tablet APK Direct Download */}
-            <a
-              href="/api/clocking/kiosk/apk"
-              download="nisit-attendance-station-v1.0.apk"
-              className="px-2.5 py-1.5 rounded-xl border border-amber-600/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-amber-200 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-              title="Download Compiled Android APK for Tablets & Kiosks (v1.0)"
+            {/* Android Tablet APK Deployment Console */}
+            <button
+              type="button"
+              onClick={() => setShowApkModal(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-amber-600/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-amber-200 text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+              title="Download & Deploy Native Android APK for Turnstiles & Tablets (v1.0)"
             >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <Smartphone className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden xl:inline">Tablet .APK</span>
               <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">v1.0</span>
-            </a>
+            </button>
 
             {/* ICT & HR Admin Access */}
             {token ? (
@@ -1067,6 +1069,116 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2B. ANDROID TABLET APK DEPLOYMENT & INSTALLATION MODAL                     */}
+      {/* ========================================================================= */}
+      {showApkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-[#120306] border border-red-800/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl text-amber-50 relative overflow-hidden">
+            <div className="flex items-center justify-between pb-4 border-b border-red-900/60 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+                  <Smartphone className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base tracking-wide text-amber-200">NISIT Smart Station Android APK</h3>
+                  <p className="text-xs text-amber-400/80 font-medium">Turnstile Tablet & Handheld Terminal Package v1.0</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowApkModal(false)}
+                className="p-1.5 rounded-xl border border-red-900/60 text-slate-400 hover:text-white hover:bg-red-950/40 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Highlight Banner */}
+              <div className="p-3.5 rounded-2xl bg-[#1c070c] border border-amber-500/30 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
+                <div className="text-xs leading-relaxed text-amber-100">
+                  <span className="font-bold text-amber-300">Signed Standalone Binary Ready:</span> Contains native WebRTC Face ID camera reticle, NFC smart card reader, and continuous sync to the NISIT HR Master Database.
+                </div>
+              </div>
+
+              {/* Direct Download Action Buttons */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const downloadUrl = "/api/clocking/kiosk/apk";
+                    window.location.assign(downloadUrl);
+                  }}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-red-600 via-red-700 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-black text-sm tracking-wide shadow-lg shadow-red-900/40 flex items-center justify-center gap-2.5 transition active:scale-[0.98]"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Production Tablet APK (v1.0 • 4.7 MB)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.assign("/api/clocking/kiosk/apk?debug=true");
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl border border-red-900/60 bg-[#160509] hover:bg-[#20070d] text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Download Developer / Debug APK (v1.0 • 5.7 MB)</span>
+                </button>
+              </div>
+
+              {/* Direct Link & Copy */}
+              <div className="p-3 rounded-xl bg-[#090204] border border-red-950 flex items-center justify-between gap-2">
+                <div className="truncate text-[11px] font-mono text-amber-400/90 select-all">
+                  {typeof window !== "undefined" ? `${window.location.origin}/api/clocking/kiosk/apk` : "http://72.60.233.213:8080/api/clocking/kiosk/apk"}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = typeof window !== "undefined" ? `${window.location.origin}/api/clocking/kiosk/apk` : "http://72.60.233.213:8080/api/clocking/kiosk/apk";
+                    navigator.clipboard?.writeText(url);
+                    setCopiedApkUrl(true);
+                    setTimeout(() => setCopiedApkUrl(false), 2000);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-red-900/60 hover:bg-red-800 text-[11px] text-amber-200 font-semibold shrink-0 transition flex items-center gap-1"
+                >
+                  {copiedApkUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedApkUrl ? "Copied" : "Copy"}</span>
+                </button>
+              </div>
+
+              {/* Tablet Installation Instructions */}
+              <div className="p-3.5 rounded-2xl bg-[#090204] border border-red-900/40 space-y-2 text-xs">
+                <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-amber-400" /> Tablet Installation Guide:
+                </div>
+                <ol className="list-decimal pl-4 space-y-1 text-slate-300 text-[11px]">
+                  <li>Open the download link on your Android tablet or transfer via USB.</li>
+                  <li>In Android <span className="text-amber-200 font-medium">Settings &gt; Security</span>, enable <span className="text-amber-200 font-medium">Install unknown apps</span> for Files/Chrome.</li>
+                  <li>Tap <span className="text-amber-200 font-medium">nisit-attendance-station-v1.0.apk</span> and select <span className="text-amber-200 font-medium">Install</span>.</li>
+                  <li>Launch app: locks the screen awake, initializes the camera and NFC sensors, and syncs punches to the cloud.</li>
+                </ol>
+                <div className="pt-1 border-t border-red-950 text-[10px] text-slate-400">
+                  <span className="text-amber-400 font-bold">PC / Windows Notice:</span> <code className="text-amber-300">.apk</code> files are Android installer packages. On Windows PCs/laptops, run this station directly in the browser or click the Chrome Install icon in the address bar to install as a desktop PWA.
+                </div>
+              </div>
+            </div>
+
+            <div className="text-center pt-4">
+              <button
+                type="button"
+                onClick={() => setShowApkModal(false)}
+                className="text-xs text-slate-400 hover:text-slate-200 transition"
+              >
+                Close Window
+              </button>
+            </div>
           </div>
         </div>
       )}

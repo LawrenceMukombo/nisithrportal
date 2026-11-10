@@ -1,4 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import fs from "fs";
+import path from "path";
 import { eq, and, desc, sql, gte, lte, or, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
@@ -789,5 +791,30 @@ router.post(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// GET /clocking/kiosk/apk - Download compiled Android APK for tablet stations
+// ---------------------------------------------------------------------------
+router.get("/clocking/kiosk/apk", (req: Request, res: Response) => {
+  const isDebug = req.query.debug === "true";
+  const apkFileName = isDebug ? "nisit-attendance-station-v1.0-debug.apk" : "nisit-attendance-station-v1.0.apk";
+
+  const candidatePaths = [
+    path.resolve(process.cwd(), apkFileName),
+    path.resolve(process.cwd(), "uploads", "apks", apkFileName),
+    path.resolve(process.cwd(), "artifacts", "attendance-app", "dist", apkFileName),
+    path.resolve(process.cwd(), "artifacts", "attendance-app", "android", "app", "build", "outputs", "apk", isDebug ? "debug" : "release", isDebug ? "app-debug.apk" : "app-release.apk"),
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.setHeader("Content-Disposition", `attachment; filename="${apkFileName}"`);
+      return res.sendFile(p);
+    }
+  }
+
+  res.status(404).json({ error: "APK binary not found on server. Please build the Android artifact first." });
+});
 
 export default router;

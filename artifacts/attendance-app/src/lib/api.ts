@@ -51,6 +51,33 @@ export interface MyAttendanceStats {
 
 const TOKEN_KEY = "nisit_auth_token";
 const HR_PORTAL_TOKEN_KEY = "hr_portal_token";
+const API_URL_KEY = "nisit_api_url";
+
+export function getApiBaseUrl(): string {
+  const stored = localStorage.getItem(API_URL_KEY);
+  if (stored) return stored.replace(/\/+$/, "");
+  if (typeof window !== "undefined") {
+    // If running in native Android APK / WebView or custom protocol
+    if (
+      window.location.protocol === "file:" ||
+      window.location.protocol === "capacitor:" ||
+      window.location.protocol === "chrome-extension:" ||
+      (window as any).isAndroidKiosk ||
+      (window.location.hostname === "localhost" && window.location.port === "")
+    ) {
+      return "http://72.60.233.213:8080";
+    }
+  }
+  return "";
+}
+
+export function setApiBaseUrl(url: string): void {
+  if (!url || !url.trim()) {
+    localStorage.removeItem(API_URL_KEY);
+  } else {
+    localStorage.setItem(API_URL_KEY, url.trim().replace(/\/+$/, ""));
+  }
+}
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(HR_PORTAL_TOKEN_KEY);
@@ -77,7 +104,10 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
+  const baseUrl = getApiBaseUrl();
+  const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
+
+  const response = await fetch(fullUrl, {
     ...options,
     headers,
   });

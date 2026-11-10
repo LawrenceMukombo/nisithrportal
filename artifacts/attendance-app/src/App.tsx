@@ -901,6 +901,18 @@ export default function App() {
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
 
+            {/* Android Tablet APK Direct Download */}
+            <a
+              href="/api/clocking/kiosk/apk"
+              download="nisit-attendance-station-v1.0.apk"
+              className="px-2.5 py-1.5 rounded-xl border border-amber-600/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-amber-200 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              title="Download Compiled Android APK for Tablets & Kiosks (v1.0)"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden xl:inline">Tablet .APK</span>
+              <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">v1.0</span>
+            </a>
+
             {/* ICT & HR Admin Access */}
             {token ? (
               <div className="flex items-center gap-1">

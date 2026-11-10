@@ -783,14 +783,12 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
           {/* Brand & Subtitle */}
           <div className="flex items-center gap-2.5">
-            <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition-transform ${
-              theme === "emerald"
-                ? "bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 shadow-md shadow-emerald-950/40"
-                : theme === "light"
-                ? "bg-red-50 border border-red-200 text-red-600 shadow-sm"
-                : "bg-red-600/20 border border-red-500/40 text-red-500 shadow-md"
-            }`}>
-              NI
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl p-1 bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0 shadow-md hover:scale-105 transition-transform overflow-hidden">
+              <img
+                src="/nisit-logo.png"
+                alt="PNG NISIT Official Emblem"
+                className="w-full h-full object-contain filter drop-shadow"
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -992,8 +990,8 @@ export default function App() {
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-2xl bg-red-600/20 text-red-500 border border-red-500/30 flex items-center justify-center">
-                <Lock className="w-5 h-5" />
+              <div className="w-12 h-12 rounded-2xl p-1 bg-white/10 border border-white/20 flex items-center justify-center shrink-0 shadow-md">
+                <img src="/nisit-logo.png" alt="NISIT Logo" className="w-full h-full object-contain filter drop-shadow" />
               </div>
               <div>
                 <h3 className="font-extrabold text-base text-white">ICT & HR Administration</h3>
@@ -1081,8 +1079,8 @@ export default function App() {
           <div className="bg-[#120306] border border-red-800/80 rounded-3xl max-w-lg w-full p-6 shadow-2xl text-amber-50 relative overflow-hidden">
             <div className="flex items-center justify-between pb-4 border-b border-red-900/60 mb-5">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5 text-amber-400" />
+                <div className="w-12 h-12 rounded-2xl p-1 bg-white/10 border border-white/20 flex items-center justify-center shrink-0 shadow-md">
+                  <img src="/nisit-logo.png" alt="NISIT Logo" className="w-full h-full object-contain filter drop-shadow" />
                 </div>
                 <div>
                   <h3 className="font-black text-base tracking-wide text-amber-200">NISIT Smart Station Android APK</h3>
@@ -1193,6 +1191,17 @@ export default function App() {
             <div className={`p-5 sm:p-7 rounded-3xl text-center relative overflow-hidden border transition-all ${themeClasses.card}`}>
               {/* Subtle Ambient Radial Glow */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-48 bg-emerald-500/10 blur-3xl pointer-events-none rounded-full"></div>
+
+              {/* Official NISIT Seal */}
+              <div className="flex justify-center mb-2">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full p-2 bg-white/10 backdrop-blur-md border border-amber-500/40 shadow-xl shadow-red-950/40 hover:scale-105 transition-transform flex items-center justify-center">
+                  <img
+                    src="/nisit-logo.png"
+                    alt="National Institute of Standards and Industrial Technology"
+                    className="w-full h-full object-contain filter drop-shadow-md"
+                  />
+                </div>
+              </div>
 
               {/* Time Intelligence & Greeting Banner */}
               <div className="flex flex-wrap items-center justify-center gap-2 mb-2">

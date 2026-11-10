@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import path from "path";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -72,6 +73,16 @@ app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.use("/api", router);
+
+// Serve public static assets (NISIT logos, APK packages, exports)
+app.use(express.static(path.resolve(process.cwd(), "artifacts/api-server/public")));
+
+// Serve standalone attendance kiosk web application at /kiosk for seamless online access
+const attendanceDistPath = path.resolve(process.cwd(), "artifacts/attendance-app/dist");
+app.use("/kiosk", express.static(attendanceDistPath));
+app.get(["/kiosk", "/kiosk/*"], (_req: Request, res: Response) => {
+  res.sendFile(path.join(attendanceDistPath, "index.html"));
+});
 
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void => {
   logger.error({ err, url: req.url, method: req.method }, "Unhandled error");

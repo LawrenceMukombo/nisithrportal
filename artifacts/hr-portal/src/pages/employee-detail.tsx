@@ -1283,12 +1283,15 @@ export default function EmployeeDetailPage() {
             </DialogHeader>
 
             <div className="border-2 border-dashed p-5 rounded-2xl bg-card space-y-4">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div>
-                  <h3 className="font-black text-sm uppercase">National Institute of Standards & Industrial Technology</h3>
-                  <span className="text-[10px] text-muted-foreground">Port Moresby HQ • Section 7 General Orders</span>
+              <div className="flex items-center justify-between border-b pb-3 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <img src="/nisit-logo.png" alt="NISIT Logo" className="w-10 h-10 object-contain shrink-0" />
+                  <div>
+                    <h3 className="font-black text-sm uppercase">National Institute of Standards & Industrial Technology</h3>
+                    <span className="text-[10px] text-muted-foreground">Port Moresby HQ • Section 7 General Orders</span>
+                  </div>
                 </div>
-                <Badge variant="outline" className="font-mono text-[10px]">
+                <Badge variant="outline" className="font-mono text-[10px] shrink-0">
                   PASS # {employee.id}
                 </Badge>
               </div>

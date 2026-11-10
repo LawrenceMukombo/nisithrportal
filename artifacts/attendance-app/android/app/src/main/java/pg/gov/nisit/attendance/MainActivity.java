@@ -37,6 +37,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQ_CODE = 1001;
 
     private WebView webView;
+    private View splashLayout;
     private NfcAdapter nfcAdapter;
     private PendingIntent nfcPendingIntent;
     private IntentFilter[] nfcIntentFilters;
@@ -60,6 +61,34 @@ public class MainActivity extends AppCompatActivity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
+
+        // Native Splash Overlay with Official NISIT Logo
+        android.widget.LinearLayout splash = new android.widget.LinearLayout(this);
+        splash.setOrientation(android.widget.LinearLayout.VERTICAL);
+        splash.setGravity(android.view.Gravity.CENTER);
+        splash.setBackgroundColor(0xFF0B0305);
+
+        android.widget.ImageView logoView = new android.widget.ImageView(this);
+        logoView.setImageResource(R.drawable.nisit_logo);
+        int logoSize = (int) (140 * getResources().getDisplayMetrics().density);
+        android.widget.LinearLayout.LayoutParams logoParams = new android.widget.LinearLayout.LayoutParams(logoSize, logoSize);
+        splash.addView(logoView, logoParams);
+
+        android.widget.TextView titleView = new android.widget.TextView(this);
+        titleView.setText("PNG NISIT SMART ATTENDANCE");
+        titleView.setTextColor(0xFFFBBF24); // Imperial Gold
+        titleView.setTextSize(16);
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleView.setGravity(android.view.Gravity.CENTER);
+        titleView.setPadding(0, 28, 0, 0);
+        splash.addView(titleView);
+
+        splashLayout = splash;
+        rootLayout.addView(splashLayout, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
         setContentView(rootLayout);
 
         setupWebView();
@@ -138,6 +167,15 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 // Inject native flag so attendance app knows it is running in native tablet kiosk mode
                 webView.evaluateJavascript("window.isAndroidKiosk = true;", null);
+
+                // Smoothly fade out native splash screen
+                if (splashLayout != null && splashLayout.getVisibility() == View.VISIBLE) {
+                    splashLayout.animate()
+                            .alpha(0f)
+                            .setDuration(450)
+                            .withEndAction(() -> splashLayout.setVisibility(View.GONE))
+                            .start();
+                }
             }
 
             @Override

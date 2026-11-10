@@ -20,16 +20,20 @@ import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.webkit.WebViewAssetLoader;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -119,12 +123,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupWebView() {
+        final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setUseWideViewPort(true);
@@ -158,6 +168,11 @@ public class MainActivity extends AppCompatActivity {
         // WebViewClient to handle page navigation & offline errors gracefully
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                return assetLoader.shouldInterceptRequest(request.getUrl());
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return false; // Load inside WebView
             }
@@ -181,13 +196,33 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 Log.w(TAG, "WebView error: " + error.getDescription());
+                if (request != null && request.isForMainFrame()) {
+                    // Fall back to local bundled offline kiosk if server cannot be reached
+                    view.loadUrl("https://appassets.androidplatform.net/assets/public/index.html");
+                }
             }
         });
     }
 
     private void loadKioskApp() {
-        // Load the local bundled production assets
-        webView.loadUrl("file:///android_asset/public/index.html");
+        if (isNetworkAvailable()) {
+            webView.loadUrl("https://nisithrportal.lamtoninvestments.com/kiosk");
+        } else {
+            webView.loadUrl("https://appassets.androidplatform.net/assets/public/index.html");
+        }
+    }
+
+    private boolean isNetworkAvailable() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+                return activeNetwork != null && activeNetwork.isConnected();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Network check error", e);
+        }
+        return false;
     }
 
     private void setupNfc() {

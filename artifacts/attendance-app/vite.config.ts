@@ -7,6 +7,7 @@ const port = Number(process.env.PORT ?? 5174);
 const apiTarget = process.env.API_SERVER_URL ?? `http://localhost:${process.env.API_PORT ?? 8080}`;
 
 export default defineConfig({
+  base: "./",
   plugins: [
     react(),
     tailwindcss(),

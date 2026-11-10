@@ -802,8 +802,19 @@ router.get("/clocking/kiosk/apk", (req: Request, res: Response) => {
   const candidatePaths = [
     path.resolve(process.cwd(), apkFileName),
     path.resolve(process.cwd(), "uploads", "apks", apkFileName),
+    path.resolve(process.cwd(), "artifacts", "api-server", "public", apkFileName),
+    path.resolve(process.cwd(), "public", apkFileName),
+    path.resolve(process.cwd(), "..", apkFileName),
+    path.resolve(process.cwd(), "..", "uploads", "apks", apkFileName),
+    path.resolve(process.cwd(), "..", "..", "uploads", "apks", apkFileName),
+    path.resolve(process.cwd(), "..", "..", apkFileName),
+    path.resolve(import.meta.dirname, "../../../uploads/apks", apkFileName),
+    path.resolve(import.meta.dirname, "../../../", apkFileName),
+    path.resolve(import.meta.dirname, "../../public", apkFileName),
+    path.resolve(import.meta.dirname, "../public", apkFileName),
     path.resolve(process.cwd(), "artifacts", "attendance-app", "dist", apkFileName),
     path.resolve(process.cwd(), "artifacts", "attendance-app", "android", "app", "build", "outputs", "apk", isDebug ? "debug" : "release", isDebug ? "app-debug.apk" : "app-release.apk"),
+    path.resolve(import.meta.dirname, "../../../artifacts/attendance-app/android/app/build/outputs/apk", isDebug ? "debug" : "release", isDebug ? "app-debug.apk" : "app-release.apk"),
   ];
 
   for (const p of candidatePaths) {

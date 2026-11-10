@@ -530,6 +530,26 @@ router.post("/payroll/periods/:id/calculate", authMiddleware, requireRole("admin
     const attendanceMap = new Map<number, any>();
     attendanceSummary.forEach((row) => attendanceMap.set(row.employee_id, row));
 
+    // Fetch approved leave requests intersecting the period window
+    const leaveSummary = (await db.execute(sql`
+      SELECT 
+        lr.employee_id,
+        COALESCE(SUM(CASE WHEN lt.is_paid = true THEN lr.days::numeric ELSE 0 END), 0)::float as paid_leave_days,
+        COALESCE(SUM(CASE WHEN lt.is_paid = false THEN lr.days::numeric ELSE 0 END), 0)::float as unpaid_leave_days
+      FROM leave_requests lr
+      JOIN leave_types lt ON lr.leave_type_id = lt.id
+      WHERE lr.status = 'approved'
+        AND lr.start_date <= ${period.endDate}
+        AND lr.end_date >= ${period.startDate}
+      GROUP BY lr.employee_id
+    `)).rows as any[];
+
+    const leaveMap = new Map<number, { paid_leave_days: number; unpaid_leave_days: number }>();
+    leaveSummary.forEach((row) => leaveMap.set(row.employee_id, {
+      paid_leave_days: Number(row.paid_leave_days || 0),
+      unpaid_leave_days: Number(row.unpaid_leave_days || 0),
+    }));
+
     // Fetch approved ad-hoc payroll adjustments for this period
     const adjustments = await db
       .select()
@@ -566,11 +586,17 @@ router.post("/payroll/periods/:id/calculate", authMiddleware, requireRole("admin
     for (const prof of profiles) {
       const empId = prof.employee_id;
       const att = attendanceMap.get(empId) || { days_logged: 10, approved_overtime_mins: 0, absent_days: 0 };
+      const leaveInfo = leaveMap.get(empId) || { paid_leave_days: 0, unpaid_leave_days: 0 };
       const adjs = adjustmentsMap.get(empId) || [];
 
       // Calculate overtime hours from smart attendance
       const otMins = att.approved_overtime_mins || 0;
       const otHours15 = Math.round((otMins / 60) * 10) / 10;
+
+      // Reconcile unauthorized absences vs authorized leave:
+      // Protect approved paid leave from salary docking while enforcing deductions for approved unpaid leave & unauthorized absences
+      const unauthorizedAbsentDays = Math.max(0, (att.absent_days || 0) - leaveInfo.paid_leave_days);
+      const totalUnpaidLeaveDays = leaveInfo.unpaid_leave_days + unauthorizedAbsentDays;
 
       // Ad-hoc additions / deductions
       let adHocAllowances = 0;
@@ -612,7 +638,7 @@ router.post("/payroll/periods/:id/calculate", authMiddleware, requireRole("admin
         superannuationType: prof.superannuation_type || "percentage",
         superannuationFixedAmount: Number(prof.superannuation_fixed_amount) || 0,
         voluntarySuperRate: Number(prof.super_voluntary_rate) || 0,
-        unpaidLeaveDays: att.absent_days || 0,
+        unpaidLeaveDays: totalUnpaidLeaveDays,
       });
 
       const payslipNumber = `NISIT-PS-${period.periodCode}-${String(100 + empId)}`;
@@ -641,8 +667,9 @@ router.post("/payroll/periods/:id/calculate", authMiddleware, requireRole("admin
         paymentMethod: prof.payment_method || "bank_transfer",
         bankName: prof.bank_name,
         bankAccountNumber: prof.bank_account_number,
-        attendanceDaysPresent: att.days_logged || 10,
-        unpaidLeaveDays: String(att.absent_days || 0),
+        attendanceDaysPresent: att.days_logged || Math.max(0, 10 - leaveInfo.paid_leave_days - totalUnpaidLeaveDays),
+        leaveDaysTaken: String(leaveInfo.paid_leave_days),
+        unpaidLeaveDays: String(totalUnpaidLeaveDays),
         unpaidLeaveDeduction: String(calcResult.unpaidLeaveDeduction),
       });
 

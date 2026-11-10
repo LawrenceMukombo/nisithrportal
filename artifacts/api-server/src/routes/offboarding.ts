@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, or, sql } from "drizzle-orm";
-import { db, offboardingWorkflowsTable, offboardingTasksTable, employeesTable, positionsTable, usersTable, rolesTable } from "@workspace/db";
+import { db, offboardingWorkflowsTable, offboardingTasksTable, employeesTable, positionsTable, usersTable, rolesTable, employeeSalaryProfilesTable } from "@workspace/db";
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { writeAuditLog } from "../lib/audit";
 import { createApproval } from "./workflows";
@@ -161,6 +161,12 @@ router.patch("/offboarding/tasks/:taskId", authMiddleware, async (req, res): Pro
           .set({ status: SEPARATION_STATUS[wf.reason] ?? "terminated", separationDate: wf.separationDate, separationReason: wf.reason, updatedAt: new Date() })
           .where(eq(employeesTable.id, wf.employeeId))
           .returning();
+
+        // Deactivate active salary profile to preserve audit trail and halt automatic payroll generation
+        await db
+          .update(employeeSalaryProfilesTable)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(employeeSalaryProfilesTable.employeeId, wf.employeeId));
 
         // Automatically deactivate user account linked by employeeId or email
         if (emp?.email) {

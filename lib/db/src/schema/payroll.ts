@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, date, boolean, numeric, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, date, boolean, numeric, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
@@ -79,7 +79,9 @@ export const employeeSalaryProfilesTable = pgTable("employee_salary_profiles", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_salary_profiles_employee_id").on(table.employeeId),
+]);
 
 export const payrollItemsTable = pgTable("payroll_items", {
   id: serial("id").primaryKey(),
@@ -117,7 +119,10 @@ export const payrollItemsTable = pgTable("payroll_items", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_payroll_items_period_emp").on(table.periodId, table.employeeId),
+  index("idx_payroll_items_employee_id").on(table.employeeId),
+]);
 
 export const payrollAdjustmentsTable = pgTable("payroll_adjustments", {
   id: serial("id").primaryKey(),

@@ -59,7 +59,7 @@ app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self)");
   // The API serves data, not executable web pages. A restrictive CSP limits the
   // impact of accidental content-type mistakes and blocks framing everywhere.
   res.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
@@ -68,8 +68,8 @@ app.use((_req, res, next) => {
   }
   next();
 });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.use("/api", router);
 

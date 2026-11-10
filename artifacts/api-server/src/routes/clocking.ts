@@ -12,6 +12,13 @@ import {
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId } from "../middlewares/tenant";
 import { logger } from "../lib/logger";
+import {
+  getPngTodayDateStr,
+  getPngLateMinutes,
+  getPngEarlyDepartureMinutes,
+  getPngOvertimeMinutes,
+  getPngTimeParts,
+} from "../lib/timezone";
 
 const router: IRouter = Router();
 
@@ -40,14 +47,17 @@ async function resolveClockingDevice(req: Request) {
 router.post("/clocking/webhook", async (req: Request, res: Response): Promise<void> => {
   try {
     const device = await resolveClockingDevice(req);
-    // If no device API key, allow standard admin/HR session for manual API calls
+    // If no device API key, verify standard authenticated HR/Admin session
     if (!device) {
-      // Check if user is authenticated via standard session
-      const authHeader = req.headers["authorization"];
-      if (!authHeader) {
-        res.status(401).json({
-          error: "Unauthorized: Missing X-Device-Key header or valid Bearer token.",
-          hint: "Clocking machines and sync bridges must supply their registered API key in the X-Device-Key header.",
+      await new Promise<void>((resolve, reject) => {
+        authMiddleware(req, res, (err) => (err ? reject(err) : resolve()));
+      });
+      if (res.headersSent) return;
+
+      const isAuthorizedRole = req.user?.roleName && ["admin", "hr_manager", "hr_officer"].includes(req.user.roleName);
+      if (!isAuthorizedRole) {
+        res.status(403).json({
+          error: "Forbidden: Direct punch ingestion requires an enrolled clocking terminal API key or HR/Admin role.",
         });
         return;
       }
@@ -88,7 +98,7 @@ router.post("/clocking/webhook", async (req: Request, res: Response): Promise<vo
       const punchTimeRaw = item.timestamp || item.punchTime || item.time || new Date();
       const punchDateObj = new Date(punchTimeRaw);
       const validPunchTime = isNaN(punchDateObj.getTime()) ? new Date() : punchDateObj;
-      const punchDateStr = validPunchTime.toISOString().split("T")[0];
+      const punchDateStr = getPngTodayDateStr(validPunchTime);
 
       const punchType = (item.punchType || item.type || "auto").toLowerCase();
       const verificationMode = (item.verificationMode || item.verifyType || "biometric").toLowerCase();
@@ -152,18 +162,14 @@ router.post("/clocking/webhook", async (req: Request, res: Response): Promise<vo
           )
           .limit(1);
 
-        const punchHours = validPunchTime.getHours();
-        const punchMinutes = validPunchTime.getMinutes();
+        const pngParts = getPngTimeParts(validPunchTime);
+        const punchHours = pngParts.hour;
+        const punchMinutes = pngParts.minute;
         const isStandardMorning = punchHours < 12;
 
         if (existingAttendance.length === 0) {
           // First punch of the day: create attendance record
-          const expectedHour = 8;
-          const expectedMinute = 0;
-          let lateMinutes = 0;
-          if (punchHours > expectedHour || (punchHours === expectedHour && punchMinutes > expectedMinute)) {
-            lateMinutes = (punchHours - expectedHour) * 60 + (punchMinutes - expectedMinute);
-          }
+          const lateMinutes = getPngLateMinutes(validPunchTime, 8, 0);
 
           const [newRecord] = await db
             .insert(attendanceRecordsTable)
@@ -189,18 +195,16 @@ router.post("/clocking/webhook", async (req: Request, res: Response): Promise<vo
           
           // Only treat as clock-out if punch is later than existing clock-in
           if (validPunchTime.getTime() > clockInTime.getTime()) {
-            const expectedDepartHour = 16;
-            const expectedDepartMin = 6; // Standard 4:06 PM PNG public service finish
-            let earlyDepartureMinutes = 0;
-            if (punchHours < expectedDepartHour || (punchHours === expectedDepartHour && punchMinutes < expectedDepartMin)) {
-              earlyDepartureMinutes = (expectedDepartHour - punchHours) * 60 + (expectedDepartMin - punchMinutes);
-            }
+            const earlyDepartureMinutes = getPngEarlyDepartureMinutes(validPunchTime, 16, 6);
+            const overtimeMinutes = getPngOvertimeMinutes(validPunchTime, 16, 30);
 
             const [updatedRecord] = await db
               .update(attendanceRecordsTable)
               .set({
                 clockOut: validPunchTime,
                 earlyDepartureMinutes,
+                overtimeMinutes,
+                overtimeStatus: overtimeMinutes >= 15 ? "pending_approval" : "none",
                 rawPunchOutId: rawPunch.id,
                 updatedAt: new Date(),
                 notes: existing.notes ? `${existing.notes} | Clocked out via ${device?.name || "Biometric Reader"}` : `Clocked out via ${device?.name || "Biometric Reader"}`,
@@ -299,7 +303,7 @@ router.post("/clocking/devices/heartbeat", async (req: Request, res: Response): 
 router.get("/clocking/stats", authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const agencyId = getTenantAgencyId(req) || 1;
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getPngTodayDateStr();
 
     const [devices] = await db
       .select({
@@ -571,8 +575,8 @@ router.post(
         return;
       }
 
-      const punchDateStr = new Date(punch.punchTime).toISOString().split("T")[0];
       const validPunchTime = new Date(punch.punchTime);
+      const punchDateStr = getPngTodayDateStr(validPunchTime);
 
       // Check existing attendance record
       const [existing] = await db
@@ -588,12 +592,7 @@ router.post(
 
       let recordId: number;
       if (!existing) {
-        const punchHours = validPunchTime.getHours();
-        const punchMinutes = validPunchTime.getMinutes();
-        let lateMinutes = 0;
-        if (punchHours > 8 || (punchHours === 8 && punchMinutes > 0)) {
-          lateMinutes = (punchHours - 8) * 60 + punchMinutes;
-        }
+        const lateMinutes = getPngLateMinutes(validPunchTime, 8, 0);
 
         const [newRec] = await db
           .insert(attendanceRecordsTable)
@@ -612,10 +611,16 @@ router.post(
           .returning();
         recordId = newRec.id;
       } else {
+        const earlyDepartureMinutes = getPngEarlyDepartureMinutes(validPunchTime, 16, 6);
+        const overtimeMinutes = getPngOvertimeMinutes(validPunchTime, 16, 30);
+
         const [updatedRec] = await db
           .update(attendanceRecordsTable)
           .set({
             clockOut: validPunchTime,
+            earlyDepartureMinutes,
+            overtimeMinutes,
+            overtimeStatus: overtimeMinutes >= 15 ? "pending_approval" : "none",
             rawPunchOutId: punch.id,
             updatedAt: new Date(),
           })
@@ -708,7 +713,7 @@ router.post(
           .returning();
 
         if (emp) {
-          const punchDateOnly = punchDateObj.toISOString().split("T")[0];
+          const punchDateOnly = getPngTodayDateStr(punchDateObj);
           const [existing] = await db
             .select()
             .from(attendanceRecordsTable)
@@ -721,12 +726,7 @@ router.post(
             .limit(1);
 
           if (!existing) {
-            const punchHours = punchDateObj.getHours();
-            const punchMinutes = punchDateObj.getMinutes();
-            let lateMinutes = 0;
-            if (punchHours > 8 || (punchHours === 8 && punchMinutes > 0)) {
-              lateMinutes = (punchHours - 8) * 60 + punchMinutes;
-            }
+            const lateMinutes = getPngLateMinutes(punchDateObj, 8, 0);
 
             const [newRecord] = await db
               .insert(attendanceRecordsTable)
@@ -748,10 +748,16 @@ router.post(
               .set({ processedAttendanceRecordId: newRecord.id })
               .where(eq(clockingRawPunchesTable.id, rawPunch.id));
           } else if (punchDateObj.getTime() > (existing.clockIn ? new Date(existing.clockIn).getTime() : 0)) {
+            const earlyDepartureMinutes = getPngEarlyDepartureMinutes(punchDateObj, 16, 6);
+            const overtimeMinutes = getPngOvertimeMinutes(punchDateObj, 16, 30);
+
             const [updatedRecord] = await db
               .update(attendanceRecordsTable)
               .set({
                 clockOut: punchDateObj,
+                earlyDepartureMinutes,
+                overtimeMinutes,
+                overtimeStatus: overtimeMinutes >= 15 ? "pending_approval" : "none",
                 rawPunchOutId: rawPunch.id,
                 updatedAt: new Date(),
               })

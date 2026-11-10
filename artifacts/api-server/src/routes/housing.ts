@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, housingSchemesTable, housingApplicationsTable, employeesTable, positionsTable } from "@workspace/db";
+import { db, housingSchemesTable, housingApplicationsTable, employeesTable, positionsTable, employeeSalaryProfilesTable } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
 import { currentEmployeeId, hasSensitiveReadAccess, canManageEmployee } from "../lib/employee-access";
@@ -152,6 +152,24 @@ router.patch("/housing/applications/:id/status", authMiddleware, requireRole("ad
       })
       .where(eq(housingApplicationsTable.id, appId))
       .returning();
+
+    // Synchronize approved housing subsidy directly to employee active salary profile
+    if (status === "approved" && updated) {
+      const allowanceVal = approvedAmount !== undefined ? String(approvedAmount) : updated.monthlyRentRequested;
+      await db
+        .update(employeeSalaryProfilesTable)
+        .set({
+          housingAllowance: allowanceVal,
+          housingAllowanceType: "fixed",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(employeeSalaryProfilesTable.employeeId, existing.employeeId),
+            eq(employeeSalaryProfilesTable.isActive, true)
+          )
+        );
+    }
 
     res.json(updated);
   } catch (error) {

@@ -26,7 +26,7 @@ export interface LiveStaffMember {
   employeeNumber: string | null;
   departmentId: number | null;
   division: string | null;
-  liveAttendanceStatus: "present" | "in_field" | "late" | "on_leave" | "out_of_office";
+  liveAttendanceStatus: "present" | "in_field" | "late" | "on_leave" | "out_of_office" | "not_reported" | "departed";
   lastClockInAt: string | null;
   lastClockOutAt: string | null;
   punctualityScore: string | null;
@@ -66,31 +66,7 @@ export function clearStoredToken(): void {
   localStorage.removeItem(HR_PORTAL_TOKEN_KEY);
 }
 
-let refreshPromise: Promise<string> | null = null;
-
-export async function refreshAuthToken(): Promise<string> {
-  if (refreshPromise) return refreshPromise;
-  refreshPromise = (async () => {
-    clearStoredToken();
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "admin@nisit.gov.pg", password: "Admin123!" }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.token) {
-      throw new Error(data.error || "Failed to authenticate session");
-    }
-    setStoredToken(data.token);
-    window.dispatchEvent(new CustomEvent("attendance-auth-refreshed", { detail: { token: data.token } }));
-    return data.token as string;
-  })().finally(() => {
-    refreshPromise = null;
-  });
-  return refreshPromise;
-}
-
-async function request<T>(url: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   let token = getStoredToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -106,17 +82,10 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
     headers,
   });
 
-  if (response.status === 401 && !isRetry && !url.includes("/api/auth/login")) {
-    try {
-      const freshToken = await refreshAuthToken();
-      const retryHeaders = {
-        ...headers,
-        Authorization: `Bearer ${freshToken}`,
-      };
-      return await request<T>(url, { ...options, headers: retryHeaders }, true);
-    } catch {
-      clearStoredToken();
-    }
+  if (response.status === 401 && !url.includes("/api/auth/login")) {
+    clearStoredToken();
+    window.dispatchEvent(new CustomEvent("attendance-auth-expired"));
+    throw new Error("Session expired. Please sign in with your staff account.");
   }
 
   const data = await response.json().catch(() => ({}));
@@ -174,5 +143,46 @@ export const api = {
 
   async getMyAttendanceRecords(): Promise<any[]> {
     return request<any[]>("/api/attendance");
+  },
+
+  async verifyStaff(identifier: string): Promise<any> {
+    return request("/api/clocking/staff-verify", {
+      method: "POST",
+      body: JSON.stringify({ identifier }),
+    });
+  },
+
+  async recordStaffPunch(payload: {
+    identifier: string;
+    method?: string;
+    action?: string;
+    kioskLocation?: string;
+    notes?: string;
+    pin?: string;
+  }): Promise<any> {
+    return request("/api/clocking/staff-punch", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async enrollStaff(payload: {
+    employeeId: number;
+    rfidCardNumber?: string;
+    attendancePin?: string;
+    biometricsEnrolled?: {
+      face?: boolean;
+      fingerprint?: boolean;
+      iris?: boolean;
+    };
+  }): Promise<any> {
+    return request("/api/clocking/staff-enroll", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getEmployees(): Promise<any[]> {
+    return request<any[]>("/api/employees").catch(() => []);
   },
 };

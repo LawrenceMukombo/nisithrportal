@@ -23,7 +23,12 @@ import {
   employeesTable,
   onboardingWorkflowsTable,
   onboardingTasksTable,
+  positionsTable,
+  employeeSalaryProfilesTable,
+  leaveBalancesTable,
+  leaveTypesTable,
 } from "@workspace/db";
+import { getPayGradeScale } from "../lib/payrollEngine";
 import { applicationScreeningAnswersTable, jobScreeningQuestionsTable } from "@workspace/db";
 import {
   GetApplicationsQueryParams,
@@ -1207,6 +1212,21 @@ async function autoProvisionHiredEmployeeAndOnboarding(appId: number): Promise<v
     } else {
       const empNum = `NISIT-EMP-${String(Date.now()).slice(-5)}`;
       const startDateStr = new Date().toISOString().split("T")[0];
+
+      // Resolve position & statutory grade level from job specifications
+      let positionId: number | null = (job as any).positionId ?? null;
+      let gradeLevel = "Grade 10";
+      if (positionId) {
+        const [pos] = await db.select().from(positionsTable).where(eq(positionsTable.id, positionId));
+        if (pos?.gradeLevel) gradeLevel = pos.gradeLevel;
+      } else {
+        const [matchingPos] = await db.select().from(positionsTable).where(ilike(positionsTable.title, job.title)).limit(1);
+        if (matchingPos) {
+          positionId = matchingPos.id;
+          if (matchingPos.gradeLevel) gradeLevel = matchingPos.gradeLevel;
+        }
+      }
+
       const [newEmp] = await db
         .insert(employeesTable)
         .values({
@@ -1219,9 +1239,10 @@ async function autoProvisionHiredEmployeeAndOnboarding(appId: number): Promise<v
           nationalId: candidate.nationalId ?? null,
           city: candidate.city ?? "Port Moresby",
           province: candidate.province ?? "National Capital District",
+          positionId,
           departmentId: job.departmentId ?? null,
           agencyId: job.agencyId,
-          gradeLevel: "Grade 12",
+          gradeLevel,
           employmentType: job.employmentType ?? "permanent",
           status: "active",
           startDate: startDateStr,
@@ -1232,6 +1253,40 @@ async function autoProvisionHiredEmployeeAndOnboarding(appId: number): Promise<v
       // Link candidate and user account if present
       if (candidate.userId) {
         await db.update(usersTable).set({ employeeId }).where(eq(usersTable.id, candidate.userId));
+      }
+
+      // Auto-provision initial active salary profile for seamless payroll generation
+      const scale = getPayGradeScale(gradeLevel);
+      const annualBase = scale?.annualBaseSalary || 45000;
+      const fortnightlyBase = scale?.fortnightlyBase || Math.round((annualBase / 26) * 100) / 100;
+      await db.insert(employeeSalaryProfilesTable).values({
+        employeeId,
+        gradeLevel,
+        annualBaseSalary: String(annualBase),
+        fortnightlyBaseSalary: String(fortnightlyBase),
+        housingAllowance: String(scale?.defaultHousing || 0),
+        housingAllowanceType: "fixed",
+        utilityAllowance: String(scale?.defaultUtility || 0),
+        utilityAllowanceType: "fixed",
+        transportAllowance: String(scale?.defaultTransport || 0),
+        transportAllowanceType: "fixed",
+        superannuationType: "percentage",
+        superFund: "Nasfund",
+        isActive: true,
+      });
+
+      // Initialize default statutory leave balances for new employee
+      const currentYear = new Date().getFullYear();
+      const activeLeaveTypes = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.active, true));
+      for (const lt of activeLeaveTypes) {
+        await db.insert(leaveBalancesTable).values({
+          employeeId,
+          leaveTypeId: lt.id,
+          year: currentYear,
+          allocatedDays: String(lt.defaultDays || 18),
+          usedDays: "0",
+          pendingDays: "0",
+        });
       }
     }
 

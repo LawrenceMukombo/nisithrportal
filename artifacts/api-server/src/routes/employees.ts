@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
-import { db, employeesTable, departmentsTable, positionsTable, employeePositionHistoryTable, usersTable } from "@workspace/db";
+import { db, employeesTable, departmentsTable, positionsTable, employeePositionHistoryTable, usersTable, employeeSalaryProfilesTable, leaveBalancesTable, leaveTypesTable } from "@workspace/db";
 import { authMiddleware, requireRole, parseIntParam } from "../middlewares/auth";
 import { getTenantAgencyId, assertTenantAccess } from "../middlewares/tenant";
 import { writeAuditLog } from "../lib/audit";
@@ -149,6 +149,9 @@ router.get("/employees", authMiddleware, requireRole("admin", "hr_officer", "exe
       unit: employeesTable.unit,
       employmentType: employeesTable.employmentType,
       contractId: employeesTable.contractId,
+      rfidCardNumber: employeesTable.rfidCardNumber,
+      attendancePin: employeesTable.attendancePin,
+      biometricsEnrolled: employeesTable.biometricsEnrolled,
       status: employeesTable.status,
       startDate: employeesTable.startDate,
       probationStartDate: employeesTable.probationStartDate,
@@ -300,6 +303,48 @@ router.post("/employees", authMiddleware, requireRole("admin", "hr_officer"), as
       agencyId,
     });
 
+    // Auto-provision initial active salary profile for new employee
+    try {
+      const scale = getPayGradeScale(employee.gradeLevel || "Grade 10");
+      const annualBase = scale?.annualBaseSalary || 45000;
+      const fortnightlyBase = scale?.fortnightlyBase || Math.round((annualBase / 26) * 100) / 100;
+      await db.insert(employeeSalaryProfilesTable).values({
+        employeeId: employee.id,
+        gradeLevel: employee.gradeLevel || "Grade 10",
+        annualBaseSalary: String(annualBase),
+        fortnightlyBaseSalary: String(fortnightlyBase),
+        housingAllowance: String(scale?.defaultHousing || 0),
+        housingAllowanceType: "fixed",
+        utilityAllowance: String(scale?.defaultUtility || 0),
+        utilityAllowanceType: "fixed",
+        transportAllowance: String(scale?.defaultTransport || 0),
+        transportAllowanceType: "fixed",
+        superannuationType: "percentage",
+        superFund: "Nasfund",
+        isActive: true,
+      });
+    } catch {
+      // non-blocking
+    }
+
+    // Auto-initialize standard statutory leave balances
+    try {
+      const currentYear = new Date().getFullYear();
+      const activeLeaveTypes = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.active, true));
+      for (const lt of activeLeaveTypes) {
+        await db.insert(leaveBalancesTable).values({
+          employeeId: employee.id,
+          leaveTypeId: lt.id,
+          year: currentYear,
+          allocatedDays: String(lt.defaultDays || 18),
+          usedDays: "0",
+          pendingDays: "0",
+        });
+      }
+    } catch {
+      // non-blocking
+    }
+
     res.status(201).json(employee);
   } catch (error: any) {
     logger.error({ err: error }, "Failed to create employee record");
@@ -359,6 +404,9 @@ router.get("/employees/:id", authMiddleware, async (req, res): Promise<void> => 
         confirmationDate: employeesTable.confirmationDate,
         separationDate: employeesTable.separationDate,
         separationReason: employeesTable.separationReason,
+        rfidCardNumber: employeesTable.rfidCardNumber,
+        attendancePin: employeesTable.attendancePin,
+        biometricsEnrolled: employeesTable.biometricsEnrolled,
         createdAt: employeesTable.createdAt,
         updatedAt: employeesTable.updatedAt,
       })
@@ -507,6 +555,9 @@ async function handleUpdateEmployee(req: any, res: any): Promise<void> {
         confirmationDate: confirmationDate !== undefined ? parseIsoDate(confirmationDate) : existing.confirmationDate,
         separationDate: separationDate !== undefined ? parseIsoDate(separationDate) : existing.separationDate,
         separationReason: separationReason !== undefined ? separationReason : existing.separationReason,
+        rfidCardNumber: req.body.rfidCardNumber !== undefined ? (req.body.rfidCardNumber ? String(req.body.rfidCardNumber).trim() : null) : existing.rfidCardNumber,
+        attendancePin: req.body.attendancePin !== undefined ? (req.body.attendancePin ? String(req.body.attendancePin).trim() : null) : existing.attendancePin,
+        biometricsEnrolled: req.body.biometricsEnrolled !== undefined ? req.body.biometricsEnrolled : existing.biometricsEnrolled,
         updatedAt: new Date(),
       })
       .where(eq(employeesTable.id, id))

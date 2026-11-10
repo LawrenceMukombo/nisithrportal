@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, date, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { departmentsTable } from "./departments";
@@ -48,6 +48,9 @@ export const employeesTable = pgTable("employees", {
   lastClockInAt: timestamp("last_clock_in_at", { withTimezone: true }),
   lastClockOutAt: timestamp("last_clock_out_at", { withTimezone: true }),
   punctualityScore: text("punctuality_score").default("100.0"),
+  rfidCardNumber: text("rfid_card_number"),
+  attendancePin: text("attendance_pin"),
+  biometricsEnrolled: jsonb("biometrics_enrolled").$type<{ face?: boolean; fingerprint?: boolean; iris?: boolean; enrolledAt?: string }>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

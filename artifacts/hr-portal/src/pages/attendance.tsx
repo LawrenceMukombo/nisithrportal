@@ -68,6 +68,10 @@ interface AttendanceRecord {
   location: string | null;
   source: string | null;
   notes: string | null;
+  overtimeMinutes?: number | null;
+  overtimeStatus?: "none" | "pending_approval" | "approved" | "rejected" | null;
+  overtimeApprovedBy?: number | null;
+  overtimeApprovedAt?: string | null;
   createdAt: string;
 }
 
@@ -184,8 +188,58 @@ export default function AttendancePage() {
     },
   });
 
-  // Today's record for active user
-  const todayRecord = records.find((r) => r.date === todayStr);
+  // Resolve logged-in staff member profile
+  const currentEmployee = useMemo(() => {
+    if (!user?.email && !user?.userId) return null;
+    return (
+      employees.find(
+        (e: any) =>
+          (user?.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
+          (user?.userId && e.userId === user.userId)
+      ) || null
+    );
+  }, [employees, user]);
+
+  const currentEmpId = currentEmployee?.id;
+
+  // Today's record for active user (scoped to current staff profile to avoid cross-user bleed)
+  const todayRecord = useMemo(() => {
+    if (!currentEmpId) return null;
+    return records.find((r) => r.date === todayStr && r.employeeId === currentEmpId) || null;
+  }, [records, todayStr, currentEmpId]);
+
+  // Overtime Approval Mutation
+  const overtimeMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "approved" | "rejected" }) => {
+      const res = await fetch(`/api/attendance/${id}/overtime`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+        body: JSON.stringify({ overtimeStatus: status }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update overtime status");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+      toast({
+        title: "Overtime Updated",
+        description: `Overtime status marked as ${variables.status}.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Overtime Update Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   // Clock In Mutation
   const clockInMutation = useMutation({
@@ -346,7 +400,19 @@ export default function AttendancePage() {
   const paginatedRecords = sortedRecords.slice((page - 1) * pageSize, page * pageSize);
 
   const exportCsv = () => {
-    const headers = ["Officer Name", "Date", "Clock In", "Clock Out", "Status", "Late Minutes", "Location", "Source", "Notes"];
+    const headers = [
+      "Officer Name",
+      "Date",
+      "Clock In",
+      "Clock Out",
+      "Status",
+      "Late Minutes",
+      "Overtime Minutes",
+      "Overtime Status",
+      "Location",
+      "Source",
+      "Notes",
+    ];
     const rows = sortedRecords.map((r) => [
       `"${(r.employeeName || "Active Officer").replace(/"/g, '""')}"`,
       `"${r.date}"`,
@@ -354,6 +420,8 @@ export default function AttendancePage() {
       `"${r.clockOut ? new Date(r.clockOut).toLocaleTimeString() : '—'}"`,
       `"${r.status}"`,
       `"${r.lateMinutes || 0}"`,
+      `"${r.overtimeMinutes || 0}"`,
+      `"${r.overtimeStatus || "none"}"`,
       `"${(r.location || "NISIT HQ").replace(/"/g, '""')}"`,
       `"${r.source || "web"}"`,
       `"${(r.notes || "").replace(/"/g, '""')}"`,
@@ -720,7 +788,8 @@ export default function AttendancePage() {
                         )}
                       </div>
                     </th>
-                    <th className="p-3.5 pr-6">Location & Source</th>
+                    <th className="p-3.5">Location & Source</th>
+                    <th className="p-3.5 pr-6 text-right">Overtime</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -742,9 +811,54 @@ export default function AttendancePage() {
                           <span className="text-emerald-600 font-medium">On time</span>
                         )}
                       </td>
-                      <td className="p-3.5 pr-6 text-muted-foreground">
+                      <td className="p-3.5 text-muted-foreground">
                         <span className="block truncate max-w-xs">{r.location || "NISIT HQ"}</span>
                         <span className="text-[10px] text-muted-foreground/80 uppercase">Source: {r.source || "web"}</span>
+                      </td>
+                      <td className="p-3.5 pr-6 text-right">
+                        {r.overtimeMinutes && r.overtimeMinutes > 0 ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-xs font-semibold text-foreground">
+                              +{r.overtimeMinutes}m OT
+                            </span>
+                            {r.overtimeStatus === "approved" ? (
+                              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                                Approved
+                              </Badge>
+                            ) : r.overtimeStatus === "rejected" ? (
+                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/30">
+                                Rejected
+                              </Badge>
+                            ) : (isAdmin || isHR) ? (
+                              <div className="flex items-center gap-1 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[10px] text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950 border-emerald-500/40"
+                                  disabled={overtimeMutation.isPending}
+                                  onClick={() => overtimeMutation.mutate({ id: r.id, status: "approved" })}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[10px] text-destructive hover:bg-destructive/10 border-destructive/40"
+                                  disabled={overtimeMutation.isPending}
+                                  onClick={() => overtimeMutation.mutate({ id: r.id, status: "rejected" })}
+                                >
+                                  Reject
+                                </Button>
+                              </div>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30">
+                                Pending
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1013,11 +1127,17 @@ export default function AttendancePage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => window.open("http://localhost:5174", "_blank")}
+                onClick={() => {
+                  const targetUrl =
+                    window.location.port === "5173" || window.location.port === "3000"
+                      ? `${window.location.protocol}//${window.location.hostname}:5174`
+                      : `${window.location.origin}/attendance-app/`;
+                  window.open(targetUrl, "_blank");
+                }}
                 className="w-full sm:w-auto text-xs"
               >
                 <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                Open Standalone App (Port 5174)
+                Open Standalone App
               </Button>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">

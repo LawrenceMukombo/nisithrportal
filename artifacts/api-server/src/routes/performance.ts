@@ -4,6 +4,7 @@ import { db, performanceCyclesTable, performanceReviewsTable, goalsTable, employ
 import { authMiddleware, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
 import { getTenantAgencyId } from "../middlewares/tenant";
+import { currentEmployeeId } from "../lib/employee-access";
 
 const router: IRouter = Router();
 
@@ -196,7 +197,14 @@ router.post("/performance/goals", authMiddleware, requireRole("admin", "hr_manag
   try {
     const { employeeId, cycleId, title, description, category, targetDate, weightage, metrics, targetValue, currentValue, unit, dueDate } = req.body;
 
-    const targetEmployeeId = employeeId ? parseInt(employeeId) : (req as any).user?.userId || 1;
+    const requestedEmpId = employeeId ? parseInt(employeeId) : null;
+    const ownEmpId = await currentEmployeeId(req);
+    const targetEmployeeId = requestedEmpId || ownEmpId;
+
+    if (!targetEmployeeId) {
+      res.status(400).json({ error: "Active employee profile required to create goals" });
+      return;
+    }
 
     if (!title) {
       res.status(400).json({ error: "Goal title is required" });

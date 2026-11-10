@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, date, boolean, numeric } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, boolean, numeric, index } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 import { usersTable } from "./users";
 
@@ -45,7 +45,9 @@ export const leaveRequestsTable = pgTable("leave_requests", {
   medicalCertificateNumber: text("medical_certificate_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_leave_requests_employee_status").on(table.employeeId, table.status),
+]);
 
 export const publicHolidaysTable = pgTable("public_holidays", {
   id: serial("id").primaryKey(),

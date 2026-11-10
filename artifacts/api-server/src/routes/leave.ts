@@ -13,6 +13,7 @@ import {
   positionsTable,
   usersTable,
   approvalInstancesTable,
+  attendanceRecordsTable,
 } from "@workspace/db";
 import { authMiddleware, optionalAuth, requireRole } from "../middlewares/auth";
 import { createApproval } from "./workflows";
@@ -60,6 +61,65 @@ function calculateWorkingDays(
   }
 
   return workingDays;
+}
+
+/**
+ * Synchronizes approved leave dates into attendance records with 'excused' status.
+ * Prevents employees on authorized leave from showing as absent or missing.
+ */
+async function syncLeaveToAttendance(
+  employeeId: number,
+  startDateStr: string,
+  endDateStr: string,
+  leaveTypeName: string
+): Promise<void> {
+  try {
+    const start = new Date(`${startDateStr}T00:00:00Z`);
+    const end = new Date(`${endDateStr}T00:00:00Z`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return;
+
+    const current = new Date(start);
+    while (current <= end) {
+      const dayOfWeek = current.getUTCDay();
+      // Skip Saturday and Sunday
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        const dateStr = current.toISOString().slice(0, 10);
+        const [existing] = await db
+          .select({ id: attendanceRecordsTable.id, notes: attendanceRecordsTable.notes })
+          .from(attendanceRecordsTable)
+          .where(
+            and(
+              eq(attendanceRecordsTable.employeeId, employeeId),
+              eq(attendanceRecordsTable.date, dateStr)
+            )
+          )
+          .limit(1);
+
+        if (!existing) {
+          await db.insert(attendanceRecordsTable).values({
+            employeeId,
+            date: dateStr,
+            status: "excused",
+            location: "Approved Leave",
+            source: "leave_approval",
+            notes: `Approved Leave: ${leaveTypeName}`,
+          });
+        } else {
+          await db
+            .update(attendanceRecordsTable)
+            .set({
+              status: "excused",
+              notes: existing.notes ? `${existing.notes} | Approved Leave: ${leaveTypeName}` : `Approved Leave: ${leaveTypeName}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(attendanceRecordsTable.id, existing.id));
+        }
+      }
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+  } catch (err) {
+    console.warn("[leave] Failed to sync leave to attendance records:", err);
+  }
 }
 
 // GET /api/leave/types - List all active leave types
@@ -304,6 +364,58 @@ router.post("/leave/requests", authMiddleware, async (req, res): Promise<void> =
 
     const calculatedDaysStr = String(computedWorkingDays);
 
+    // Enforce statutory leave balance checks for paid leave types
+    const parsedLtId = parseInt(leaveTypeId);
+    const [leaveType] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, parsedLtId));
+    const currentYear = new Date(startDate).getFullYear();
+
+    if (leaveType && leaveType.isPaid) {
+      const [bal] = await db
+        .select()
+        .from(leaveBalancesTable)
+        .where(
+          and(
+            eq(leaveBalancesTable.employeeId, targetEmployeeId),
+            eq(leaveBalancesTable.leaveTypeId, parsedLtId),
+            eq(leaveBalancesTable.year, currentYear)
+          )
+        );
+
+      if (bal) {
+        const allocated = Number(bal.allocatedDays || 0);
+        const used = Number(bal.usedDays || 0);
+        const pending = Number(bal.pendingDays || 0);
+        const remaining = Math.max(0, allocated - used - pending);
+
+        if (computedWorkingDays > remaining) {
+          res.status(400).json({
+            error: `Insufficient leave balance: You have ${remaining} day(s) remaining for ${leaveType.name}, but requested ${computedWorkingDays} day(s).`,
+          });
+          return;
+        }
+      } else {
+        const defaultDays = leaveType.defaultDays || 18;
+        if (computedWorkingDays > defaultDays) {
+          res.status(400).json({
+            error: `Insufficient leave balance: You have ${defaultDays} day(s) remaining for ${leaveType.name}, but requested ${computedWorkingDays} day(s).`,
+          });
+          return;
+        }
+        try {
+          await db.insert(leaveBalancesTable).values({
+            employeeId: targetEmployeeId,
+            leaveTypeId: parsedLtId,
+            year: currentYear,
+            allocatedDays: String(defaultDays),
+            usedDays: "0",
+            pendingDays: "0",
+          });
+        } catch {
+          // ignore duplicate race
+        }
+      }
+    }
+
     const [newRequest] = await db
       .insert(leaveRequestsTable)
       .values({
@@ -326,7 +438,6 @@ router.post("/leave/requests", authMiddleware, async (req, res): Promise<void> =
     await createApproval("leave_request", newRequest.id, req.user?.userId ?? null, employee?.agencyId ?? null);
 
     // Increment pending days in balance if balance exists
-    const currentYear = new Date(startDate).getFullYear();
     try {
       await db
         .update(leaveBalancesTable)
@@ -403,6 +514,10 @@ router.patch("/leave/requests/:id/status", authMiddleware, requireRole("admin", 
           updatedAt: new Date(),
         })
         .where(and(eq(leaveBalancesTable.employeeId, request.employeeId), eq(leaveBalancesTable.leaveTypeId, request.leaveTypeId), eq(leaveBalancesTable.year, year)));
+
+      // Synchronize approved leave dates into attendance records
+      const [lt] = await db.select({ name: leaveTypesTable.name }).from(leaveTypesTable).where(eq(leaveTypesTable.id, request.leaveTypeId));
+      await syncLeaveToAttendance(request.employeeId, request.startDate, request.endDate, lt?.name || "Leave");
     } else {
       await db
         .update(leaveBalancesTable)
@@ -411,6 +526,10 @@ router.patch("/leave/requests/:id/status", authMiddleware, requireRole("admin", 
           updatedAt: new Date(),
         })
         .where(and(eq(leaveBalancesTable.employeeId, request.employeeId), eq(leaveBalancesTable.leaveTypeId, request.leaveTypeId), eq(leaveBalancesTable.year, year)));
+
+      // Synchronize approved leave dates into attendance records
+      const [lt] = await db.select({ name: leaveTypesTable.name }).from(leaveTypesTable).where(eq(leaveTypesTable.id, request.leaveTypeId));
+      await syncLeaveToAttendance(request.employeeId, request.startDate, request.endDate, lt?.name || "Leave");
     }
 
     res.json(updated);
@@ -468,6 +587,8 @@ router.post("/leave/requests/bulk-status", authMiddleware, requireRole("admin", 
             updatedAt: new Date(),
           })
           .where(and(eq(leaveBalancesTable.employeeId, reqRecord.employeeId), eq(leaveBalancesTable.leaveTypeId, reqRecord.leaveTypeId), eq(leaveBalancesTable.year, year)));
+
+        await syncLeaveToAttendance(reqRecord.employeeId, reqRecord.startDate, reqRecord.endDate, "Approved Leave");
       } else {
         await db
           .update(leaveBalancesTable)

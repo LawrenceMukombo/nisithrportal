@@ -1,8 +1,9 @@
-import { pgTable, serial, integer, text, timestamp, date, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, date, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
 import { agenciesTable } from "./agencies";
+import { usersTable } from "./users";
 
 export const clockingDevicesTable = pgTable("clocking_devices", {
   id: serial("id").primaryKey(),
@@ -77,10 +78,18 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   selfPhotoUrl: text("self_photo_url"),
   overtimeMinutes: integer("overtime_minutes").default(0),
   overtimeStatus: text("overtime_status").default("none"), // none, pending_approval, approved, rejected
+  overtimeApprovedBy: integer("overtime_approved_by").references(() => usersTable.id, { onDelete: "set null" }),
+  overtimeApprovedAt: timestamp("overtime_approved_at", { withTimezone: true }),
   notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uidx_attendance_employee_date").on(table.employeeId, table.date),
+  index("idx_attendance_records_date").on(table.date),
+  index("idx_attendance_records_employee_id").on(table.employeeId),
+  index("idx_attendance_records_status").on(table.status),
+  index("idx_attendance_records_overtime_status").on(table.overtimeStatus),
+]);
 
 export const insertGeofenceZoneSchema = createInsertSchema(geofenceZonesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertGeofenceZone = z.infer<typeof insertGeofenceZoneSchema>;

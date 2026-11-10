@@ -1218,20 +1218,24 @@ export async function ensureAdminUserExists(): Promise<void> {
       logger.info({ email: ADMIN_EMAIL }, "ensureAdminUserExists: created default admin user");
     } else {
       const adminUser = existingAdmins[0];
+      const updateData: Record<string, any> = {
+        email: ADMIN_EMAIL,
+        agencyId: agency.id,
+        roleId: adminRole.id,
+        status: "active",
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        updatedAt: new Date(),
+      };
+      // Only set passwordHash if the existing admin record has no password hash
+      if (!adminUser.passwordHash) {
+        updateData.passwordHash = adminPasswordHash;
+      }
       await db
         .update(usersTable)
-        .set({
-          email: ADMIN_EMAIL,
-          passwordHash: adminPasswordHash,
-          agencyId: agency.id,
-          roleId: adminRole.id,
-          status: "active",
-          failedLoginAttempts: 0,
-          lockedUntil: null,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(usersTable.id, adminUser.id));
-      logger.info({ adminId: adminUser.id, email: ADMIN_EMAIL }, "ensureAdminUserExists: synchronized and unlocked admin user");
+      logger.info({ adminId: adminUser.id, email: ADMIN_EMAIL }, "ensureAdminUserExists: synchronized and verified admin user");
 
       // Ensure admin user is linked to an employee profile
       let [adminEmp] = await db.select().from(employeesTable).where(eq(employeesTable.email, ADMIN_EMAIL)).limit(1);
@@ -1283,14 +1287,17 @@ export async function ensureAdminUserExists(): Promise<void> {
           lockedUntil: null,
         });
       } else {
+        const updateData: Record<string, any> = {
+          status: "active",
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        };
+        if (!existing[0].passwordHash) {
+          updateData.passwordHash = adminPasswordHash;
+        }
         await db
           .update(usersTable)
-          .set({
-            status: "active",
-            failedLoginAttempts: 0,
-            lockedUntil: null,
-            passwordHash: adminPasswordHash,
-          })
+          .set(updateData)
           .where(eq(usersTable.id, existing[0].id));
       }
     }
@@ -1520,6 +1527,22 @@ export async function ensureGeofenceAndSmartAttendanceTablesExist(): Promise<voi
     await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS self_photo_url TEXT;`);
     await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_minutes INTEGER DEFAULT 0;`);
     await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_status TEXT DEFAULT 'none';`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL;`);
+    await db.execute(sql`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS overtime_approved_at TIMESTAMPTZ;`);
+
+    // Ensure employee biometric and turnstile credentials columns exist (Additive & Non-destructive)
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS rfid_card_number TEXT;`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS attendance_pin TEXT;`);
+    await db.execute(sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS biometrics_enrolled JSONB DEFAULT '{"face":false,"fingerprint":false,"iris":false}'::jsonb;`);
+
+    // Seed baseline turnstile credentials for demo officers if not already set
+    await db.execute(sql`
+      UPDATE employees SET 
+        rfid_card_number = COALESCE(rfid_card_number, 'RFID-' || (10000 + id)::text),
+        attendance_pin = COALESCE(attendance_pin, (1000 + (id % 900))::text),
+        biometrics_enrolled = COALESCE(biometrics_enrolled, '{"face":true,"fingerprint":true,"iris":true}'::jsonb)
+      WHERE id IN (1, 5, 6, 10, 11);
+    `);
 
     const [agency] = await db.select().from(agenciesTable).limit(1);
     if (agency) {

@@ -237,8 +237,8 @@ router.get(
       return;
     }
 
-    if (appRow.status !== "hired") {
-      res.status(400).json({ error: "Offer letters can only be generated for hired applications" });
+    if (!["offered", "hired"].includes(appRow.status)) {
+      res.status(400).json({ error: "Offer letters can only be generated for applications in 'offered' or 'hired' status" });
       return;
     }
 
@@ -366,7 +366,7 @@ router.post(
       .where(eq(applicationsTable.id, applicationId));
 
     if (!appRow) { res.status(404).json({ error: "Application not found" }); return; }
-    if (appRow.status !== "hired") { res.status(400).json({ error: "Offer letters can only be sent for hired applications" }); return; }
+    if (!["offered", "hired"].includes(appRow.status)) { res.status(400).json({ error: "Offer letters can only be sent for applications in 'offered' or 'hired' status" }); return; }
 
     const [jobForTenant] = await db.select({ agencyId: jobsTable.agencyId }).from(jobsTable).where(eq(jobsTable.id, appRow.jobId));
     if (!assertTenantAccess(res, jobForTenant?.agencyId ?? null, getTenantAgencyId(req))) return;

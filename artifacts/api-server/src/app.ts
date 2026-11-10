@@ -56,14 +56,23 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self)");
-  // The API serves data, not executable web pages. A restrictive CSP limits the
-  // impact of accidental content-type mistakes and blocks framing everywhere.
-  res.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+
+  if (req.path.startsWith("/kiosk") || req.path === "/kiosk") {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http: https: ws: wss:; media-src 'self' blob:;"
+    );
+  } else {
+    // The API serves data, not executable web pages. A restrictive CSP limits the
+    // impact of accidental content-type mistakes and blocks framing everywhere.
+    res.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  }
+
   if (process.env.NODE_ENV === "production") {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
@@ -77,10 +86,11 @@ app.use("/api", router);
 // Serve public static assets (NISIT logos, APK packages, exports)
 app.use(express.static(path.resolve(process.cwd(), "artifacts/api-server/public")));
 
-// Serve standalone attendance kiosk web application at /kiosk for seamless online access
+// Serve standalone attendance kiosk web application at /kiosk and its bundled assets
 const attendanceDistPath = path.resolve(process.cwd(), "artifacts/attendance-app/dist");
+app.use("/assets", express.static(path.join(attendanceDistPath, "assets")));
 app.use("/kiosk", express.static(attendanceDistPath));
-app.get(["/kiosk", "/kiosk/*"], (_req: Request, res: Response) => {
+app.use("/kiosk", (_req: Request, res: Response) => {
   res.sendFile(path.join(attendanceDistPath, "index.html"));
 });
 

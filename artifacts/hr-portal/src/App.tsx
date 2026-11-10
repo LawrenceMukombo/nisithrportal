@@ -53,6 +53,7 @@ import HelpGuidePage from "@/pages/help-guide";
 import MessagesPage from "@/pages/messages";
 import PayrollPage from "@/pages/payroll";
 import TimeHistoryPage from "@/pages/time-history";
+import KioskPage from "@/pages/kiosk";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -207,6 +208,7 @@ function Router() {
       <Route path="/attendance">
         {() => <ProtectedRoute component={AttendancePage} />}
       </Route>
+      <Route path="/kiosk" component={KioskPage} />
       <Route path="/documents">
         {() => <ProtectedRoute component={DocumentsVaultPage} />}
       </Route>

@@ -65,7 +65,7 @@ export function getApiBaseUrl(): string {
       (window as any).isAndroidKiosk ||
       (window.location.hostname === "localhost" && window.location.port === "")
     ) {
-      return "http://72.60.233.213:8080";
+      return "https://nisithrportal.lamtoninvestments.com";
     }
   }
   return "";

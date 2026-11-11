@@ -189,6 +189,8 @@ export const api = {
     kioskLocation?: string;
     notes?: string;
     pin?: string;
+    photoUrl?: string;
+    verificationDetails?: any;
   }): Promise<any> {
     return request("/api/clocking/staff-punch", {
       method: "POST",
@@ -200,10 +202,16 @@ export const api = {
     employeeId: number;
     rfidCardNumber?: string;
     attendancePin?: string;
+    facePhoto?: string;
+    photoUrl?: string;
     biometricsEnrolled?: {
       face?: boolean;
+      faceEnrolledAt?: string;
       fingerprint?: boolean;
+      fingerprintCredentialId?: string;
+      fingerprintEnrolledAt?: string;
       iris?: boolean;
+      irisEnrolledAt?: string;
     };
   }): Promise<any> {
     return request("/api/clocking/staff-enroll", {
@@ -213,6 +221,10 @@ export const api = {
   },
 
   async getEmployees(): Promise<any[]> {
+    try {
+      const roster = await request<any[]>("/api/clocking/staff-roster");
+      if (Array.isArray(roster) && roster.length > 0) return roster;
+    } catch {}
     return request<any[]>("/api/employees").catch(() => []);
   },
 };

@@ -604,6 +604,7 @@ router.post("/clocking/staff-verify", optionalAuth, async (req, res): Promise<vo
           sql`TRIM(COALESCE(${employeesTable.attendancePin}, '')) = ${identifier}`,
           sql`LOWER(TRIM(COALESCE(${employeesTable.nationalId}, ''))) = ${identifier.toLowerCase()}`,
           sql`LOWER(TRIM(COALESCE(${employeesTable.email}, ''))) = ${identifier.toLowerCase()}`,
+          sql`LOWER(TRIM(COALESCE(${employeesTable.biometricsEnrolled}->>'fingerprintCredentialId', ''))) = ${identifier.toLowerCase()}`,
           isNaN(numId) ? sql`1=0` : eq(employeesTable.id, numId)
         )
       )
@@ -680,6 +681,8 @@ router.post("/clocking/staff-enroll", optionalAuth, async (req, res): Promise<vo
     }
 
     const updateData: any = { updatedAt: new Date() };
+    if (req.body.photoUrl) updateData.photoUrl = String(req.body.photoUrl);
+    if (req.body.facePhoto) updateData.photoUrl = String(req.body.facePhoto);
     if (rfidCardNumber !== undefined) updateData.rfidCardNumber = String(rfidCardNumber || "").trim() || null;
     if (attendancePin !== undefined) updateData.attendancePin = String(attendancePin || "").trim() || null;
     if (biometricsEnrolled !== undefined) {
@@ -703,6 +706,7 @@ router.post("/clocking/staff-enroll", optionalAuth, async (req, res): Promise<vo
         id: updated.id,
         name: updated.name,
         employeeNumber: updated.employeeNumber,
+        photoUrl: updated.photoUrl,
         rfidCardNumber: updated.rfidCardNumber,
         attendancePin: updated.attendancePin ? "••••" : null,
         biometricsEnrolled: updated.biometricsEnrolled,
@@ -750,6 +754,7 @@ router.post("/clocking/staff-punch", optionalAuth, async (req, res): Promise<voi
           sql`TRIM(COALESCE(${employeesTable.attendancePin}, '')) = ${cleanId}`,
           sql`LOWER(TRIM(COALESCE(${employeesTable.nationalId}, ''))) = ${cleanId.toLowerCase()}`,
           sql`LOWER(TRIM(COALESCE(${employeesTable.email}, ''))) = ${cleanId.toLowerCase()}`,
+          sql`LOWER(TRIM(COALESCE(${employeesTable.biometricsEnrolled}->>'fingerprintCredentialId', ''))) = ${cleanId.toLowerCase()}`,
           isNaN(numId) ? sql`1=0` : eq(employeesTable.id, numId)
         )
       )
@@ -986,6 +991,36 @@ router.get("/attendance/live-presence", optionalAuth, async (_req, res): Promise
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch live presence board" });
+  }
+});
+
+// GET /api/clocking/staff-roster - Active personnel roster for biometric enrollment and turnstile verification
+router.get("/clocking/staff-roster", optionalAuth, async (_req, res): Promise<void> => {
+  try {
+    const list = await db
+      .select({
+        id: employeesTable.id,
+        name: employeesTable.name,
+        employeeNumber: employeesTable.employeeNumber,
+        departmentId: employeesTable.departmentId,
+        departmentName: departmentsTable.name,
+        positionTitle: positionsTable.title,
+        photoUrl: employeesTable.photoUrl,
+        rfidCardNumber: employeesTable.rfidCardNumber,
+        attendancePin: employeesTable.attendancePin,
+        biometricsEnrolled: employeesTable.biometricsEnrolled,
+        liveAttendanceStatus: employeesTable.liveAttendanceStatus,
+      })
+      .from(employeesTable)
+      .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id))
+      .leftJoin(positionsTable, eq(employeesTable.positionId, positionsTable.id))
+      .where(eq(employeesTable.status, "active"))
+      .orderBy(employeesTable.name);
+
+    res.json(list);
+  } catch (err: any) {
+    logger.error({ err }, "staff-roster failed");
+    res.status(500).json({ error: "Failed to fetch staff roster" });
   }
 });
 

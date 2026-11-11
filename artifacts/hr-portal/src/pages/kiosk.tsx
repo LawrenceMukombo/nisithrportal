@@ -157,8 +157,8 @@ export default function KioskPage() {
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
   const [showApkModal, setShowApkModal] = useState<boolean>(false);
   const [copiedApkUrl, setCopiedApkUrl] = useState<boolean>(false);
-  const [loginEmail, setLoginEmail] = useState("admin@nisit.gov.pg");
-  const [loginPassword, setLoginPassword] = useState("admin123");
+  const [loginEmail, setLoginEmail] = useState("lawrencemukombo2@gmail.com");
+  const [loginPassword, setLoginPassword] = useState("Admin123!");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -1219,6 +1219,9 @@ export default function KioskPage() {
             <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-xs text-slate-300 mb-4 leading-relaxed">
               <strong className="text-slate-100 block mb-0.5">Notice for Staff:</strong>
               Daily sign-in and sign-out does not require email or password. Please use the main turnstile clocking station behind this modal.
+              <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] text-amber-300/90 font-mono">
+                Administrator: <strong>lawrencemukombo2@gmail.com</strong> or <strong>admin@nisit.gov.pg</strong> • Passcode: <strong>Admin123!</strong>
+              </div>
             </div>
 
             {loginError && (

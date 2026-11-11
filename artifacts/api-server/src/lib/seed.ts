@@ -1266,6 +1266,7 @@ export async function ensureAdminUserExists(): Promise<void> {
     const [execRole] = await db.select().from(rolesTable).where(eq(rolesTable.name, "executive")).limit(1);
 
     const secondaryAccounts = [
+      { name: "Lawrence Mukombo (Administrator)", email: "lawrencemukombo2@gmail.com", roleId: adminRole.id },
       { name: "Margaret Tolo (HR Officer)", email: "m.tolo@nisit.gov.pg", roleId: hrRole?.id || adminRole.id },
       { name: "Director General (Executive)", email: "director@nisit.gov.pg", roleId: execRole?.id || adminRole.id },
     ];
@@ -1288,13 +1289,12 @@ export async function ensureAdminUserExists(): Promise<void> {
         });
       } else {
         const updateData: Record<string, any> = {
+          roleId: acc.roleId,
           status: "active",
           failedLoginAttempts: 0,
           lockedUntil: null,
+          passwordHash: adminPasswordHash,
         };
-        if (!existing[0].passwordHash) {
-          updateData.passwordHash = adminPasswordHash;
-        }
         await db
           .update(usersTable)
           .set(updateData)

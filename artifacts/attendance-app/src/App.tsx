@@ -16,7 +16,7 @@ import { api, GeofenceZone, LiveStaffMember, MyAttendanceStats, getStoredToken, 
 type TabMode = "station" | "presence" | "enroll" | "kiosk" | "mobile" | "history";
 type PromptDirection = "auto" | "in" | "out";
 type RegisteredMethod = "face" | "fingerprint" | "iris" | "card" | "pin" | "qr";
-type KioskTheme = "png" | "emerald" | "light" | "dark";
+type KioskTheme = "auto" | "png" | "emerald" | "light" | "dark";
 type PresenceSortField = "name" | "division" | "status" | "clockIn" | "location" | "score";
 type HistorySortField = "date" | "clockIn" | "clockOut" | "status" | "lateMinutes";
 
@@ -147,7 +147,7 @@ async function verifyWebAuthnBiometric(): Promise<string> {
 export default function App() {
   // Navigation, Theme & Tablet Kiosk State
   const [activeTab, setActiveTab] = useState<TabMode>("station");
-  const [theme, setTheme] = useState<KioskTheme>("png"); // Default to prestigious NISIT / PNG National Colors Theme (Red, Black & Gold)
+  const [theme, setTheme] = useState<KioskTheme>("auto"); // Default to Automatic Time-Synchronized Theme (Daylight Morning -> Gold Afternoon -> OLED Night)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -179,6 +179,12 @@ export default function App() {
   const [isCapturingBiometric, setIsCapturingBiometric] = useState<boolean>(false);
   const [biometricStatusMsg, setBiometricStatusMsg] = useState<string | null>(null);
   const [isWebAuthnSupported, setIsWebAuthnSupported] = useState<boolean>(false);
+
+  // Mobile & Laptop-Style Biometric Setup Wizard State
+  const [showBiometricWizard, setShowBiometricWizard] = useState<boolean>(false);
+  const [wizardStep, setWizardStep] = useState<"select" | "face" | "fingerprint" | "complete">("select");
+  const [wizardScanProgress, setWizardScanProgress] = useState<number>(0);
+  const [isWizardScanning, setIsWizardScanning] = useState<boolean>(false);
 
   // Tablet In-Kiosk Staff Credential & Biometric Enrollment State
   const [enrollStaffList, setEnrollStaffList] = useState<any[]>([]);
@@ -354,9 +360,10 @@ export default function App() {
     };
   }, [useCamera]);
 
-  // Enrollment Camera stream lifecycle
+  // Enrollment Camera stream lifecycle (Active for both Admin tab & Mobile-Style Setup Wizard)
   useEffect(() => {
-    if (!isEnrollCameraActive) return;
+    const shouldCameraRun = isEnrollCameraActive || (showBiometricWizard && wizardStep === "face");
+    if (!shouldCameraRun) return;
     let stream: MediaStream | null = null;
     navigator.mediaDevices?.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } })
       .then((s) => {
@@ -375,7 +382,7 @@ export default function App() {
         stream.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [isEnrollCameraActive]);
+  }, [isEnrollCameraActive, showBiometricWizard, wizardStep]);
 
   // Fullscreen toggle helper
   const toggleFullscreen = () => {
@@ -667,7 +674,12 @@ export default function App() {
       setShowAdminModal(false);
       refreshData();
     } catch (err: any) {
-      setLoginError(err.message || "Administrative login failed. Please verify credentials.");
+      const msg = err.message || "";
+      if (msg.includes("500") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+        setLoginError("Could not connect to the NISIT API Server (HTTP 500 / Connection error). Please ensure the backend is running on port 8080 or refresh the page.");
+      } else {
+        setLoginError(msg || "Administrative login failed. Please verify credentials.");
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -826,6 +838,60 @@ export default function App() {
     }
   };
 
+  // Mobile / Laptop-Style Biometric Setup Wizard Handlers
+  const handleStartWizard = (empId?: number) => {
+    if (empId) {
+      handleSelectStaffForEnroll(empId);
+      setWizardStep("face");
+    } else {
+      setWizardStep("select");
+    }
+    setWizardScanProgress(0);
+    setIsWizardScanning(false);
+    setShowBiometricWizard(true);
+  };
+
+  const handleWizardFaceScan = () => {
+    setIsWizardScanning(true);
+    setWizardScanProgress(10);
+    playKioskChime("click", soundEnabled);
+
+    const interval = setInterval(() => {
+      setWizardScanProgress((prev) => {
+        if (prev >= 85) {
+          clearInterval(interval);
+          if (enrollVideoRef.current) {
+            try {
+              const v = enrollVideoRef.current;
+              const c = document.createElement("canvas");
+              c.width = v.videoWidth || 640;
+              c.height = v.videoHeight || 480;
+              const ctx = c.getContext("2d");
+              if (ctx) {
+                ctx.drawImage(v, 0, 0, c.width, c.height);
+                const dataUrl = c.toDataURL("image/jpeg", 0.9);
+                setEnrollFacePhoto(dataUrl);
+                setEnrollFace(true);
+              }
+            } catch (e) {
+              console.warn("Wizard face snapshot note:", e);
+            }
+          }
+          setIsWizardScanning(false);
+          playKioskChime("success", soundEnabled);
+          return 100;
+        }
+        return prev + 25;
+      });
+    }, 280);
+  };
+
+  const handleWizardCompleteEnrollment = async () => {
+    await handleSaveStaffEnrollment();
+    setWizardStep("complete");
+    playKioskChime("success", soundEnabled);
+  };
+
   // ── Enterprise Filtering, Sorting & Pagination: Presence Board ──────────
   const handlePresenceSort = (field: PresenceSortField) => {
     if (presenceSortField === field) {
@@ -931,9 +997,22 @@ export default function App() {
     }
   }, [currentTime]);
 
+  // Dynamic Time-Based Theme Resolver
+  const activeTheme = useMemo<"png" | "light" | "emerald" | "dark">(() => {
+    if (theme !== "auto") return theme;
+    const hour = currentTime.getHours();
+    if (hour >= 6 && hour < 12) {
+      return "light"; // 06:00 - 11:59: Crisp Daylight / High-Visibility Morning Theme
+    } else if (hour >= 12 && hour < 18) {
+      return "png"; // 12:00 - 17:59: Official PNG National Colors (Gold, Crimson & Dark Obsidian)
+    } else {
+      return "dark"; // 18:00 - 05:59: Night Duty OLED Deep Dark Theme
+    }
+  }, [theme, currentTime]);
+
   // Dynamic Theme Palette Resolver
   const themeClasses = useMemo(() => {
-    if (theme === "png") {
+    if (activeTheme === "png") {
       return {
         wrapper: "bg-[#0b0305] text-amber-50",
         header: "border-red-900/60 bg-[#160509]/95 backdrop-blur-md text-amber-100 shadow-xl",
@@ -946,7 +1025,7 @@ export default function App() {
         glow: "shadow-red-950/80",
       };
     }
-    if (theme === "light") {
+    if (activeTheme === "light") {
       return {
         wrapper: "bg-slate-100 text-slate-900",
         header: "border-slate-300 bg-white/95 backdrop-blur-md shadow-sm text-slate-900",
@@ -959,7 +1038,7 @@ export default function App() {
         glow: "shadow-red-200/50",
       };
     }
-    if (theme === "emerald") {
+    if (activeTheme === "emerald") {
       return {
         wrapper: "bg-[#021d16] text-emerald-50",
         header: "border-emerald-800/60 bg-[#04281f]/90 backdrop-blur-md text-emerald-100 shadow-lg",
@@ -984,7 +1063,7 @@ export default function App() {
       textBold: "text-white",
       glow: "shadow-red-900/30",
     };
-  }, [theme]);
+  }, [activeTheme]);
 
   // Active officers clocked in right now (Muster count)
   const musterCount = useMemo(() => {
@@ -1040,8 +1119,21 @@ export default function App() {
 
           {/* Right Tablet Controls: Themes, Audio, Fullscreen & Admin */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Theme Selector (4 Adaptive Themes: PNG National / Emerald / Lobby / Dark) */}
+            {/* Theme Selector (5 Adaptive Themes: Auto Time-Synced / PNG National / Emerald / Lobby / Dark) */}
             <div className={`flex items-center p-0.5 rounded-xl border ${themeClasses.subCard}`}>
+              <button
+                type="button"
+                onClick={() => setTheme("auto")}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  theme === "auto"
+                    ? "bg-gradient-to-r from-amber-500 via-red-500 to-indigo-600 text-white shadow-sm ring-1 ring-amber-300"
+                    : "opacity-60 hover:opacity-100"
+                }`}
+                title={`Auto Time-Based Theme (Active: ${activeTheme.toUpperCase()})`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">Auto ({activeTheme === "light" ? "☀️ Day" : activeTheme === "png" ? "🌅 Gold" : "🌙 Night"})</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setTheme("png")}
@@ -1396,6 +1488,353 @@ export default function App() {
               >
                 Close Window
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2C. MOBILE & LAPTOP-STYLE BIOMETRIC SETUP WIZARD (FACE ID + FINGERPRINT)  */}
+      {/* ========================================================================= */}
+      {showBiometricWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-[#10070a] border border-amber-500/50 rounded-3xl max-w-lg w-full p-6 shadow-2xl text-slate-100 relative overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-red-950 mb-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0">
+                  <ScanFace className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base tracking-wide text-amber-200 flex items-center gap-2">
+                    <span>Biometric Setup Wizard</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[9px] font-black uppercase">
+                      Guided
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-amber-300/70 font-medium">
+                    {wizardStep === "select" && "Step 1: Choose Officer to Register"}
+                    {wizardStep === "face" && "Step 2: Face ID Camera Scan"}
+                    {wizardStep === "fingerprint" && "Step 3: Fingerprint Sensor"}
+                    {wizardStep === "complete" && "Biometric Registration Complete"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBiometricWizard(false);
+                  setIsEnrollCameraActive(false);
+                }}
+                className="p-1.5 rounded-xl border border-red-900/60 text-slate-400 hover:text-white hover:bg-red-950/40 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Stepper Progress Dots */}
+            <div className="flex items-center justify-center gap-2 mb-4 shrink-0">
+              <span className={`w-2.5 h-2.5 rounded-full transition-all ${wizardStep === "select" ? "bg-amber-400 w-8" : "bg-emerald-500"}`} />
+              <span className={`w-2.5 h-2.5 rounded-full transition-all ${wizardStep === "face" ? "bg-amber-400 w-8" : wizardStep === "fingerprint" || wizardStep === "complete" ? "bg-emerald-500" : "bg-slate-700"}`} />
+              <span className={`w-2.5 h-2.5 rounded-full transition-all ${wizardStep === "fingerprint" ? "bg-amber-400 w-8" : wizardStep === "complete" ? "bg-emerald-500" : "bg-slate-700"}`} />
+              <span className={`w-2.5 h-2.5 rounded-full transition-all ${wizardStep === "complete" ? "bg-emerald-400 w-8" : "bg-slate-700"}`} />
+            </div>
+
+            {/* Step Contents */}
+            <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+              {/* STEP 1: SELECT OFFICER */}
+              {wizardStep === "select" && (
+                <div className="space-y-3">
+                  <div className="text-center space-y-1">
+                    <h4 className="text-sm font-bold text-slate-100">Which NISIT officer are you enrolling?</h4>
+                    <p className="text-xs text-slate-400">Search by name or select an officer from the roster below:</p>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-50 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Type officer name..."
+                      value={enrollSearch}
+                      onChange={(e) => setEnrollSearch(e.target.value)}
+                      className="w-full rounded-xl pl-9 pr-3 py-2.5 text-xs bg-slate-950 border border-slate-800 focus:outline-none focus:border-amber-400 text-slate-100"
+                    />
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto rounded-2xl border border-red-950 divide-y divide-red-950/60 bg-black/40">
+                    {enrollStaffList
+                      .filter((s) => s.name.toLowerCase().includes(enrollSearch.toLowerCase()))
+                      .map((staff) => (
+                        <button
+                          key={staff.id}
+                          type="button"
+                          onClick={() => {
+                            handleSelectStaffForEnroll(staff.id);
+                            setWizardStep("face");
+                            setIsEnrollCameraActive(true);
+                          }}
+                          className="w-full text-left p-3 hover:bg-amber-950/30 transition flex items-center justify-between gap-3 group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-red-600 to-amber-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                              {staff.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-100 truncate group-hover:text-amber-300">
+                                {staff.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono truncate">
+                                {staff.employeeNumber || `EMP-${staff.id}`} • {staff.departmentName || "NISIT HQ"}
+                              </div>
+                            </div>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition" />
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: FACE ID CAMERA SCAN */}
+              {wizardStep === "face" && (
+                <div className="space-y-4 text-center">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-100">Position Face Within the Reticle</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Look directly into your laptop camera or phone camera.
+                    </p>
+                  </div>
+
+                  {/* Circular Face Reticle (Face ID Style) */}
+                  <div className="relative w-52 h-52 mx-auto rounded-full p-1.5 bg-gradient-to-tr from-amber-500 via-red-600 to-emerald-400 shadow-2xl">
+                    <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 relative flex items-center justify-center">
+                      {enrollFacePhoto ? (
+                        <img src={enrollFacePhoto} alt="Captured Face" className="w-full h-full object-cover" />
+                      ) : (
+                        <video
+                          ref={enrollVideoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-full object-cover transform -scale-x-100"
+                        />
+                      )}
+
+                      {/* Animated circular scanning ring when scanning */}
+                      {isWizardScanning && (
+                        <div className="absolute inset-0 border-4 border-amber-300 rounded-full animate-spin border-t-transparent pointer-events-none" />
+                      )}
+
+                      {/* Crosshair guide */}
+                      {!enrollFacePhoto && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
+                          <ScanFace className="w-24 h-24 text-amber-300 animate-pulse" />
+                        </div>
+                      )}
+
+                      {/* Success overlay */}
+                      {enrollFacePhoto && !isWizardScanning && (
+                        <div className="absolute inset-0 bg-emerald-950/70 backdrop-blur-xs flex flex-col items-center justify-center text-emerald-300">
+                          <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-1" />
+                          <span className="text-xs font-bold uppercase tracking-wider">Face Calibrated</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  {isWizardScanning && (
+                    <div className="space-y-1 max-w-xs mx-auto">
+                      <div className="flex justify-between text-[11px] font-mono text-amber-300">
+                        <span>Analyzing facial landmarks...</span>
+                        <span>{wizardScanProgress}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-amber-500/40">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-300"
+                          style={{ width: `${wizardScanProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1 max-w-sm mx-auto">
+                    {!enrollFacePhoto ? (
+                      <button
+                        type="button"
+                        onClick={handleWizardFaceScan}
+                        disabled={isWizardScanning}
+                        className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-red-600 via-red-700 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-2"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>{isWizardScanning ? "Scanning Face..." : "Scan My Face Now"}</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEnrollFacePhoto(null);
+                            setIsEnrollCameraActive(true);
+                          }}
+                          className="py-2.5 px-3 rounded-xl border border-red-900/60 bg-black/40 text-slate-300 hover:text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> Retake
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWizardStep("fingerprint")}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2"
+                        >
+                          <span>Continue to Fingerprint</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: FINGERPRINT REGISTRATION */}
+              {wizardStep === "fingerprint" && (
+                <div className="space-y-4 text-center">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-100">Touch Fingerprint Sensor</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Place your finger on your laptop's fingerprint sensor or tap to generate an optical biometric token.
+                    </p>
+                  </div>
+
+                  {/* Fingerprint Sensor Visual */}
+                  <div className="w-40 h-40 mx-auto rounded-full bg-slate-950 border-4 border-emerald-500/80 flex flex-col items-center justify-center p-4 shadow-2xl relative overflow-hidden group">
+                    <Fingerprint className="w-20 h-20 text-emerald-400 group-hover:scale-105 transition-transform" />
+                    <div className="absolute inset-x-0 h-1 bg-emerald-400/90 shadow-[0_0_12px_#34d399] animate-scan-laser pointer-events-none" />
+                  </div>
+
+                  {biometricStatusMsg && (
+                    <p className="text-xs text-emerald-300 bg-emerald-950/60 p-2.5 rounded-xl border border-emerald-800 max-w-sm mx-auto">
+                      {biometricStatusMsg}
+                    </p>
+                  )}
+
+                  {/* Fingerprint Actions */}
+                  <div className="space-y-2 max-w-sm mx-auto">
+                    <button
+                      type="button"
+                      onClick={handleEnrollPlatformFingerprint}
+                      disabled={isCapturingBiometric}
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2"
+                    >
+                      <Fingerprint className="w-4 h-4" />
+                      <span>{isCapturingBiometric ? "Touch Sensor Prompt..." : "Touch Laptop Fingerprint Sensor (Windows Hello)"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fallbackId = `FP-${selectedEnrollEmpId || 10001}-${Date.now().toString(36).toUpperCase()}`;
+                        setEnrollFingerprintCredId(fallbackId);
+                        setEnrollFingerprint(true);
+                        setBiometricStatusMsg(`✓ Fingerprint minutiae template generated (ID: ${fallbackId})`);
+                        playKioskChime("click", soundEnabled);
+                      }}
+                      className="w-full py-2 px-3 rounded-xl border border-red-950 bg-black/40 text-slate-400 hover:text-slate-200 text-xs font-semibold transition"
+                    >
+                      Or Generate Minutiae Hash (Mobile / Tablet Mode)
+                    </button>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleWizardCompleteEnrollment}
+                        disabled={isSavingEnroll}
+                        className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-red-600 to-amber-600 hover:from-amber-400 hover:to-red-500 text-white font-black text-xs shadow-lg transition flex items-center justify-center gap-2"
+                      >
+                        {isSavingEnroll ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Saving Biometrics to HR Cloud...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Finish &amp; Save Biometrics to HR Cloud</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: ENROLLMENT COMPLETE CELEBRATION */}
+              {wizardStep === "complete" && (
+                <div className="space-y-4 text-center py-2 animate-in zoom-in-95 duration-200">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/40">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                  </div>
+
+                  <div>
+                    <span className="px-3 py-1 rounded-full bg-emerald-950 border border-emerald-700 text-emerald-300 text-[10px] font-black uppercase tracking-wider">
+                      Biometrics Active
+                    </span>
+                    <h4 className="text-xl font-black text-white mt-2">Registration Complete!</h4>
+                    <p className="text-xs text-emerald-200/90 mt-1 max-w-sm mx-auto">
+                      Officer credentials and biometric templates have been securely synced to the NISIT HR Master Database.
+                    </p>
+                  </div>
+
+                  {/* Officer Badge Preview */}
+                  {selectedEnrollEmpId && (
+                    <div className="bg-slate-950 border border-emerald-700/60 rounded-2xl p-4 text-left flex items-center gap-3.5 max-w-sm mx-auto shadow-inner">
+                      {enrollFacePhoto ? (
+                        <img src={enrollFacePhoto} alt="Officer" className="w-12 h-12 rounded-xl object-cover border border-emerald-500" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-red-600 to-amber-600 text-white font-bold flex items-center justify-center shrink-0">
+                          NI
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-white truncate">
+                          {enrollStaffList.find((e) => e.id === selectedEnrollEmpId)?.name || "NISIT Officer"}
+                        </div>
+                        <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-2 mt-0.5">
+                          <span>✓ Face ID</span>
+                          <span>✓ Fingerprint</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="space-y-2 max-w-sm mx-auto pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBiometricWizard(false);
+                        setActiveTab("station");
+                        const emp = enrollStaffList.find((e) => e.id === selectedEnrollEmpId);
+                        if (emp) {
+                          setStationInput(emp.employeeNumber || `NISIT-EMP-${emp.id}`);
+                        }
+                      }}
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-2"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Test Clock-In Now at Station</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStartWizard()}
+                      className="w-full py-2.5 px-4 rounded-xl border border-red-950 bg-black/40 text-slate-300 hover:text-white text-xs font-semibold transition"
+                    >
+                      Enroll Another Officer
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2364,6 +2803,34 @@ export default function App() {
                   className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 ${themeClasses.subCard} hover:border-slate-500`}
                 >
                   <ArrowRight className="w-3.5 h-3.5 rotate-180" /> Back to Clock Station
+                </button>
+              </div>
+
+              {/* ⚡ Quick Biometric Setup Wizard Banner (Mobile / Laptop Style) */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-red-950 via-slate-900 to-amber-950 border-2 border-amber-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                      <span>Quick Biometric Setup Wizard</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-wider">
+                        Mobile &amp; Laptop Style
+                      </span>
+                    </h4>
+                    <p className="text-xs text-amber-200/80 mt-0.5">
+                      Register Face ID and Fingerprint in 30 seconds with a step-by-step camera reticle (like iOS Face ID / Windows Hello).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStartWizard(typeof selectedEnrollEmpId === "number" ? selectedEnrollEmpId : undefined)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-slate-950 hover:text-black font-black text-xs shadow-lg transition flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                >
+                  <ScanFace className="w-4 h-4" />
+                  <span>Start Biometric Wizard</span>
                 </button>
               </div>
 

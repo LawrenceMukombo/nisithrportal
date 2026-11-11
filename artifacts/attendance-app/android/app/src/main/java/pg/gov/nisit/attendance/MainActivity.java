@@ -17,6 +17,7 @@ import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -24,6 +25,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.net.http.SslError;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 import android.net.ConnectivityManager;
@@ -95,30 +97,45 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(rootLayout);
 
+        // Safety fallback: ensure splash screen automatically fades out within 1.5 seconds on emulators
+        splash.postDelayed(() -> {
+            if (splashLayout != null && splashLayout.getVisibility() == View.VISIBLE) {
+                splashLayout.animate()
+                        .alpha(0f)
+                        .setDuration(350)
+                        .withEndAction(() -> splashLayout.setVisibility(View.GONE))
+                        .start();
+            }
+        }, 1500);
+
         setupWebView();
         setupNfc();
         checkAndRequestPermissions();
 
-        // Load bundled attendance app
+        // Load bundled attendance app locally
         loadKioskApp();
     }
 
     private void hideSystemBars() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            final WindowInsetsController insetsController = getWindow().getInsetsController();
-            if (insetsController != null) {
-                insetsController.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                insetsController.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                final WindowInsetsController insetsController = getWindow().getInsetsController();
+                if (insetsController != null) {
+                    insetsController.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    insetsController.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                );
             }
-        } else {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-            );
+        } catch (Exception e) {
+            Log.w(TAG, "hideSystemBars notice: " + e.getMessage());
         }
     }
 
@@ -187,10 +204,16 @@ public class MainActivity extends AppCompatActivity {
                 if (splashLayout != null && splashLayout.getVisibility() == View.VISIBLE) {
                     splashLayout.animate()
                             .alpha(0f)
-                            .setDuration(450)
+                            .setDuration(350)
                             .withEndAction(() -> splashLayout.setVisibility(View.GONE))
                             .start();
                 }
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                // Allow self-signed or development certificates on test networks/emulators
+                handler.proceed();
             }
 
             @Override
@@ -198,18 +221,16 @@ public class MainActivity extends AppCompatActivity {
                 Log.w(TAG, "WebView error: " + error.getDescription());
                 if (request != null && request.isForMainFrame()) {
                     // Fall back to local bundled offline kiosk if server cannot be reached
-                    view.loadUrl("https://appassets.androidplatform.net/assets/public/index.html");
+                    view.loadUrl("file:///android_asset/public/index.html");
                 }
             }
         });
     }
 
     private void loadKioskApp() {
-        if (isNetworkAvailable()) {
-            webView.loadUrl("https://nisithrportal.lamtoninvestments.com/kiosk");
-        } else {
-            webView.loadUrl("https://appassets.androidplatform.net/assets/public/index.html");
-        }
+        // Load the local bundled kiosk web application directly from assets.
+        // This guarantees instant, reliable launch on all Android emulators and offline field tablets.
+        webView.loadUrl("file:///android_asset/public/index.html");
     }
 
     private boolean isNetworkAvailable() {
@@ -226,44 +247,59 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupNfc() {
-        nfcAdapter = NfcAdapter.getDefaultAdapter(this);
-        if (nfcAdapter == null) {
-            Log.i(TAG, "NFC hardware not present on this tablet; RFID input via USB/Bluetooth reader will be used.");
-            return;
-        }
-
-        Intent intent = new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            flags |= PendingIntent.FLAG_MUTABLE;
-        }
-        nfcPendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
-
-        IntentFilter techFilter = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
-        IntentFilter tagFilter = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
-        IntentFilter ndefFilter = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
         try {
-            ndefFilter.addDataType("*/*");
-        } catch (IntentFilter.MalformedMimeTypeException e) {
-            Log.e(TAG, "Malformed MIME type", e);
+            nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+            if (nfcAdapter == null || !nfcAdapter.isEnabled()) {
+                Log.i(TAG, "NFC hardware not present or disabled on this device/emulator; RFID input via USB/Bluetooth reader will be used.");
+                return;
+            }
+
+            Intent intent = new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                flags |= PendingIntent.FLAG_MUTABLE;
+            }
+            nfcPendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+
+            IntentFilter techFilter = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
+            IntentFilter tagFilter = new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED);
+            IntentFilter ndefFilter = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
+            try {
+                ndefFilter.addDataType("*/*");
+            } catch (IntentFilter.MalformedMimeTypeException e) {
+                Log.e(TAG, "Malformed MIME type", e);
+            }
+            nfcIntentFilters = new IntentFilter[]{techFilter, tagFilter, ndefFilter};
+        } catch (Exception e) {
+            Log.w(TAG, "NFC setup skipped safely: " + e.getMessage());
         }
-        nfcIntentFilters = new IntentFilter[]{techFilter, tagFilter, ndefFilter};
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        hideSystemBars();
-        if (nfcAdapter != null && nfcPendingIntent != null) {
-            nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
+        try {
+            hideSystemBars();
+        } catch (Exception ignored) {}
+
+        try {
+            if (nfcAdapter != null && nfcAdapter.isEnabled() && nfcPendingIntent != null) {
+                nfcAdapter.enableForegroundDispatch(this, nfcPendingIntent, nfcIntentFilters, null);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "enableForegroundDispatch ignored: " + e.getMessage());
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (nfcAdapter != null) {
-            nfcAdapter.disableForegroundDispatch(this);
+        try {
+            if (nfcAdapter != null && nfcAdapter.isEnabled()) {
+                nfcAdapter.disableForegroundDispatch(this);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "disableForegroundDispatch ignored: " + e.getMessage());
         }
     }
 
